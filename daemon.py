@@ -192,7 +192,13 @@ def main():
                     all_custom_lists.extend(ad_settings.get("custom_lists", []))
                         
                 exceptions = group_data.get("exceptions", [])
-                all_domains = [d for d in all_domains if d not in exceptions]
+                exceptions_set = set(e.replace('www.', '').lower().strip() for e in exceptions)
+                filtered_domains = []
+                for d in all_domains:
+                    base_d = d.replace('www.', '').lower().strip()
+                    if base_d not in exceptions_set:
+                        filtered_domains.append(d)
+                all_domains = filtered_domains
 
             if all_custom_lists:
                 unique_lists = list(set(all_custom_lists))
