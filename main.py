@@ -490,13 +490,11 @@ class ProductivityApp(ctk.CTk):
         
     def build_schedule_ui(self):
         schedule = self.config_data["groups"][self.group_name].get("schedule", {})
-        
-        container = ctk.CTkFrame(self.tab_schedule, fg_color="#2b2b2b", corner_radius=10)
+
+        # Match Content Filter: scrollable container with same style
+        container = ctk.CTkScrollableFrame(self.tab_schedule, fg_color="#2b2b2b", corner_radius=10)
         container.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        top_frame = ctk.CTkFrame(container, fg_color="transparent")
-        top_frame.pack(fill="x", pady=10)
-        
+
         def toggle_schedule():
             if self.sch_enabled.get():
                 self.sch_persist.deselect()
@@ -507,42 +505,51 @@ class ProductivityApp(ctk.CTk):
                 self.sch_enabled.deselect()
             self.save_schedule()
 
-        self.sch_enabled = ctk.CTkSwitch(top_frame, text="Enable Schedule", command=toggle_schedule, font=ctk.CTkFont(weight="bold"))
+        # Switches — vertical stack matching Content Filter switch layout
+        self.sch_enabled = ctk.CTkSwitch(container, text="Enable Schedule",
+                                          command=toggle_schedule,
+                                          font=ctk.CTkFont(weight="bold"))
         if schedule.get("enabled", False):
             self.sch_enabled.select()
-        self.sch_enabled.pack(side="left", padx=20)
-        
-        self.sch_persist = ctk.CTkSwitch(top_frame, text="Enforce All Day", command=toggle_persist)
+        self.sch_enabled.pack(pady=10, anchor="w", padx=20)
+
+        self.sch_persist = ctk.CTkSwitch(container, text="Enforce All Day",
+                                          command=toggle_persist)
         if schedule.get("persist_all_day", False):
             self.sch_persist.select()
-        self.sch_persist.pack(side="left", padx=20)
-        
+        self.sch_persist.pack(pady=5, anchor="w", padx=20)
+
+        # Time window section header
+        ctk.CTkLabel(container, text="Time Window:", font=ctk.CTkFont(weight="bold")).pack(
+            anchor="w", padx=20, pady=(15, 0))
+
         start_frame = ctk.CTkFrame(container, fg_color="transparent")
-        start_frame.pack(pady=5, anchor="w", padx=20)
-        ctk.CTkLabel(start_frame, text="Start Time (HH:MM): ", width=130, anchor="w").pack(side="left")
+        start_frame.pack(pady=5, anchor="w", padx=30)
+        ctk.CTkLabel(start_frame, text="Start Time (HH:MM):", width=160, anchor="w").pack(side="left")
         self.start_entry = ctk.CTkEntry(start_frame, width=100)
         self.start_entry.insert(0, schedule.get("start_time", "09:00"))
         self.start_entry.pack(side="left")
         self.start_entry.bind("<KeyRelease>", lambda e: self.save_schedule())
-        
+
         end_frame = ctk.CTkFrame(container, fg_color="transparent")
-        end_frame.pack(pady=5, anchor="w", padx=20)
-        ctk.CTkLabel(end_frame, text="End Time (HH:MM): ", width=130, anchor="w").pack(side="left")
+        end_frame.pack(pady=5, anchor="w", padx=30)
+        ctk.CTkLabel(end_frame, text="End Time (HH:MM):", width=160, anchor="w").pack(side="left")
         self.end_entry = ctk.CTkEntry(end_frame, width=100)
         self.end_entry.insert(0, schedule.get("end_time", "17:00"))
         self.end_entry.pack(side="left")
         self.end_entry.bind("<KeyRelease>", lambda e: self.save_schedule())
-        
+
+        # Active days — matching Content Filter checkbox indentation (padx=30)
+        ctk.CTkLabel(container, text="Active Days:", font=ctk.CTkFont(weight="bold")).pack(
+            anchor="w", padx=20, pady=(15, 0))
+
         self.days_vars = {}
-        days_frame = ctk.CTkFrame(container, fg_color="transparent")
-        days_frame.pack(pady=10, anchor="w", padx=20)
-        ctk.CTkLabel(days_frame, text="Active Days:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(0, 5))
         for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]:
             var = ctk.BooleanVar(value=(day in schedule.get("days", [])))
-            cb = ctk.CTkCheckBox(days_frame, text=day, variable=var, command=self.save_schedule)
-            cb.pack(anchor="w", pady=2, padx=10)
+            cb = ctk.CTkCheckBox(container, text=day, variable=var, command=self.save_schedule)
+            cb.pack(anchor="w", pady=2, padx=30)
             self.days_vars[day] = var
-            
+
     def save_schedule(self, *args):
         self.config_data["groups"][self.group_name]["schedule"] = {
             "enabled": self.sch_enabled.get() == 1,
