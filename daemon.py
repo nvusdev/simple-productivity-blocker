@@ -8,8 +8,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from core.config_manager import load_config
 from core.scheduler import is_active
 from blockers.website_blocker import apply_blocks, remove_blocks
-from blockers.app_blocker import AppBlocker
-from blockers.file_blocker import FileBlocker
+from blockers.app_blocker import ProcessMonitor
 
 import urllib.request
 import urllib.error
@@ -139,9 +138,8 @@ def main():
     else:
         config_path = os.path.join(os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')), 'SimpleProductivityBlocker', 'config.json')
         
-    app_blocker = AppBlocker()
-    file_blocker = FileBlocker()
-    custom_list_manager = CustomListManager()
+    process_monitor = ProcessMonitor()
+        custom_list_manager = CustomListManager()
     
     last_config_mtime = 0
     config_cache = {}
@@ -193,7 +191,7 @@ def main():
                             
                     all_custom_lists.extend(ad_settings.get("custom_lists", []))
                         
-                exceptions = ad_settings.get("exceptions", [])
+                exceptions = group_data.get("whitelist", [])
                 all_domains = [d for d in all_domains if d not in exceptions]
 
             if all_custom_lists:
@@ -203,8 +201,8 @@ def main():
                     for res in results:
                         all_domains.extend(res)
 
-            app_blocker.set_blocked_apps(list(set(all_apps)))
-            file_blocker.set_blocked_files(list(set(all_files)))
+            process_monitor.set_blocked_apps(list(set(all_apps)))
+            process_monitor.set_blocked_files(list(set(all_files)))
 
             if len(all_domains) > 0:
                 apply_blocks(list(set(all_domains)), block_doh=schedule_is_active_anywhere)
@@ -212,20 +210,17 @@ def main():
                 remove_blocks()
 
             if len(all_apps) > 0 or len(all_files) > 0:
-                app_blocker.set_blocked_apps(list(set(all_apps)))
-                file_blocker.set_blocked_files(list(set(all_files)))
-                app_blocker.start()
-                file_blocker.start()
-            else:
-                app_blocker.stop()
-                file_blocker.stop()
-
+                process_monitor.set_blocked_apps(list(set(all_apps)))
+                process_monitor.set_blocked_files(list(set(all_files)))
+                process_monitor.start()
+                            else:
+                process_monitor.stop()
+                
             time.sleep(5)
     except KeyboardInterrupt:
         remove_blocks()
-        app_blocker.stop()
-        file_blocker.stop()
-        print("Daemon stopped.")
+        process_monitor.stop()
+                print("Daemon stopped.")
 
 if __name__ == "__main__":
     if not is_admin():

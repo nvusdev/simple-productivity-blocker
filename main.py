@@ -6,6 +6,7 @@ import subprocess
 from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG
 import ctypes
 import sys
+from daemon import ADBLOCK_LISTS
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
@@ -214,8 +215,8 @@ class ProductivityApp(ctk.CTk):
         
         ws = self.winfo_screenwidth()
         hs = self.winfo_screenheight()
-        w = ws // 2
-        h = hs // 2
+        w = int(ws * 0.65)
+        h = int(hs * 0.75)
         x = (ws - w) // 2
         y = (hs - h) // 2
         self.geometry(f"{w}x{h}+{x}+{y}")
@@ -441,6 +442,7 @@ class ProductivityApp(ctk.CTk):
         self.tab_websites = self.tabview.add("Websites")
         self.tab_apps = self.tabview.add("Apps")
         self.tab_files = self.tabview.add("Files")
+        self.tab_whitelist = self.tabview.add("Whitelist")
         self.tab_content = self.tabview.add("Content Filter")
         self.tab_schedule = self.tabview.add("Schedule")
         

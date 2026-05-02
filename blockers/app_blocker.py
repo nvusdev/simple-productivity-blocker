@@ -1,16 +1,22 @@
 import psutil
 import threading
 import time
+import os
 
-class AppBlocker:
+class ProcessMonitor:
     def __init__(self):
         self.blocked_apps = []
+        self.blocked_files = []
         self.is_active = False
         self._watcher_thread = None
         self._stop_event = threading.Event()
 
     def set_blocked_apps(self, apps):
         self.blocked_apps = [app.lower().strip() for app in apps]
+
+    def set_blocked_files(self, files):
+        # We store exact paths or basenames lowercased
+        self.blocked_files = [f.lower().strip() for f in files]
 
     def start(self):
         if self.is_active:
@@ -27,16 +33,17 @@ class AppBlocker:
             self._watcher_thread.join(timeout=2)
 
     def _watch_processes(self):
-        import os
         while not self._stop_event.is_set():
-            if self.blocked_apps:
-                for proc in psutil.process_iter(['name', 'pid', 'exe']):
+            if self.blocked_apps or self.blocked_files:
+                for proc in psutil.process_iter(['name', 'pid', 'exe', 'cmdline']):
                     try:
                         name = proc.info.get('name')
                         exe = proc.info.get('exe')
+                        cmdline = proc.info.get('cmdline')
                         
                         should_kill = False
                         
+                        # 1. Check App Names
                         if name:
                             name_lower = name.lower()
                             if name_lower in self.blocked_apps:
@@ -49,6 +56,20 @@ class AppBlocker:
                             exe_lower = exe.lower()
                             if exe_lower in self.blocked_apps:
                                 should_kill = True
+
+                        # 2. Check File Paths in CmdLine
+                        if not should_kill and cmdline and self.blocked_files:
+                            cmdline_str = " ".join([str(arg).lower() for arg in cmdline])
+                            for blocked_file in self.blocked_files:
+                                # Check absolute path
+                                if blocked_file in cmdline_str:
+                                    should_kill = True
+                                    break
+                                # Check basename just in case
+                                basename = os.path.basename(blocked_file)
+                                if basename and basename in cmdline_str:
+                                    should_kill = True
+                                    break
 
                         if should_kill:
                             proc.kill()

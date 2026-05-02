@@ -36,6 +36,7 @@ def main():
     src_dir = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__))
     app_exe = os.path.join(src_dir, "spb.exe")
     daemon_exe = os.path.join(src_dir, "daemon.exe")
+    uninstaller_exe = os.path.join(src_dir, "spb_uninstaller.exe")
     
     if not os.path.exists(app_exe) or not os.path.exists(daemon_exe):
         print("Error: Could not find spb.exe or daemon.exe in the installation directory.")
@@ -53,6 +54,8 @@ def main():
             
         shutil.copy2(app_exe, os.path.join(dest_dir, "spb.exe"))
         shutil.copy2(daemon_exe, os.path.join(dest_dir, "daemon.exe"))
+        if os.path.exists(uninstaller_exe):
+            shutil.copy2(uninstaller_exe, os.path.join(dest_dir, "spb_uninstaller.exe"))
         
         # Copy _internal if it exists
         internal_src = os.path.join(src_dir, "_internal")
