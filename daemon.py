@@ -191,7 +191,7 @@ def main():
                             
                     all_custom_lists.extend(ad_settings.get("custom_lists", []))
                         
-                exceptions = group_data.get("whitelist", [])
+                exceptions = group_data.get("exceptions", [])
                 all_domains = [d for d in all_domains if d not in exceptions]
 
             if all_custom_lists:

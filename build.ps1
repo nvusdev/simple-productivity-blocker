@@ -9,7 +9,7 @@ if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
 
 # Build the main app
 Write-Host "Building spb.exe..."
-python -m PyInstaller --noconfirm --onedir --windowed --icon="icon.ico" --name "spb" main.py
+python -m PyInstaller --noconfirm --onedir --windowed --uac-admin --icon="icon.ico" --name "spb" main.py
 
 # Build the daemon
 Write-Host "Building daemon.exe..."
@@ -20,7 +20,7 @@ Copy-Item "dist\daemon\daemon.exe" -Destination "dist\spb\"
 
 # Build the installer
 Write-Host "Building spb_installer.exe..."
-python -m PyInstaller --noconfirm --onefile --console --icon="icon.ico" --name "spb_installer" spb_installer.py
+python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="icon.ico" --name "spb_installer" spb_installer.py
 
 # Move installer to the package directory
 Copy-Item "dist\spb_installer.exe" -Destination "dist\spb\"

@@ -442,7 +442,6 @@ class ProductivityApp(ctk.CTk):
         self.tab_websites = self.tabview.add("Websites")
         self.tab_apps = self.tabview.add("Apps")
         self.tab_files = self.tabview.add("Files")
-        self.tab_whitelist = self.tabview.add("Whitelist")
         self.tab_content = self.tabview.add("Content Filter")
         self.tab_schedule = self.tabview.add("Schedule")
         
