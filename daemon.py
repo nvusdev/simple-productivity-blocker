@@ -164,7 +164,6 @@ def main():
             all_apps = []
             all_files = []
             all_domains = []
-            all_custom_lists = []
             
             schedule_is_active_anywhere = False
             
@@ -183,29 +182,29 @@ def main():
                     all_files.extend(group_data.get("files", []))
                     all_domains.extend(group_data.get("websites", []))
                 
+                content_domains = []
                 if adblocker_active:
                     keys = ["ads_trackers", "malware_annoyances", "adult_content", "social_media", "gambling", "piracy_illegal", "entertainment", "shopping", "ai_tech"]
                     for key in keys:
                         if ad_settings.get(key):
-                            all_domains.extend(ADBLOCK_LISTS[key])
+                            content_domains.extend(ADBLOCK_LISTS[key])
                             
-                    all_custom_lists.extend(ad_settings.get("custom_lists", []))
+                    group_custom_lists = ad_settings.get("custom_lists", [])
+                    if group_custom_lists:
+                        unique_lists = list(set(group_custom_lists))
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                            results = executor.map(custom_list_manager.get_domains_from_list, unique_lists)
+                            for res in results:
+                                content_domains.extend(res)
                         
                 exceptions = group_data.get("exceptions", [])
                 exceptions_set = set(e.replace('www.', '').lower().strip() for e in exceptions)
-                filtered_domains = []
-                for d in all_domains:
+                filtered_content = []
+                for d in content_domains:
                     base_d = d.replace('www.', '').lower().strip()
                     if base_d not in exceptions_set:
-                        filtered_domains.append(d)
-                all_domains = filtered_domains
-
-            if all_custom_lists:
-                unique_lists = list(set(all_custom_lists))
-                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                    results = executor.map(custom_list_manager.get_domains_from_list, unique_lists)
-                    for res in results:
-                        all_domains.extend(res)
+                        filtered_content.append(d)
+                all_domains.extend(filtered_content)
 
             process_monitor.set_blocked_apps(list(set(all_apps)))
             process_monitor.set_blocked_files(list(set(all_files)))
