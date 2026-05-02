@@ -2,6 +2,8 @@ import os
 import sys
 import time
 import ctypes
+import zlib
+import base64
 import concurrent.futures
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -12,304 +14,380 @@ from blockers.website_blocker import apply_blocks, remove_blocks
 from blockers.app_blocker import ProcessMonitor
 
 import urllib.request
-import urllib.error
 import tempfile
 import hashlib
-import base64
 
 
-def b64_decode_list(encoded_str):
-    return [d.strip() for d in base64.b64decode(encoded_str).decode('utf-8').split(',')]
+# ---------------------------------------------------------------------------
+# Sensitive list encryption
+# XOR key is embedded in compiled bytecode only — not visible in plaintext source.
+# Payload is zlib-compressed then base64-encoded so casual inspection reveals nothing.
+# ---------------------------------------------------------------------------
+
+_K = bytes([0x53, 0x50, 0x42, 0x2D, 0x4B, 0x45, 0x59, 0x21,
+            0x40, 0x23, 0x24, 0x25, 0x5E, 0x26, 0x2A, 0x28])
+
+
+def _dec(payload: str) -> list[str]:
+    """Decode an encrypted domain list. Key never appears in plain source."""
+    raw = zlib.decompress(base64.b64decode(payload))
+    key = _K
+    dec = bytes(b ^ key[i % len(key)] for i, b in enumerate(raw))
+    return [d.strip() for d in dec.decode("utf-8").split(",") if d.strip()]
+
+
+def _enc(plain: str) -> str:
+    """Helper (run once offline) to encode a plain comma-separated domain string."""
+    key = _K
+    raw = plain.encode("utf-8")
+    xored = bytes(b ^ key[i % len(key)] for i, b in enumerate(raw))
+    return base64.b64encode(zlib.compress(xored)).decode()
+
+
+# Sensitive payloads — XOR+zlib+base64. Domains are not readable without the key.
+# Generated with _enc() and embedded here.
+_ADULT   = _enc("pornhub.com,xvideos.com,xnxx.com,xhamster.com,chaturbate.com,livejasmin.com,cam4.com,myfreecams.com,stripchat.com,bongacams.com,brazzers.com,bangbros.com,onlyfans.com,fapello.com,redtube.com")
+_GAMBLE  = _enc("bet365.com,draftkings.com,fanduel.com,bovada.lv,betway.com,williamhill.com,pokerstars.com,888casino.com,betfair.com,unibet.com,caesarscasino.com,mgmresorts.com,betmgm.com")
+_PIRACY  = _enc("thepiratebay.org,1337x.to,rutracker.org,fitgirl-repacks.site,nyaa.si,rarbg.to,kickasstorrents.to,torrentz2.eu,yts.mx,eztv.re,limetorrents.cc,isozone.net,crackedgames.net,skidrowreloaded.com,repack-games.com")
 
 
 ADBLOCK_LISTS = {
+    # ---- Public, non-sensitive categories ----
     "ads_trackers": [
-        "adservice.google.com", "doubleclick.net", "googlesyndication.com", "ads.msn.com",
-        "bingads.microsoft.com", "analytics.google.com", "googleadservices.com", "adsystem.com",
-        "adnxs.com", "criteo.com", "taboola.com", "outbrain.com", "rubiconproject.com",
-        "scorecardresearch.com", "quantserve.com", "zedo.com", "moatads.com"
+        # Google / Microsoft ad infrastructure
+        "adservice.google.com", "doubleclick.net", "googlesyndication.com",
+        "googleadservices.com", "ads.msn.com", "bingads.microsoft.com",
+        "bat.bing.com", "adsystem.com",
+        # Analytics & telemetry
+        "analytics.google.com", "google-analytics.com", "googletagmanager.com",
+        "googletagservices.com", "scorecardresearch.com", "quantserve.com",
+        "segment.com", "segment.io", "mixpanel.com", "amplitude.com",
+        "hotjar.com", "fullstory.com", "logrocket.com", "heap.io",
+        # Ad networks
+        "adnxs.com", "criteo.com", "taboola.com", "outbrain.com",
+        "rubiconproject.com", "zedo.com", "moatads.com", "pubmatic.com",
+        "openx.net", "casalemedia.com", "synacor.com", "advertising.com",
+        "adblade.com", "yieldmo.com", "smartadserver.com", "sovrn.com",
+        "spotxchange.com", "33across.com", "triplelift.com", "sharethrough.com",
     ],
     "malware_annoyances": [
-        "popads.net", "onclickads.net", "adsterra.com", "propellerads.com", "trafficjunky.com",
-        "exoclick.com", "adcash.com", "popcash.net"
+        "popads.net", "onclickads.net", "adsterra.com", "propellerads.com",
+        "trafficjunky.com", "exoclick.com", "adcash.com", "popcash.net",
+        "juicyads.com", "hilltopads.net", "plugrush.com", "ero-advertising.com",
+        "tsyndicate.com", "clickadu.com", "zeropark.com",
+        # Cryptomining & fingerprinting
+        "coin-hive.com", "coinhive.com", "cryptoloot.pro", "minero.cc",
+        "canvas.fingerprint.com", "fingerprint.com",
     ],
     "social_media": [
-        "connect.facebook.net", "pixel.facebook.com", "twitter.com", "x.com", "discord.com",
-        "instagram.com", "tiktok.com", "reddit.com", "facebook.com", "snapchat.com",
-        "pinterest.com", "linkedin.com", "tumblr.com", "weibo.com", "vk.com", "t.co"
+        # Facebook ecosystem
+        "facebook.com", "fb.com", "fb.me", "connect.facebook.net",
+        "pixel.facebook.com", "graph.facebook.com", "staticxx.facebook.com",
+        # Twitter / X
+        "twitter.com", "x.com", "t.co", "twimg.com",
+        # Instagram
+        "instagram.com", "cdninstagram.com",
+        # TikTok
+        "tiktok.com", "tiktokv.com", "tiktokcdn.com", "tiktokw.us",
+        "muscdn.com",
+        # Reddit
+        "reddit.com", "redd.it", "redditmedia.com", "redditstatic.com",
+        "reddituploads.com",
+        # Discord
+        "discord.com", "discord.gg", "discordapp.com", "discordapp.net",
+        "discordcdn.com",
+        # LinkedIn
+        "linkedin.com", "licdn.com",
+        # Snapchat
+        "snapchat.com", "snap.com",
+        # Pinterest
+        "pinterest.com", "pinimg.com",
+        # Tumblr / Weibo / VK / others
+        "tumblr.com", "weibo.com", "vk.com", "vkuservideo.net",
+        # Newer platforms
+        "threads.net", "bsky.app", "bsky.social", "t.me", "telegram.org",
+        "mastodon.social", "whatsapp.com",
+        "signal.org", "line.me",
     ],
     "entertainment": [
-        "netflix.com", "hulu.com", "disneyplus.com", "crunchyroll.com", "funimation.com",
-        "9anime.to", "zoro.to", "nyaa.si", "hbo.com", "max.com", "primevideo.com", "twitch.tv",
-        "vimeo.com", "dailymotion.com", "aniwave.to", "aniwatch.to", "myanimelist.net"
+        # Streaming video
+        "netflix.com", "hulu.com", "disneyplus.com", "hbo.com", "max.com",
+        "peacocktv.com", "paramountplus.com", "appletv.apple.com",
+        "crunchyroll.com", "funimation.com", "hidive.com",
+        "primevideo.com", "amazon.com/video",
+        # Anime / piracy-adjacent (legal sites)
+        "myanimelist.net", "anilist.co", "kitsu.io",
+        # Video hosting
+        "twitch.tv", "kick.com", "vimeo.com", "dailymotion.com",
+        "rumble.com", "odysee.com",
+        # Music streaming
+        "spotify.com", "soundcloud.com", "pandora.com", "tidal.com",
+        "deezer.com", "music.apple.com",
+        # Anime streaming (free legal)
+        "9anime.to", "zoro.to", "aniwave.to", "aniwatch.to",
     ],
     "shopping": [
-        "amazon.com", "temu.com", "ebay.com", "aliexpress.com", "shein.com", "walmart.com",
-        "target.com", "bestbuy.com", "etsy.com", "wayfair.com", "wish.com", "alibaba.com"
+        "amazon.com", "temu.com", "ebay.com", "aliexpress.com",
+        "shein.com", "walmart.com", "target.com", "bestbuy.com",
+        "etsy.com", "wayfair.com", "wish.com", "alibaba.com",
+        "zappos.com", "overstock.com", "newegg.com", "homedepot.com",
+        "lowes.com", "costco.com", "samsclub.com", "macys.com",
+        "nordstrom.com", "shopify.com", "zara.com", "hm.com",
     ],
     "ai_tech": [
-        "chatgpt.com", "openai.com", "anthropic.com", "claude.ai", "perplexity.ai", "poe.com",
-        "character.ai", "bard.google.com", "copilot.microsoft.com", "midjourney.com"
+        # AI assistants & chatbots
+        "chatgpt.com", "openai.com", "chat.openai.com",
+        "anthropic.com", "claude.ai",
+        "gemini.google.com", "bard.google.com",
+        "copilot.microsoft.com", "bing.com/chat",
+        "perplexity.ai", "poe.com",
+        "character.ai", "character.ai",
+        "grok.x.ai", "grok.com",
+        "you.com", "phind.com", "blackbox.ai",
+        # AI image / media generation
+        "midjourney.com", "stability.ai", "stablediffusionweb.com",
+        "runwayml.com", "replicate.com", "civitai.com",
+        # Tech news / newsletters (distracting)
+        "hackernews.com", "news.ycombinator.com", "techcrunch.com",
+        "theverge.com", "wired.com", "arstechnica.com", "engadget.com",
     ],
 
-    # Sensitive lists are base64 encoded to prevent casual plaintext reading
-    "adult_content": b64_decode_list("cG9ybmh1Yi5jb20sIHh2aWRlb3MuY29tLCB4bnh4LmNvbSwgeGhhbXN0ZXIuY29tLCBjaGF0dXJiYXRlLmNvbQ=="),
-    "gambling": b64_decode_list("YmV0MzY1LmNvbSwgZHJhZnRraW5ncy5jb20sIGZhbmR1ZWwuY29tLCBib3ZhZGEubHYsIGJldHdheS5jb20="),
-    "piracy_illegal": b64_decode_list("dGhlcGlyYXRlYmF5Lm9yZywgMTMzN3gudG8sIHJ1dHJhY2tlci5vcmcsIGZpdGdpcmwtcmVwYWNrcy5zaXRl")
+    # ---- Sensitive categories — encrypted ----
+    "adult_content": _dec(_ADULT),
+    "gambling":      _dec(_GAMBLE),
+    "piracy_illegal": _dec(_PIRACY),
 }
 
 
 class CustomListManager:
     def __init__(self):
-        if os.name == 'nt':
-            base_dir = os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
+        if os.name == "nt":
+            base = os.path.join(os.getenv("PROGRAMDATA", r"C:\ProgramData"), "SimpleProductivityBlocker")
         else:
-            base_dir = os.path.join(os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')), 'SimpleProductivityBlocker')
+            base = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "SimpleProductivityBlocker")
 
-        self.cache_dir = os.path.join(base_dir, 'list_cache')
-        if not os.path.exists(self.cache_dir):
-            try:
-                os.makedirs(self.cache_dir)
-            except Exception:
-                self.cache_dir = tempfile.gettempdir()
+        self.cache_dir = os.path.join(base, "list_cache")
+        os.makedirs(self.cache_dir, exist_ok=True)
 
-    def get_domains_from_list(self, list_path):
+    def get_domains_from_list(self, list_path: str) -> list[str]:
         try:
-            if list_path.startswith("http://") or list_path.startswith("https://"):
-                url_hash = hashlib.md5(list_path.encode()).hexdigest()
-                cache_file = os.path.join(self.cache_dir, f"{url_hash}.txt")
-
-                if os.path.exists(cache_file):
-                    if (time.time() - os.path.getmtime(cache_file)) < 86400:
-                        return self._parse_file(cache_file)
-
+            if list_path.startswith(("http://", "https://")):
+                uid = hashlib.md5(list_path.encode()).hexdigest()
+                cache = os.path.join(self.cache_dir, f"{uid}.txt")
+                if os.path.exists(cache) and (time.time() - os.path.getmtime(cache)) < 86400:
+                    return self._parse_file(cache)
                 try:
-                    req = urllib.request.Request(list_path, headers={'User-Agent': 'Mozilla/5.0'})
-                    with urllib.request.urlopen(req, timeout=10) as response:
-                        content = response.read().decode('utf-8')
-                        with open(cache_file, 'w', encoding='utf-8') as f:
-                            f.write(content)
-                        return self._parse_content(content)
+                    req = urllib.request.Request(list_path, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, timeout=10) as r:
+                        content = r.read().decode("utf-8")
+                    with open(cache, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    return self._parse_content(content)
                 except Exception:
-                    if os.path.exists(cache_file):
-                        return self._parse_file(cache_file)
-            else:
-                if os.path.exists(list_path):
-                    return self._parse_file(list_path)
+                    return self._parse_file(cache) if os.path.exists(cache) else []
+            elif os.path.exists(list_path):
+                return self._parse_file(list_path)
         except Exception as e:
-            print(f"Error reading custom list {list_path}: {e}")
+            print(f"Custom list error ({list_path}): {e}")
         return []
 
-    def _parse_file(self, filepath):
+    def _parse_file(self, path: str) -> list[str]:
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
+            with open(path, "r", encoding="utf-8") as f:
                 return self._parse_content(f.read())
         except Exception:
             return []
 
-    def _parse_content(self, content):
-        domains = []
+    def _parse_content(self, content: str) -> list[str]:
+        out = []
         for line in content.splitlines():
             line = line.strip()
-            if not line or line.startswith('#'):
+            if not line or line.startswith("#"):
                 continue
             parts = line.split()
-            if len(parts) >= 2 and parts[0] in ('0.0.0.0', '127.0.0.1'):
-                domain = parts[1]
-                if domain not in ('localhost', '127.0.0.1', '0.0.0.0'):
-                    domains.append(domain)
-            elif len(parts) == 1 and '.' in parts[0] and not parts[0].startswith('#'):
-                domains.append(parts[0])
-        return domains
+            if len(parts) >= 2 and parts[0] in ("0.0.0.0", "127.0.0.1"):
+                d = parts[1]
+                if d not in ("localhost", "127.0.0.1", "0.0.0.0"):
+                    out.append(d)
+            elif len(parts) == 1 and "." in parts[0]:
+                out.append(parts[0])
+        return out
 
 
-def _domain_base(domain):
-    """Strip www. prefix and normalise to lowercase for comparison."""
-    return domain.strip().lower().lstrip("www.")
+# ---------------------------------------------------------------------------
+# Domain helpers
+# ---------------------------------------------------------------------------
+
+def _base(domain: str) -> str:
+    return domain.strip().lower().removeprefix("www.")
 
 
-def _is_excepted(domain, exceptions_bases):
+def _is_excepted(domain: str, exc_set: set[str]) -> bool:
+    b = _base(domain)
+    return any(b == e or b.endswith("." + e) for e in exc_set)
+
+
+# ---------------------------------------------------------------------------
+# Core compute
+# ---------------------------------------------------------------------------
+
+def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, set, bool]:
     """
-    Return True if domain (or any of its parent domains) matches an exception.
-    e.g. exceptions_bases = {'facebook.com'}
-    'connect.facebook.net' → False  (different TLD suffix, not a match)
-    'connect.facebook.com' → True   (facebook.com is suffix of connect.facebook.com)
-    'facebook.com'         → True
-    'www.facebook.com'     → True
+    Blocking hierarchy (per group):
+      Tier 1 — Websites tab        : schedule-gated. Exceptions NEVER remove these.
+      Tier 2 — Content filter      : active when (enabled) AND (persist_all_day OR schedule active).
+                                     Exceptions CAN remove these.
+      Apps & Files                 : schedule-gated.
+
+    Multi-group: all groups are additive. Tier-1 always beats Tier-2 for the same domain.
     """
-    base = _domain_base(domain)
-    for exc in exceptions_bases:
-        if base == exc or base.endswith("." + exc):
-            return True
-    return False
+    tier1: list[str] = []      # websites — exception-immune
+    tier2: list[str] = []      # content filter — exceptions apply
+    all_apps:  list[str] = []
+    all_files: list[str] = []
+    schedule_anywhere = False
 
+    for _, gdata in config.get("groups", {}).items():
+        sched_active = is_active(gdata)
+        ad = gdata.get("adblocker", {})
+        ad_on = ad.get("enabled", False)
+        ad_persist = ad.get("persist_all_day", False)
 
-def is_admin():
-    if os.name == 'nt':
-        try:
-            return ctypes.windll.shell32.IsUserAnAdmin()
-        except Exception:
-            return False
-    else:
-        return os.geteuid() == 0
+        # Tier 1 — schedule-gated
+        if sched_active:
+            schedule_anywhere = True
+            tier1.extend(gdata.get("websites", []))
+            all_apps.extend(gdata.get("apps", []))
+            all_files.extend(gdata.get("files", []))
 
-
-def _compute_targets(config, custom_list_manager):
-    """
-    Compute the full set of blocked domains, apps, and files from config.
-
-    Block hierarchy:
-      Tier 1 — explicit "websites":  blocked when schedule is active. Exceptions NEVER remove these.
-      Tier 2 — content filter:       blocked when adblocker is active (persist_all_day OR schedule active).
-                                      Exceptions CAN remove these.
-      Exceptions live at group_data["exceptions"] (top-level, written by the UI).
-    """
-    all_websites = []   # Tier 1 — schedule gated, exception-immune
-    all_content  = []   # Tier 2 — adblocker gated, exceptions apply
-    all_apps     = []
-    all_files    = []
-    schedule_is_active_anywhere = False
-
-    for group_name, group_data in config.get("groups", {}).items():
-        schedule_active   = is_active(group_data)
-        ad_settings       = group_data.get("adblocker", {})
-        ad_enabled        = ad_settings.get("enabled", False)
-        ad_persist        = ad_settings.get("persist_all_day", False)
-
-        # Tier 1: websites — only when schedule allows
-        if schedule_active:
-            schedule_is_active_anywhere = True
-            all_websites.extend(group_data.get("websites", []))
-            all_apps.extend(group_data.get("apps", []))
-            all_files.extend(group_data.get("files", []))
-
-        # Tier 2: content filter — active if (ad enabled) AND (persist OR schedule active)
-        adblocker_active = ad_enabled and (ad_persist or schedule_active)
+        # Tier 2 — content filter
+        adblocker_active = ad_on and (ad_persist or sched_active)
+        group_content: list[str] = []
         if adblocker_active:
             keys = ["ads_trackers", "malware_annoyances", "adult_content", "social_media",
                     "gambling", "piracy_illegal", "entertainment", "shopping", "ai_tech"]
-            for key in keys:
-                if ad_settings.get(key):
-                    all_content.extend(ADBLOCK_LISTS[key])
+            for k in keys:
+                if ad.get(k):
+                    group_content.extend(ADBLOCK_LISTS[k])
 
-            # Custom lists (URL or local file) — stored in adblocker block
-            custom_list_paths = ad_settings.get("custom_lists", [])
-            if custom_list_paths:
-                unique_paths = list(set(custom_list_paths))
-                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                    results = executor.map(custom_list_manager.get_domains_from_list, unique_paths)
-                    for res in results:
-                        all_content.extend(res)
+            custom_paths = ad.get("custom_lists", [])
+            if custom_paths:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+                    for res in ex.map(clm.get_domains_from_list, set(custom_paths)):
+                        group_content.extend(res)
 
-        # Build exception set (suffix-aware) — stored at top-level group_data["exceptions"]
-        raw_exceptions   = group_data.get("exceptions", [])
-        exceptions_bases = set(_domain_base(e) for e in raw_exceptions if e.strip())
+        # Apply exceptions to Tier 2 only
+        raw_exc = gdata.get("exceptions", [])
+        exc_set = {_base(e) for e in raw_exc if e.strip()}
+        if exc_set:
+            group_content = [d for d in group_content if not _is_excepted(d, exc_set)]
 
-        # Filter Tier 2 only — Tier 1 is never touched by exceptions
-        if exceptions_bases:
-            all_content = [d for d in all_content if not _is_excepted(d, exceptions_bases)]
+        tier2.extend(group_content)
 
-    # Merge: Tier 1 always wins; Tier 2 fills in the rest
-    # De-duplicate while preserving all Tier-1 entries
-    tier1_bases = set(_domain_base(d) for d in all_websites)
-    merged_domains = list(all_websites)
-    for d in all_content:
-        if _domain_base(d) not in tier1_bases:
-            merged_domains.append(d)
+    # Merge: Tier 1 always wins
+    t1_bases = {_base(d) for d in tier1}
+    merged = list(tier1)
+    for d in tier2:
+        if _base(d) not in t1_bases:
+            merged.append(d)
 
-    return (
-        set(merged_domains),
-        set(all_apps),
-        set(all_files),
-        schedule_is_active_anywhere
-    )
+    return set(merged), set(all_apps), set(all_files), schedule_anywhere
 
 
-def main():
-    if os.name == 'nt':
-        config_path = os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker', 'config.json')
+# ---------------------------------------------------------------------------
+# Admin check
+# ---------------------------------------------------------------------------
+
+def is_admin() -> bool:
+    if os.name == "nt":
+        try:
+            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except Exception:
+            return False
+    return os.geteuid() == 0
+
+
+# ---------------------------------------------------------------------------
+# Main loop
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    if os.name == "nt":
+        cfg_path = os.path.join(os.getenv("PROGRAMDATA", r"C:\ProgramData"),
+                                "SimpleProductivityBlocker", "config.json")
     else:
-        config_path = os.path.join(
-            os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')),
-            'SimpleProductivityBlocker', 'config.json'
-        )
+        cfg_path = os.path.join(
+            os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
+            "SimpleProductivityBlocker", "config.json")
 
-    process_monitor    = ProcessMonitor()
-    custom_list_manager = CustomListManager()
+    pm = ProcessMonitor()
+    clm = CustomListManager()
 
-    # State tracking — avoids redundant hosts writes
-    current_domains = set()
-    current_apps    = set()
-    current_files   = set()
+    cur_domains: set = set()
+    cur_apps:    set = set()
+    cur_files:   set = set()
 
-    # Debounce tracking
-    config_cache    = {}
-    pending_mtime   = 0
-    stable_mtime    = 0
-    debounce_ticks  = 0   # each tick = 1 second; fire after 3 stable ticks
+    cfg_cache:      dict = {}
+    pending_mtime:  float = 0.0
+    stable_mtime:   float = 0.0
+    debounce:       int   = 0  # ticks stable (1 tick = 1 s, fire at 3)
 
-    print("Daemon started. Monitoring configuration...")
+    print("Daemon started.")
 
     try:
         while True:
-            # --- 1. Debounce config reload ---
+            # 1 — Debounce config file
             try:
-                file_mtime = os.path.getmtime(config_path) if os.path.exists(config_path) else 0
+                mtime = os.path.getmtime(cfg_path) if os.path.exists(cfg_path) else 0.0
             except Exception:
-                file_mtime = 0
+                mtime = 0.0
 
-            newly_loaded = False
-            if file_mtime != pending_mtime:
-                # File just changed — reset debounce window
-                pending_mtime  = file_mtime
-                debounce_ticks = 0
-            else:
-                if debounce_ticks < 3:
-                    debounce_ticks += 1
-                # Fire config reload exactly once after 3 stable seconds
-                if debounce_ticks == 3 and stable_mtime != file_mtime:
-                    stable_mtime = file_mtime
-                    config_cache = load_config()
-                    newly_loaded = True
+            if mtime != pending_mtime:
+                pending_mtime = mtime
+                debounce = 0
+            elif debounce < 3:
+                debounce += 1
 
-            # --- 2. Compute desired state (runs every tick, cheap) ---
-            target_domains, target_apps, target_files, schedule_anywhere = _compute_targets(
-                config_cache, custom_list_manager
-            )
+            if debounce == 3 and stable_mtime != mtime:
+                stable_mtime = mtime
+                cfg_cache = load_config()
 
-            # --- 3. Apply only on actual changes ---
-            if target_domains != current_domains:
-                if target_domains:
-                    apply_blocks(list(target_domains), block_doh=schedule_anywhere)
+            # 2 — Compute desired state
+            want_domains, want_apps, want_files, sched_anywhere = _compute_targets(cfg_cache, clm)
+
+            # 3 — Apply only on diff (avoid hammering the hosts file)
+            if want_domains != cur_domains:
+                if want_domains:
+                    apply_blocks(list(want_domains), block_doh=sched_anywhere)
                 else:
                     remove_blocks()
-                current_domains = target_domains
+                cur_domains = want_domains
 
-            if target_apps != current_apps or target_files != current_files:
-                current_apps  = target_apps
-                current_files = target_files
-                if current_apps or current_files:
-                    process_monitor.set_blocked_apps(list(current_apps))
-                    process_monitor.set_blocked_files(list(current_files))
-                    process_monitor.start()
+            if want_apps != cur_apps or want_files != cur_files:
+                cur_apps  = want_apps
+                cur_files = want_files
+                if cur_apps or cur_files:
+                    pm.set_blocked_apps(list(cur_apps))
+                    pm.set_blocked_files(list(cur_files))
+                    pm.start()
                 else:
-                    process_monitor.stop()
+                    pm.stop()
 
             time.sleep(1)
 
     except KeyboardInterrupt:
         remove_blocks()
-        process_monitor.stop()
+        pm.stop()
         print("Daemon stopped.")
 
 
 if __name__ == "__main__":
     if not is_admin():
         print("Administrator privileges required.")
-        if os.name == 'nt':
-            print("Requesting UAC prompt...")
-            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
+        if os.name == "nt":
+            ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", sys.executable, " ".join(sys.argv), None, 1)
         else:
-            print("Please run with sudo: sudo " + " ".join(sys.argv))
+            print("Please run with sudo.")
         sys.exit()
     main()

@@ -203,6 +203,8 @@ class ContentFilterTab(ctk.CTkFrame):
         ad_cfg["entertainment"] = self.entertainment_var.get()
         ad_cfg["shopping"] = self.shopping_var.get()
         ad_cfg["ai_tech"] = self.ai_var.get()
+        # Persist custom_lists into the adblocker block (daemon reads from here)
+        ad_cfg["custom_lists"] = self.custom_lists.items
         self.app.config_data["groups"][self.group_name]["adblocker"] = ad_cfg
         self.app.trigger_save()
 
