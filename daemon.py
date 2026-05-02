@@ -149,21 +149,38 @@ def main():
     print("Daemon started. Monitoring configuration...")
 
     try:
+        currently_blocked_domains = set()
+        currently_blocked_apps = set()
+        currently_blocked_files = set()
+        pending_mtime = 0
+        stable_mtime = 0
+        debounce_counter = 0
+        
         while True:
             try:
                 current_mtime = os.path.getmtime(config_path) if os.path.exists(config_path) else 0
             except Exception:
                 current_mtime = 0
 
-            if current_mtime != last_config_mtime:
-                last_config_mtime = current_mtime
-                config_cache = load_config()
-                
-            config = config_cache
+            # Debounce logic: wait for 3 seconds of no file changes
+            if current_mtime != pending_mtime:
+                pending_mtime = current_mtime
+                debounce_counter = 0
+            else:
+                if debounce_counter < 3:
+                    debounce_counter += 1
             
+            # Update config if stable
+            if debounce_counter >= 3 and stable_mtime != current_mtime:
+                stable_mtime = current_mtime
+                config_cache = load_config()
+
+            config = config_cache
+
             all_apps = []
             all_files = []
             all_domains = []
+            all_custom_lists = []
             
             schedule_is_active_anywhere = False
             
@@ -206,22 +223,30 @@ def main():
                         filtered_content.append(d)
                 all_domains.extend(filtered_content)
 
-            process_monitor.set_blocked_apps(list(set(all_apps)))
-            process_monitor.set_blocked_files(list(set(all_files)))
+            # Detect state changes to prevent aggressive disk writing
+            target_domains = set(all_domains)
+            target_apps = set(all_apps)
+            target_files = set(all_files)
 
-            if len(all_domains) > 0:
-                apply_blocks(list(set(all_domains)), block_doh=schedule_is_active_anywhere)
-            else:
-                remove_blocks()
+            if target_domains != currently_blocked_domains:
+                if len(target_domains) > 0:
+                    apply_blocks(list(target_domains), block_doh=schedule_is_active_anywhere)
+                else:
+                    remove_blocks()
+                currently_blocked_domains = target_domains
 
-            if len(all_apps) > 0 or len(all_files) > 0:
-                process_monitor.set_blocked_apps(list(set(all_apps)))
-                process_monitor.set_blocked_files(list(set(all_files)))
-                process_monitor.start()
-            else:
-                process_monitor.stop()
+            if target_apps != currently_blocked_apps or target_files != currently_blocked_files:
+                currently_blocked_apps = target_apps
+                currently_blocked_files = target_files
                 
-            time.sleep(5)
+                if len(target_apps) > 0 or len(target_files) > 0:
+                    process_monitor.set_blocked_apps(list(target_apps))
+                    process_monitor.set_blocked_files(list(target_files))
+                    process_monitor.start()
+                else:
+                    process_monitor.stop()
+
+            time.sleep(1)
     except KeyboardInterrupt:
         remove_blocks()
         process_monitor.stop()
