@@ -139,7 +139,7 @@ def main():
         config_path = os.path.join(os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')), 'SimpleProductivityBlocker', 'config.json')
         
     process_monitor = ProcessMonitor()
-        custom_list_manager = CustomListManager()
+    custom_list_manager = CustomListManager()
     
     last_config_mtime = 0
     config_cache = {}
@@ -213,14 +213,14 @@ def main():
                 process_monitor.set_blocked_apps(list(set(all_apps)))
                 process_monitor.set_blocked_files(list(set(all_files)))
                 process_monitor.start()
-                            else:
+            else:
                 process_monitor.stop()
                 
             time.sleep(5)
     except KeyboardInterrupt:
         remove_blocks()
         process_monitor.stop()
-                print("Daemon stopped.")
+        print("Daemon stopped.")
 
 if __name__ == "__main__":
     if not is_admin():
