@@ -23,15 +23,6 @@ Simple Productivity Blocker is a free, open-source application that helps you ma
 
 * **Silent Persistence:** The background daemon installs as a silent background task, automatically launching at system logon with elevated privileges without prompts.
 
-## Architecture
-
-Simple Productivity Blocker utilizes a decoupled, two-part architecture to ensure stability, performance, and tamper resistance:
-
-1. **User Interface (spb):** Built with CustomTkinter, this application acts purely as a configuration editor. It reads and writes to a central `config.json` file. It does not enforce blocks directly.
-2. **Background Daemon (daemon):** A headless background process that constantly monitors the `config.json` file for changes using a 3-second debounce mechanism. When changes are detected, it recomputes the active blocking rules and applies them to the system. It handles writing to the system hosts file for website blocks and utilizes `psutil` and OS Shell integrations to actively terminate restricted applications, files, and folders.
-
-The daemon installs itself as a persistent background task (e.g., Windows Scheduled Task) that launches silently at system boot with elevated privileges. Sensitive content blocklists are XOR-encrypted within the compiled binaries to prevent trivial circumvention via source code inspection.
-
 ## Installation
 
 ### Windows
@@ -104,6 +95,15 @@ sudo python3 main.py
 ```
 
 Output is placed in `dist/spb/`. Zip that folder to distribute.
+
+## Architecture
+
+Simple Productivity Blocker utilizes a decoupled, two-part architecture to ensure stability, performance, and tamper resistance:
+
+1. **User Interface (spb):** Built with CustomTkinter, this application acts purely as a configuration editor. It reads and writes to a central `config.json` file. It does not enforce blocks directly.
+2. **Background Daemon (daemon):** A headless background process that constantly monitors the `config.json` file for changes using a 3-second debounce mechanism. When changes are detected, it recomputes the active blocking rules and applies them to the system. It handles writing to the system hosts file for website blocks and utilizes `psutil` and OS Shell integrations to actively terminate restricted applications, files, and folders.
+
+The daemon installs itself as a persistent background task (e.g., Windows Scheduled Task) that launches silently at system boot with elevated privileges. Sensitive content blocklists are XOR-encrypted within the compiled binaries to prevent trivial circumvention via source code inspection.
 
 ## Security Notes
 
