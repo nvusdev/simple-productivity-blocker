@@ -1,8 +1,10 @@
 import customtkinter as ctk
 import string
 import random
+import datetime
 import os
 import subprocess
+import psutil
 from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG
 import ctypes
 import sys
@@ -21,17 +23,22 @@ def is_admin():
         return os.geteuid() == 0
 
 class InputListFrame(ctk.CTkFrame):
-    def __init__(self, master, config_key, placeholder, validation_fn=None, info_tooltip=None, browse_mode=None, **kwargs):
+    def __init__(self, master, config_key, placeholder, validation_fn=None, info_tooltip=None, browse_mode=None, config_section=None, **kwargs):
         super().__init__(master, fg_color="#2b2b2b", corner_radius=10, **kwargs)
         
         self.config_key = config_key
         self.validation_fn = validation_fn
         self.browse_mode = browse_mode
+        self.config_section = config_section
         self.app = master.app
         self.group_name = master.group_name
         
         group_data = self.app.config_data["groups"][self.group_name]
-        self.items = group_data.get(config_key, [])
+        if self.config_section:
+            section = group_data.get(self.config_section, {})
+            self.items = section.get(config_key, [])
+        else:
+            self.items = group_data.get(config_key, [])
         
         self.input_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.input_frame.pack(fill="x", padx=10, pady=(10, 0))
@@ -72,8 +79,6 @@ class InputListFrame(ctk.CTkFrame):
                 
             filename = ctk.filedialog.askopenfilename(title="Select File", filetypes=filetypes)
         if filename:
-            if self.browse_mode == "app" and os.name == 'nt':
-                filename = os.path.basename(filename)
             self.entry.delete(0, "end")
             self.entry.insert(0, filename)
             self.add_item()
@@ -98,14 +103,22 @@ class InputListFrame(ctk.CTkFrame):
         self.feedback_lbl.configure(text="✅ Added successfully", text_color="green")
         self.after(2000, lambda: self.feedback_lbl.configure(text=""))
         
-        self.app.config_data["groups"][self.group_name][self.config_key] = self.items
+        if self.config_section:
+            section = self.app.config_data["groups"][self.group_name].setdefault(self.config_section, {})
+            section[self.config_key] = self.items
+        else:
+            self.app.config_data["groups"][self.group_name][self.config_key] = self.items
         self.app.trigger_save()
         self.add_item_ui(val)
 
     def remove_item(self, val):
         if val in self.items:
             self.items.remove(val)
-            self.app.config_data["groups"][self.group_name][self.config_key] = self.items
+            if self.config_section:
+                section = self.app.config_data["groups"][self.group_name].setdefault(self.config_section, {})
+                section[self.config_key] = self.items
+            else:
+                self.app.config_data["groups"][self.group_name][self.config_key] = self.items
             self.app.trigger_save()
             frame = self.item_frames.pop(val)
             frame.destroy()
@@ -184,13 +197,13 @@ class ContentFilterTab(ctk.CTkFrame):
             return True, ""
             
         self.app.group_name = self.group_name
-        self.exceptions_list = InputListFrame(container, "exceptions", "Enter domain to exclude (e.g. google.com)", validation_fn=validate_domain)
+        self.exceptions_list = InputListFrame(container, "exceptions", "Enter domain to exclude (e.g. google.com)", validation_fn=validate_domain, config_section="adblocker")
         self.exceptions_list.pack(fill="both", expand=True, padx=20, pady=5)
 
         lbl_custom = ctk.CTkLabel(container, text="Custom Lists (URLs or local .txt paths):", font=ctk.CTkFont(weight="bold"))
         lbl_custom.pack(anchor="w", padx=20, pady=(15, 0))
         
-        self.custom_lists = InputListFrame(container, "custom_lists", "Enter URL or absolute Path", browse_mode="file")
+        self.custom_lists = InputListFrame(container, "custom_lists", "Enter URL or absolute Path", browse_mode="file", config_section="adblocker")
         self.custom_lists.pack(fill="both", expand=True, padx=20, pady=5)
         
     def on_change(self, *args):
@@ -206,6 +219,7 @@ class ContentFilterTab(ctk.CTkFrame):
         ad_cfg["entertainment"] = self.entertainment_var.get()
         ad_cfg["shopping"] = self.shopping_var.get()
         ad_cfg["ai_tech"] = self.ai_var.get()
+        ad_cfg["exceptions"] = self.exceptions_list.items
         # Persist custom_lists into the adblocker block (daemon reads from here)
         ad_cfg["custom_lists"] = self.custom_lists.items
         self.app.config_data["groups"][self.group_name]["adblocker"] = ad_cfg
@@ -238,17 +252,31 @@ class ProductivityApp(ctk.CTk):
 
     def check_daemon(self):
         try:
-            if getattr(sys, 'frozen', False):
-                daemon_name = "daemon.exe" if os.name == 'nt' else "daemon"
-                cmd = f'tasklist /fi "imagename eq {daemon_name}" /v' if os.name == 'nt' else f'pgrep {daemon_name}'
-            else:
-                cmd = 'tasklist /fi "imagename eq python.exe" /v' if os.name == 'nt' else 'pgrep -f "python.*daemon.py"'
-            
-            output = subprocess.check_output(cmd, shell=True).decode()
-            if "daemon" not in output.lower() and not getattr(sys, 'frozen', False) or (getattr(sys, 'frozen', False) and not output.strip()):
+            if not self._daemon_running():
                 self.launch_daemon()
         except:
             self.launch_daemon()
+
+    def _daemon_running(self):
+        daemon_name = "daemon.exe" if os.name == 'nt' else "daemon"
+        daemon_name_lower = daemon_name.lower()
+        for proc in psutil.process_iter(['name', 'cmdline', 'exe']):
+            try:
+                name = (proc.info.get('name') or '').lower()
+                cmdline = proc.info.get('cmdline') or []
+                if getattr(sys, 'frozen', False):
+                    if name == daemon_name_lower:
+                        return True
+                    exe = (proc.info.get('exe') or '').lower()
+                    if exe.endswith(daemon_name_lower):
+                        return True
+                else:
+                    for arg in cmdline:
+                        if "daemon.py" in str(arg).lower():
+                            return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+        return False
 
     def launch_daemon(self):
         if getattr(sys, 'frozen', False):
@@ -345,8 +373,11 @@ class ProductivityApp(ctk.CTk):
             
         self.input_entry.bind("<Return>", on_enter)
         
-        btn = ctk.CTkButton(challenge_frame, text="Verify", command=lambda: self.verify_challenge(next_action))
-        btn.pack(pady=10)
+        btn_frame = ctk.CTkFrame(challenge_frame, fg_color="transparent")
+        btn_frame.pack(pady=10)
+
+        ctk.CTkButton(btn_frame, text="Back to Dashboard", fg_color="transparent", width=140, command=self.show_dashboard).pack(side="left", padx=6)
+        ctk.CTkButton(btn_frame, text="Verify", command=lambda: self.verify_challenge(next_action)).pack(side="left", padx=6)
         
     def verify_challenge(self, next_action):
         user_input = self.input_entry.get("1.0", "end-1c").strip()
@@ -371,10 +402,17 @@ class ProductivityApp(ctk.CTk):
         
         for name, data in self.config_data["groups"].items():
             self.create_group_card(name, data)
-            
-        add_btn = ctk.CTkButton(self.current_screen, text="+ Add New Group", command=self.add_new_group)
-        add_btn.pack(pady=10)
-        
+
+        actions_frame = ctk.CTkFrame(self.current_screen, fg_color="transparent")
+        actions_frame.pack(fill="x", padx=20, pady=10)
+        ctk.CTkButton(actions_frame, text="+ Add New Group", command=self.add_new_group).pack(side="left")
+
+        self.startup_var = ctk.BooleanVar(value=self._startup_task_exists())
+        self.startup_switch = ctk.CTkSwitch(actions_frame, text="Start on PC boot", variable=self.startup_var, command=self._on_startup_toggle)
+        if os.name != 'nt':
+            self.startup_switch.configure(state="disabled")
+        self.startup_switch.pack(side="left", padx=15)
+
         # --- Bottom Status Bar ---
         self.status_frame = ctk.CTkFrame(self.current_screen, height=30, fg_color="transparent")
         self.status_frame.pack(fill="x", side="bottom", padx=20, pady=10)
@@ -384,6 +422,101 @@ class ProductivityApp(ctk.CTk):
         
         self.timer_lbl = ctk.CTkLabel(self.status_frame, text="", text_color="green", font=ctk.CTkFont(size=12))
         self.timer_lbl.pack(side="left", padx=10)
+
+    def _center_dialog(self, dialog, width, height):
+        self.update_idletasks()
+        x = self.winfo_x() + max(0, (self.winfo_width() - width) // 2)
+        y = self.winfo_y() + max(0, (self.winfo_height() - height) // 2)
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _prompt_text_dialog(self, title, message, initial=""):
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(title)
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.lift()
+        self._center_dialog(dialog, 420, 180)
+
+        ctk.CTkLabel(dialog, text=message).pack(padx=20, pady=(20, 10))
+        entry = ctk.CTkEntry(dialog)
+        entry.pack(fill="x", padx=20)
+        if initial:
+            entry.insert(0, initial)
+        entry.focus_set()
+
+        result = {"value": None}
+
+        def on_ok():
+            value = entry.get().strip()
+            result["value"] = value if value else None
+            dialog.destroy()
+
+        def on_cancel():
+            dialog.destroy()
+
+        dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+        entry.bind("<Return>", lambda event: (on_ok(), "break"))
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=15)
+        ctk.CTkButton(btn_frame, text="Cancel", fg_color="transparent", command=on_cancel).pack(side="left", padx=6)
+        ctk.CTkButton(btn_frame, text="OK", command=on_ok).pack(side="left", padx=6)
+
+        dialog.wait_window()
+        return result["value"]
+
+    def _confirm_dialog(self, title, message):
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(title)
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.lift()
+        self._center_dialog(dialog, 420, 170)
+
+        ctk.CTkLabel(dialog, text=message).pack(padx=20, pady=(25, 10))
+
+        result = {"value": False}
+
+        def on_yes():
+            result["value"] = True
+            dialog.destroy()
+
+        def on_no():
+            dialog.destroy()
+
+        dialog.protocol("WM_DELETE_WINDOW", on_no)
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=15)
+        ctk.CTkButton(btn_frame, text="Cancel", fg_color="transparent", command=on_no).pack(side="left", padx=6)
+        ctk.CTkButton(btn_frame, text="Delete", fg_color="#8b0000", hover_color="#5a0000", command=on_yes).pack(side="left", padx=6)
+
+        dialog.wait_window()
+        return result["value"]
+
+    def _info_dialog(self, title, message):
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(title)
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.lift()
+        self._center_dialog(dialog, 420, 160)
+
+        ctk.CTkLabel(dialog, text=message).pack(padx=20, pady=(25, 10))
+
+        def on_ok():
+            dialog.destroy()
+
+        dialog.protocol("WM_DELETE_WINDOW", on_ok)
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=15)
+        ctk.CTkButton(btn_frame, text="OK", command=on_ok).pack(side="left", padx=6)
+
+        dialog.wait_window()
 
     def save_security(self, *args):
         self.config_data["groups"][self.group_name]["security"] = {
@@ -403,17 +536,18 @@ class ProductivityApp(ctk.CTk):
         
         btn_frame = ctk.CTkFrame(header, fg_color="transparent")
         btn_frame.pack(side="right")
-        
-        ctk.CTkButton(btn_frame, text="Rename", width=60, fg_color="#4a4a4a", hover_color="#3a3a3a", 
-                      command=lambda n=name: self.rename_group(n)).pack(side="left", padx=5)
-        ctk.CTkButton(btn_frame, text="Edit", width=60, command=lambda n=name: self.on_edit_click(n)).pack(side="left")
+
+        ctk.CTkButton(btn_frame, text="Delete", width=60, fg_color="#8b0000", hover_color="#5a0000",
+                  command=lambda n=name: self.delete_group(n)).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Rename", width=60, fg_color="#4a4a4a", hover_color="#3a3a3a",
+                  command=lambda n=name: self.rename_group(n)).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Edit", width=60, command=lambda n=name: self.on_edit_click(n)).pack(side="left", padx=5)
         
         stats = f"Websites: {len(data.get('websites', []))} | Apps: {len(data.get('apps', []))} | Files: {len(data.get('files', []))} | Content Filter: {'On' if data.get('adblocker', {}).get('enabled') else 'Off'}"
         ctk.CTkLabel(card, text=stats, text_color="gray").pack(anchor="w", padx=10, pady=(0, 5))
 
     def add_new_group(self):
-        dialog = ctk.CTkInputDialog(text="Enter new group name:", title="New Group")
-        name = dialog.get_input()
+        name = self._prompt_text_dialog("New Group", "Enter new group name:")
         if name and name not in self.config_data["groups"]:
             import copy
             self.config_data["groups"][name] = copy.deepcopy(DEFAULT_GROUP_CONFIG)
@@ -421,12 +555,66 @@ class ProductivityApp(ctk.CTk):
             self.show_dashboard()
 
     def rename_group(self, old_name):
-        dialog = ctk.CTkInputDialog(text=f"Enter new name for '{old_name}':", title="Rename Group")
-        new_name = dialog.get_input()
+        new_name = self._prompt_text_dialog("Rename Group", f"Enter new name for '{old_name}':", initial=old_name)
         if new_name and new_name != old_name and new_name not in self.config_data["groups"]:
             self.config_data["groups"][new_name] = self.config_data["groups"].pop(old_name)
             self.trigger_save()
             self.show_dashboard()
+
+    def delete_group(self, group_name):
+        if len(self.config_data["groups"]) <= 1:
+            self._info_dialog("Cannot Delete", "At least one group must remain.")
+            return
+        if not self._confirm_dialog("Delete Group", f"Delete '{group_name}'? This cannot be undone."):
+            return
+        if group_name in self.config_data["groups"]:
+            del self.config_data["groups"][group_name]
+            self.trigger_save()
+            self.show_dashboard()
+
+    def _run_schtasks(self, args):
+        kwargs = {"capture_output": True, "text": True}
+        if os.name == 'nt':
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        return subprocess.run(args, **kwargs)
+
+    def _startup_task_exists(self):
+        if os.name != 'nt':
+            return False
+        result = self._run_schtasks(["schtasks", "/query", "/tn", "SPB_Daemon"])
+        return result.returncode == 0
+
+    def _startup_task_command(self):
+        if getattr(sys, 'frozen', False):
+            daemon_path = os.path.join(os.path.dirname(sys.executable), "daemon.exe" if os.name == 'nt' else "daemon")
+            return f'"{daemon_path}"'
+        daemon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daemon.py")
+        return f'"{sys.executable}" "{daemon_path}"'
+
+    def _on_startup_toggle(self):
+        if os.name != 'nt':
+            return
+        enabled = self.startup_var.get()
+        if enabled:
+            cmd = self._startup_task_command()
+            result = self._run_schtasks(["schtasks", "/create", "/tn", "SPB_Daemon", "/tr", cmd,
+                                         "/sc", "onlogon", "/rl", "highest", "/f"])
+            if result.returncode == 0:
+                if hasattr(self, 'status_lbl') and self.status_lbl.winfo_exists():
+                    self.status_lbl.configure(text="Startup enabled", text_color="green")
+            else:
+                if hasattr(self, 'status_lbl') and self.status_lbl.winfo_exists():
+                    self.status_lbl.configure(text="Failed to enable startup", text_color="red")
+        else:
+            result = self._run_schtasks(["schtasks", "/delete", "/tn", "SPB_Daemon", "/f"])
+            if result.returncode == 0:
+                if hasattr(self, 'status_lbl') and self.status_lbl.winfo_exists():
+                    self.status_lbl.configure(text="Startup disabled", text_color="gray")
+            else:
+                if hasattr(self, 'status_lbl') and self.status_lbl.winfo_exists():
+                    self.status_lbl.configure(text="Failed to disable startup", text_color="red")
+
+        self.startup_var.set(self._startup_task_exists())
 
     def on_edit_click(self, group_name):
         self.group_name = group_name
@@ -492,7 +680,7 @@ class ProductivityApp(ctk.CTk):
             return True, ""
             
         def validate_app(val):
-            if not val.endswith(".exe"): return False, "App must end with .exe"
+            if not val.lower().endswith(".exe"): return False, "App must end with .exe"
             return True, ""
             
         def check_proxy_installed():
@@ -527,6 +715,13 @@ class ProductivityApp(ctk.CTk):
         self.content_ui.pack(fill="both", expand=True)
 
         self.build_schedule_ui()
+
+    def _is_valid_time(self, value):
+        try:
+            datetime.datetime.strptime(value, "%H:%M")
+            return True
+        except ValueError:
+            return False
         
     def build_schedule_ui(self):
         schedule = self.config_data["groups"][self.group_name].get("schedule", {})
@@ -591,11 +786,18 @@ class ProductivityApp(ctk.CTk):
             self.days_vars[day] = var
 
     def save_schedule(self, *args):
+        start_val = self.start_entry.get().strip()
+        end_val = self.end_entry.get().strip()
+        if not self._is_valid_time(start_val) or not self._is_valid_time(end_val):
+            if hasattr(self, 'status_lbl') and self.status_lbl.winfo_exists():
+                self.status_lbl.configure(text="Invalid time format. Use HH:MM", text_color="red")
+            return
+
         self.config_data["groups"][self.group_name]["schedule"] = {
             "enabled": self.sch_enabled.get() == 1,
             "persist_all_day": self.sch_persist.get() == 1,
-            "start_time": self.start_entry.get(),
-            "end_time": self.end_entry.get(),
+            "start_time": start_val,
+            "end_time": end_val,
             "days": [day for day, var in self.days_vars.items() if var.get()]
         }
         self.trigger_save()
