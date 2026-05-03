@@ -437,7 +437,8 @@ class ProductivityApp(ctk.CTk):
         dialog = ctk.CTkInputDialog(text="Enter new group name:", title="New Group")
         name = dialog.get_input()
         if name and name not in self.config_data["groups"]:
-            self.config_data["groups"][name] = DEFAULT_GROUP_CONFIG.copy()
+            import copy
+            self.config_data["groups"][name] = copy.deepcopy(DEFAULT_GROUP_CONFIG)
             self.trigger_save()
             self.show_dashboard()
 

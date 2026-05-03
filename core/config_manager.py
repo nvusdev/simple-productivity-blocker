@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+import copy
 
 def get_config_dir():
     if os.name == 'nt':
@@ -48,22 +49,22 @@ DEFAULT_CONFIG = {
         "enabled": False
     },
     "groups": {
-        "Default Profile": DEFAULT_GROUP_CONFIG.copy()
+        "Default Profile": copy.deepcopy(DEFAULT_GROUP_CONFIG)
     }
 }
 
 def load_config():
     with _lock:
         if not os.path.exists(CONFIG_FILE):
-            return DEFAULT_CONFIG.copy()
+            return copy.deepcopy(DEFAULT_CONFIG)
         try:
             with open(CONFIG_FILE, 'r') as f:
                 data = json.load(f)
                 
                 # Migrate old config if it exists
                 if "groups" not in data:
-                    migrated = DEFAULT_CONFIG.copy()
-                    group_data = DEFAULT_GROUP_CONFIG.copy()
+                    migrated = copy.deepcopy(DEFAULT_CONFIG)
+                    group_data = copy.deepcopy(DEFAULT_GROUP_CONFIG)
                     group_data["websites"] = data.get("websites", [])
                     group_data["apps"] = data.get("apps", [])
                     group_data["files"] = data.get("files", [])
@@ -78,10 +79,10 @@ def load_config():
                 for group_name, group_data in data["groups"].items():
                     for k, v in DEFAULT_GROUP_CONFIG.items():
                         if k not in group_data:
-                            group_data[k] = v
+                            group_data[k] = copy.deepcopy(v)
                 return data
         except Exception:
-            return DEFAULT_CONFIG.copy()
+            return copy.deepcopy(DEFAULT_CONFIG)
 
 def save_config(config):
     with _lock:
