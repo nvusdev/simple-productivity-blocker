@@ -25,5 +25,12 @@ python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="icon.i
 # Move installer to the package directory
 Copy-Item "dist\spb_installer.exe" -Destination "dist\spb\"
 
+# Build the uninstaller
+Write-Host "Building spb_uninstaller.exe..."
+python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="icon.ico" --name "spb_uninstaller" spb_uninstaller.py
+
+# Move uninstaller to the package directory
+Copy-Item "dist\spb_uninstaller.exe" -Destination "dist\spb\"
+
 Write-Host "Build complete! Your deployable package is in dist\spb"
 Write-Host "Zip the 'dist\spb' folder to distribute it to users."

@@ -17,6 +17,7 @@ DEFAULT_GROUP_CONFIG = {
     "websites": [],
     "apps": [],
     "files": [],
+    "folders": [],
     "adblocker": {
         "enabled": False,
         "persist_all_day": False,
@@ -66,6 +67,7 @@ def load_config():
                     group_data["websites"] = data.get("websites", [])
                     group_data["apps"] = data.get("apps", [])
                     group_data["files"] = data.get("files", [])
+                    group_data["folders"] = data.get("folders", [])
                     group_data["adblocker"] = data.get("adblocker", DEFAULT_GROUP_CONFIG["adblocker"])
                     group_data["schedule"] = data.get("schedule", DEFAULT_GROUP_CONFIG["schedule"])
                     migrated["groups"]["Default Profile"] = group_data

@@ -18,5 +18,12 @@ pyinstaller --noconfirm --onedir --console --name "daemon" daemon.py
 # Copy daemon into main app directory
 cp dist/daemon/daemon dist/spb/
 
+# Build the uninstaller
+echo "Building spb_uninstaller..."
+pyinstaller --noconfirm --onefile --console --name "spb_uninstaller" spb_uninstaller.py
+
+# Copy uninstaller into main app directory
+cp dist/spb_uninstaller dist/spb/
+
 echo "Build complete! Your deployable package is in dist/spb"
 echo "Distribute the 'dist/spb' folder. Users can run 'install.sh' to install it."

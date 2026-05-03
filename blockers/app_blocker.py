@@ -7,6 +7,7 @@ class ProcessMonitor:
     def __init__(self):
         self.blocked_apps = []
         self.blocked_files = []
+        self.blocked_folders = []
         self.is_active = False
         self._watcher_thread = None
         self._stop_event = threading.Event()
@@ -17,6 +18,9 @@ class ProcessMonitor:
     def set_blocked_files(self, files):
         # We store exact paths or basenames lowercased
         self.blocked_files = [f.lower().strip() for f in files]
+
+    def set_blocked_folders(self, folders):
+        self.blocked_folders = [f.lower().strip() for f in folders]
 
     def start(self):
         if self.is_active:
@@ -57,19 +61,33 @@ class ProcessMonitor:
                             if exe_lower in self.blocked_apps:
                                 should_kill = True
 
-                        # 2. Check File Paths in CmdLine
-                        if not should_kill and cmdline and self.blocked_files:
+                        # 2. Check Folders in Exe Path
+                        if exe and not should_kill and self.blocked_folders:
+                            exe_lower = exe.lower()
+                            for bf in self.blocked_folders:
+                                if exe_lower.startswith(bf):
+                                    should_kill = True
+                                    break
+
+                        # 3. Check File/Folder Paths in CmdLine
+                        if not should_kill and cmdline and (self.blocked_files or self.blocked_folders):
                             cmdline_str = " ".join([str(arg).lower() for arg in cmdline])
-                            for blocked_file in self.blocked_files:
-                                # Check absolute path
-                                if blocked_file in cmdline_str:
-                                    should_kill = True
-                                    break
-                                # Check basename just in case
-                                basename = os.path.basename(blocked_file)
-                                if basename and basename in cmdline_str:
-                                    should_kill = True
-                                    break
+                            
+                            if self.blocked_files:
+                                for blocked_file in self.blocked_files:
+                                    if blocked_file in cmdline_str:
+                                        should_kill = True
+                                        break
+                                    basename = os.path.basename(blocked_file)
+                                    if basename and basename in cmdline_str:
+                                        should_kill = True
+                                        break
+                                        
+                            if not should_kill and self.blocked_folders:
+                                for bf in self.blocked_folders:
+                                    if bf in cmdline_str:
+                                        should_kill = True
+                                        break
 
                         if should_kill:
                             proc.kill()

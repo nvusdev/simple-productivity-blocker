@@ -46,6 +46,9 @@ def apply_blocks(websites, block_doh=True):
         # Clean existing blocks
         new_lines = [line for line in lines if not line.strip().endswith(" # SPB")]
         
+        if new_lines and not new_lines[-1].endswith('\n'):
+            new_lines[-1] += '\n'
+        
         # Add new blocks
         domains_to_block = list(websites)
         if block_doh:

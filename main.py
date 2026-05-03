@@ -61,13 +61,16 @@ class InputListFrame(ctk.CTkFrame):
         self.render_list()
 
     def browse_file(self):
-        filetypes = []
-        if self.browse_mode == "app":
-            filetypes = [("Executables", "*.exe")] if os.name == 'nt' else [("All Files", "*.*")]
-        elif self.browse_mode == "file":
-            filetypes = [("All Files", "*.*")]
-            
-        filename = ctk.filedialog.askopenfilename(title="Select File", filetypes=filetypes)
+        if self.browse_mode == "folder":
+            filename = ctk.filedialog.askdirectory(title="Select Folder")
+        else:
+            filetypes = []
+            if self.browse_mode == "app":
+                filetypes = [("Executables", "*.exe")] if os.name == 'nt' else [("All Files", "*.*")]
+            elif self.browse_mode == "file":
+                filetypes = [("All Files", "*.*")]
+                
+            filename = ctk.filedialog.askopenfilename(title="Select File", filetypes=filetypes)
         if filename:
             if self.browse_mode == "app" and os.name == 'nt':
                 filename = os.path.basename(filename)
@@ -225,6 +228,7 @@ class ProductivityApp(ctk.CTk):
         
         self.config_data = load_config()
         self.save_job = None
+        self.countdown_job = None
         self.current_screen = None
         self.group_name = None
         
@@ -281,15 +285,29 @@ class ProductivityApp(ctk.CTk):
         
     def _do_save(self):
         save_config(self.config_data)
-        self.hide_saving()
+        self.start_countdown(3.00)
+        
+    def start_countdown(self, remaining):
+        if self.countdown_job:
+            self.after_cancel(self.countdown_job)
+        if remaining <= 0:
+            self.hide_saving()
+        else:
+            if hasattr(self, 'timer_lbl') and self.timer_lbl.winfo_exists():
+                self.timer_lbl.configure(text=f"{remaining:.2f}s left until applied...", text_color="orange")
+            self.countdown_job = self.after(50, self.start_countdown, remaining - 0.05)
         
     def show_saving(self):
         if hasattr(self, 'status_lbl') and self.status_lbl.winfo_exists():
             self.status_lbl.configure(text="Saving... ⏳", text_color="#1f538d")
+        if hasattr(self, 'timer_lbl') and self.timer_lbl.winfo_exists():
+            self.timer_lbl.configure(text="")
         
     def hide_saving(self):
         if hasattr(self, 'status_lbl') and self.status_lbl.winfo_exists():
             self.status_lbl.configure(text="All changes saved ✅", text_color="green")
+        if hasattr(self, 'timer_lbl') and self.timer_lbl.winfo_exists():
+            self.timer_lbl.configure(text="Applied!", text_color="green")
 
     def clear_screen(self):
         if self.current_screen:
@@ -363,6 +381,9 @@ class ProductivityApp(ctk.CTk):
         
         self.status_lbl = ctk.CTkLabel(bottom_bar, text="Ready", text_color="gray")
         self.status_lbl.pack(side="left")
+        
+        self.timer_lbl = ctk.CTkLabel(bottom_bar, text="", text_color="green", font=ctk.CTkFont(size=12))
+        self.timer_lbl.pack(side="left", padx=10)
         
         sec_frame = ctk.CTkFrame(bottom_bar, fg_color="transparent")
         sec_frame.pack(side="right")
@@ -444,13 +465,17 @@ class ProductivityApp(ctk.CTk):
         self.tab_websites = self.tabview.add("Websites")
         self.tab_apps = self.tabview.add("Apps")
         self.tab_files = self.tabview.add("Files")
+        self.tab_folders = self.tabview.add("Folders")
         self.tab_content = self.tabview.add("Content Filter")
         self.tab_schedule = self.tabview.add("Schedule")
         
         self.status_frame = ctk.CTkFrame(self.current_screen, height=30, fg_color="transparent")
         self.status_frame.pack(fill="x", padx=10, pady=5)
         self.status_lbl = ctk.CTkLabel(self.status_frame, text="Ready", text_color="gray", font=ctk.CTkFont(size=14))
-        self.status_lbl.pack(side="right", padx=10)
+        self.status_lbl.pack(side="left", padx=10)
+        
+        self.timer_lbl = ctk.CTkLabel(self.status_frame, text="", text_color="green", font=ctk.CTkFont(size=12))
+        self.timer_lbl.pack(side="left", padx=10)
         
         def validate_website(val):
             if "http" in val: return False, "Do not include http:// or https://"
@@ -482,6 +507,11 @@ class ProductivityApp(ctk.CTk):
         self.tab_files.group_name = group_name
         self.list_files = InputListFrame(self.tab_files, "files", "Enter absolute file path (e.g. C:\\Docs\\secret.txt)", browse_mode="file")
         self.list_files.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        self.tab_folders.app = self
+        self.tab_folders.group_name = group_name
+        self.list_folders = InputListFrame(self.tab_folders, "folders", "Enter absolute folder path (e.g. C:\\Games)", browse_mode="folder")
+        self.list_folders.pack(fill="both", expand=True, padx=10, pady=10)
         
         self.content_ui = ContentFilterTab(self.tab_content, self, group_name)
         self.content_ui.pack(fill="both", expand=True)

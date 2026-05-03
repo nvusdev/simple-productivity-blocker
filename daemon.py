@@ -92,10 +92,13 @@ ADBLOCK_LISTS = {
         "muscdn.com",
         # Reddit
         "reddit.com", "redd.it", "redditmedia.com", "redditstatic.com",
-        "reddituploads.com",
+        "reddituploads.com", "v.redd.it", "i.redd.it", "preview.redd.it",
         # Discord
         "discord.com", "discord.gg", "discordapp.com", "discordapp.net",
-        "discordcdn.com",
+        "discordcdn.com", "media.discordapp.net", "cdn.discordapp.com",
+        # YouTube & Google Video
+        "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com",
+        "youtubei.googleapis.com", "ytimg.l.google.com",
         # LinkedIn
         "linkedin.com", "licdn.com",
         # Snapchat
@@ -245,6 +248,7 @@ def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, se
     tier2: list[str] = []      # content filter — exceptions apply
     all_apps:  list[str] = []
     all_files: list[str] = []
+    all_folders: list[str] = []
     schedule_anywhere = False
 
     for _, gdata in config.get("groups", {}).items():
@@ -259,6 +263,7 @@ def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, se
             tier1.extend(gdata.get("websites", []))
             all_apps.extend(gdata.get("apps", []))
             all_files.extend(gdata.get("files", []))
+            all_folders.extend(gdata.get("folders", []))
 
         # Tier 2 — content filter
         adblocker_active = ad_on and (ad_persist or sched_active)
@@ -291,7 +296,7 @@ def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, se
         if _base(d) not in t1_bases:
             merged.append(d)
 
-    return set(merged), set(all_apps), set(all_files), schedule_anywhere
+    return set(merged), set(all_apps), set(all_files), set(all_folders), schedule_anywhere
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +331,7 @@ def main() -> None:
     cur_domains: set = set()
     cur_apps:    set = set()
     cur_files:   set = set()
+    cur_folders: set = set()
 
     cfg_cache:      dict = {}
     pending_mtime:  float = 0.0
@@ -353,7 +359,7 @@ def main() -> None:
                 cfg_cache = load_config()
 
             # 2 — Compute desired state
-            want_domains, want_apps, want_files, sched_anywhere = _compute_targets(cfg_cache, clm)
+            want_domains, want_apps, want_files, want_folders, sched_anywhere = _compute_targets(cfg_cache, clm)
 
             # 3 — Apply only on diff (avoid hammering the hosts file)
             if want_domains != cur_domains:
@@ -363,12 +369,14 @@ def main() -> None:
                     remove_blocks()
                 cur_domains = want_domains
 
-            if want_apps != cur_apps or want_files != cur_files:
+            if want_apps != cur_apps or want_files != cur_files or want_folders != cur_folders:
                 cur_apps  = want_apps
                 cur_files = want_files
-                if cur_apps or cur_files:
+                cur_folders = want_folders
+                if cur_apps or cur_files or cur_folders:
                     pm.set_blocked_apps(list(cur_apps))
                     pm.set_blocked_files(list(cur_files))
+                    pm.set_blocked_folders(list(cur_folders))
                     pm.start()
                 else:
                     pm.stop()

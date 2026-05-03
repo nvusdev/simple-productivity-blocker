@@ -20,6 +20,13 @@ def kill_processes():
         pass
     time.sleep(2)
 
+def remove_scheduled_task():
+    print("Removing Scheduled Task...")
+    try:
+        subprocess.run(['schtasks', '/delete', '/tn', 'SPB_Daemon', '/f'], capture_output=True)
+    except:
+        pass
+
 def restore_hosts():
     print("Restoring hosts file...")
     hosts_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'drivers', 'etc', 'hosts')
@@ -77,6 +84,7 @@ def main():
         sys.exit(0)
         
     kill_processes()
+    remove_scheduled_task()
     restore_hosts()
     remove_files()
     

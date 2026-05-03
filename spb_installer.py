@@ -66,6 +66,13 @@ def main():
             shutil.copytree(internal_src, internal_dest)
         
         print("Files copied successfully.")
+        
+        print("\nCreating Scheduled Task for persistent background protection...")
+        import subprocess
+        daemon_dest = os.path.join(dest_dir, "daemon.exe")
+        subprocess.run(['schtasks', '/create', '/tn', 'SPB_Daemon', '/tr', f'"{daemon_dest}"', '/sc', 'onlogon', '/rl', 'highest', '/f'], capture_output=True)
+        subprocess.run(['schtasks', '/run', '/tn', 'SPB_Daemon'], capture_output=True)
+        
     except Exception as e:
         print(f"Error copying files: {e}")
         input("Press Enter to exit...")
