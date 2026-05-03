@@ -2,6 +2,9 @@ import psutil
 import threading
 import time
 import os
+import pythoncom
+import win32com.client
+import urllib.parse
 
 class ProcessMonitor:
     def __init__(self):
@@ -37,8 +40,30 @@ class ProcessMonitor:
             self._watcher_thread.join(timeout=2)
 
     def _watch_processes(self):
+        shell = None
+        try:
+            pythoncom.CoInitialize()
+            shell = win32com.client.Dispatch("Shell.Application")
+        except:
+            pass
+            
         while not self._stop_event.is_set():
-            if self.blocked_apps or self.blocked_files:
+            if self.blocked_folders and shell:
+                try:
+                    for window in shell.Windows():
+                        url = window.LocationURL
+                        if url.startswith("file:///"):
+                            path = urllib.parse.unquote(url[8:])
+                            path = path.replace('/', '\\')
+                            path_norm = os.path.normcase(os.path.abspath(path))
+                            for bf in self.blocked_folders:
+                                if path_norm.startswith(bf):
+                                    window.Quit()
+                                    break
+                except Exception:
+                    pass
+
+            if self.blocked_apps or self.blocked_files or self.blocked_folders:
                 for proc in psutil.process_iter(['name', 'pid', 'exe', 'cmdline']):
                     try:
                         name = proc.info.get('name')

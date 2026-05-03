@@ -98,9 +98,6 @@ ADBLOCK_LISTS = {
         # Discord
         "discord.com", "discord.gg", "discordapp.com", "discordapp.net",
         "discordcdn.com", "media.discordapp.net", "cdn.discordapp.com",
-        # YouTube & Google Video
-        "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com",
-        "youtubei.googleapis.com", "ytimg.l.google.com",
         # LinkedIn
         "linkedin.com", "licdn.com",
         # Snapchat
@@ -128,6 +125,9 @@ ADBLOCK_LISTS = {
         # Music streaming
         "spotify.com", "soundcloud.com", "pandora.com", "tidal.com",
         "deezer.com", "music.apple.com",
+        # YouTube & Google Video
+        "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com",
+        "youtubei.googleapis.com", "ytimg.l.google.com",
         # Anime streaming (free legal)
         "9anime.to", "zoro.to", "aniwave.to", "aniwatch.to",
     ],

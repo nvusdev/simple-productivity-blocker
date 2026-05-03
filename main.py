@@ -307,7 +307,7 @@ class ProductivityApp(ctk.CTk):
         if hasattr(self, 'status_lbl') and self.status_lbl.winfo_exists():
             self.status_lbl.configure(text="All changes saved ✅", text_color="green")
         if hasattr(self, 'timer_lbl') and self.timer_lbl.winfo_exists():
-            self.timer_lbl.configure(text="Applied!", text_color="green")
+            self.timer_lbl.configure(text="")
 
     def clear_screen(self):
         if self.current_screen:
