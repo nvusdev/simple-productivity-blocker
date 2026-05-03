@@ -364,7 +364,11 @@ def main() -> None:
 
     POLL_INTERVALS = {"Passive": 5, "Balanced": 2, "Strict": 1}
 
-    print("Daemon started.")
+    def _notif(key, default=True):
+        return cfg_cache.get("settings", {}).get("notifications", {}).get(key, default)
+
+    if _notif("on_daemon_start"):
+        print("Daemon started.")
 
     try:
         while True:
@@ -387,6 +391,8 @@ def main() -> None:
             if debounce == 3 and stable_mtime != mtime:
                 stable_mtime = mtime
                 cfg_cache = load_config()
+                if _notif("on_config_reload", False):
+                    print("Config reloaded.")
 
             # 2 — Compute desired state
             want_domains, want_apps, want_files, want_folders, sched_anywhere = _compute_targets(cfg_cache, clm)
@@ -395,8 +401,12 @@ def main() -> None:
             if want_domains != cur_domains:
                 if want_domains:
                     apply_blocks(list(want_domains), block_doh=sched_anywhere)
+                    if _notif("on_hosts_write", False):
+                        print(f"Hosts file updated: {len(want_domains)} domain(s) blocked.")
                 else:
                     remove_blocks()
+                    if _notif("on_hosts_write", False):
+                        print("Hosts file cleared.")
                 cur_domains = want_domains
 
             if want_apps != cur_apps or want_files != cur_files or want_folders != cur_folders:

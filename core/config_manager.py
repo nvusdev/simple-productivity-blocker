@@ -51,20 +51,70 @@ DEFAULT_SETTINGS = {
     "performance_mode": "Balanced",
     "cloud_allowlist_enabled": True,
     "cloud_allowlist": [
+        # Cloud sync
         "OneDrive.exe",
+        "OneDriveStandaloneUpdater.exe",
         "GoogleDriveFS.exe",
         "GoogleDriveSync.exe",
         "GoogleDrive.exe",
+        "BackupAndSync.exe",
+        "Dropbox.exe",
+        "DropboxUpdate.exe",
+        "iCloudDrive.exe",
+        "iCloudServices.exe",
+        "MegaSync.exe",
+        "SynologyDrive.exe",
+        "pCloud Drive.exe",
+        "Nextcloud.exe",
+        # Windows shell and critical system processes
+        "explorer.exe",
+        "taskmgr.exe",
+        "svchost.exe",
+        "lsass.exe",
+        "winlogon.exe",
+        "dwm.exe",
+        "csrss.exe",
+        # Security and antivirus
+        "MsMpEng.exe",
+        "SecurityHealthService.exe",
+        "MpCmdRun.exe",
+        # Common productivity tools (not to be blocked by accident)
+        "python.exe",
+        "pythonw.exe",
+        "spb.exe",
+        "daemon.exe",
     ],
     "cloud_path_keywords": [
         "onedrive",
         "google drive",
         "googledrive",
+        "dropbox",
+        "icloud",
+        "mega",
+        "synology drive",
+        "pcloud",
+        "nextcloud",
+        "backup and sync",
+        "appdata\\roaming",
+        "appdata\\local",
+        "programdata",
+        "windows\\system32",
     ],
     "notifications": {
-        "on_block": True,
-        "on_schedule": True,
-        "on_daemon_start": True,
+        # Block events
+        "on_block":              True,
+        "on_block_attempt":      True,
+        "on_exception_bypass":   False,
+        # Schedule events
+        "on_schedule":           True,
+        "on_schedule_window_miss": True,
+        # Daemon events
+        "on_daemon_start":       True,
+        "on_config_reload":      False,
+        "on_hosts_write":        False,
+        # Security events
+        "on_challenge_fail":     True,
+        "on_challenge_pass":     False,
     },
 }
 

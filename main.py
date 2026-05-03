@@ -403,24 +403,27 @@ class ProductivityApp(ctk.CTk):
                       fg_color="transparent", hover_color="#3a3a3a", width=100).pack(side="right")
         
         self.groups_scroll = ctk.CTkScrollableFrame(self.current_screen)
-        self.groups_scroll.pack(fill="both", expand=True, padx=20, pady=10)
+        self.groups_scroll.pack(fill="both", expand=True, padx=20, pady=(10, 0))
         
         for name, data in self.config_data["groups"].items():
             self.create_group_card(name, data)
 
-        actions_frame = ctk.CTkFrame(self.current_screen, fg_color="transparent")
-        actions_frame.pack(fill="x", padx=20, pady=10)
-        ctk.CTkButton(actions_frame, text="+ Add New Group", command=self.add_new_group).pack(side="left")
-
         # --- Bottom Status Bar ---
-        self.status_frame = ctk.CTkFrame(self.current_screen, height=30, fg_color="transparent")
+        self.status_frame = ctk.CTkFrame(self.current_screen, height=44, fg_color="transparent")
         self.status_frame.pack(fill="x", side="bottom", padx=20, pady=10)
+        self.status_frame.pack_propagate(False)
         
         self.status_lbl = ctk.CTkLabel(self.status_frame, text="Ready", text_color="gray", font=ctk.CTkFont(size=14))
-        self.status_lbl.pack(side="left")
+        self.status_lbl.pack(side="left", anchor="center")
         
         self.timer_lbl = ctk.CTkLabel(self.status_frame, text="", text_color="green", font=ctk.CTkFont(size=12))
-        self.timer_lbl.pack(side="left", padx=10)
+        self.timer_lbl.pack(side="left", padx=10, anchor="center")
+
+        # Center frame absorbs remaining space so the button sits at true center
+        center_frame = ctk.CTkFrame(self.status_frame, fg_color="transparent")
+        center_frame.pack(side="left", fill="both", expand=True)
+        ctk.CTkButton(center_frame, text="+ Add New Group", command=self.add_new_group
+                      ).place(relx=0.5, rely=0.5, anchor="center")
 
     def _center_dialog(self, dialog, width, height):
         self.update_idletasks()
@@ -629,13 +632,14 @@ class ProductivityApp(ctk.CTk):
         self.current_screen = ctk.CTkFrame(self)
         self.current_screen.pack(fill="both", expand=True)
         
-        top_bar = ctk.CTkFrame(self.current_screen, fg_color="transparent")
+        top_bar = ctk.CTkFrame(self.current_screen, fg_color="transparent", height=45)
         top_bar.pack(fill="x", padx=20, pady=10)
-        ctk.CTkButton(top_bar, text="Back to Dashboard", command=self.show_dashboard, fg_color="transparent", width=120).pack(side="left")
-        ctk.CTkLabel(top_bar, text=f"Editing: {group_name}", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=20)
+        top_bar.pack_propagate(False)
+        ctk.CTkButton(top_bar, text="Back to Dashboard", command=self.show_dashboard, fg_color="transparent", width=120, height=32).pack(side="left", anchor="center")
+        ctk.CTkLabel(top_bar, text=f"Editing: {group_name}", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=20, anchor="center")
         
         self.tabview = ctk.CTkTabview(self.current_screen)
-        self.tabview.pack(fill="both", expand=True, padx=10, pady=(5, 0))
+        self.tabview.pack(fill="both", expand=True, padx=20, pady=(5, 0))
         
         self.tab_websites = self.tabview.add("Websites")
         self.tab_apps = self.tabview.add("Apps")
@@ -644,35 +648,39 @@ class ProductivityApp(ctk.CTk):
         self.tab_content = self.tabview.add("Content Filter")
         self.tab_schedule = self.tabview.add("Schedule")
         
-        self.status_frame = ctk.CTkFrame(self.current_screen, height=30, fg_color="transparent")
+        self.status_frame = ctk.CTkFrame(self.current_screen, height=60, fg_color="transparent")
         self.status_frame.pack(fill="x", padx=20, pady=10)
+        self.status_frame.pack_propagate(False)
         
         self.status_lbl = ctk.CTkLabel(self.status_frame, text="Ready", text_color="gray", font=ctk.CTkFont(size=14))
-        self.status_lbl.pack(side="left")
+        self.status_lbl.pack(side="left", anchor="center")
         
         self.timer_lbl = ctk.CTkLabel(self.status_frame, text="", text_color="green", font=ctk.CTkFont(size=12))
-        self.timer_lbl.pack(side="left", padx=10)
+        self.timer_lbl.pack(side="left", padx=10, anchor="center")
         
+        # Security controls: right-aligned, vertically centered within the bar
         sec_frame = ctk.CTkFrame(self.status_frame, fg_color="transparent")
-        sec_frame.pack(side="right")
+        sec_frame.pack(side="right", fill="y")
         
-        info_lbl = ctk.CTkLabel(sec_frame, text="(Higher lengths are more secure but harder to type)", text_color="gray", font=ctk.CTkFont(size=11))
-        info_lbl.pack(side="bottom", anchor="e", pady=(0, 5))
-        
-        controls_frame = ctk.CTkFrame(sec_frame, fg_color="transparent")
-        controls_frame.pack(side="top")
-
-        ctk.CTkLabel(controls_frame, text="Challenge Length:").pack(side="left", padx=(0, 5))
+        # Inner wrapper placed at vertical center of sec_frame
+        inner = ctk.CTkFrame(sec_frame, fg_color="transparent")
+        inner.place(relx=1.0, rely=0.5, anchor="e")
         
         sec = self.config_data["groups"][self.group_name].get("security", {})
+        
+        controls_frame = ctk.CTkFrame(inner, fg_color="transparent")
+        controls_frame.pack()
+        ctk.CTkLabel(controls_frame, text="Challenge Length:").pack(side="left", padx=(0, 5))
         self.length_var = ctk.StringVar(value=str(sec.get("challenge_length", 32)))
         length_combo = ctk.CTkComboBox(controls_frame, values=["32", "64", "128", "256"], variable=self.length_var, command=self.save_security, width=70)
         length_combo.pack(side="left", padx=(0, 15))
-        
         self.sec_enabled = ctk.CTkSwitch(controls_frame, text="Enable Security Challenge", command=self.save_security)
         if sec.get("enabled", False):
             self.sec_enabled.select()
         self.sec_enabled.pack(side="left")
+        
+        ctk.CTkLabel(inner, text="(Higher lengths are more secure but harder to type)",
+                     text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="e", pady=(2, 0))
         
         def validate_website(val):
             if "http" in val: return False, "Do not include http:// or https://"
@@ -810,11 +818,12 @@ class ProductivityApp(ctk.CTk):
         self.current_screen = ctk.CTkFrame(self)
         self.current_screen.pack(fill="both", expand=True)
 
-        top_bar = ctk.CTkFrame(self.current_screen, fg_color="transparent")
+        top_bar = ctk.CTkFrame(self.current_screen, fg_color="transparent", height=45)
         top_bar.pack(fill="x", padx=20, pady=10)
+        top_bar.pack_propagate(False)
         ctk.CTkButton(top_bar, text="Back to Dashboard", command=self.show_dashboard,
-                      fg_color="transparent", width=120).pack(side="left")
-        ctk.CTkLabel(top_bar, text="Settings", font=ctk.CTkFont(size=24, weight="bold")).pack(side="left", padx=20)
+                      fg_color="transparent", width=120, height=32).pack(side="left", anchor="center")
+        ctk.CTkLabel(top_bar, text="Settings", font=ctk.CTkFont(size=24, weight="bold")).pack(side="left", padx=20, anchor="center")
 
         tabview = ctk.CTkTabview(self.current_screen)
         tabview.pack(fill="both", expand=True, padx=20, pady=(5, 0))
@@ -965,21 +974,57 @@ class ProductivityApp(ctk.CTk):
         s = self.config_data.get("settings", {})
         notif = s.get("notifications", {})
 
-        ctk.CTkLabel(c, text="Daemon Notifications", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=20, pady=(15, 4))
-        ctk.CTkLabel(c, text="Control which events the background daemon reports to the system console.",
-                     text_color="gray", justify="left").pack(anchor="w", padx=20, pady=(0, 12))
-
         self._notif_vars = {}
-        notif_options = [
-            ("on_block",         "Notify when a block is enforced"),
-            ("on_schedule",      "Notify when a schedule activates or deactivates"),
-            ("on_daemon_start",  "Notify on daemon startup"),
-        ]
-        for key, label in notif_options:
-            var = ctk.BooleanVar(value=notif.get(key, True))
-            ctk.CTkSwitch(c, text=label, variable=var, command=self._save_settings).pack(
-                anchor="w", padx=20, pady=6)
-            self._notif_vars[key] = var
+
+        def section(title, desc, options):
+            ctk.CTkLabel(c, text=title, font=ctk.CTkFont(weight="bold")).pack(
+                anchor="w", padx=20, pady=(15, 2))
+            if desc:
+                ctk.CTkLabel(c, text=desc, text_color="gray", justify="left").pack(
+                    anchor="w", padx=20, pady=(0, 6))
+            for key, label, default in options:
+                var = ctk.BooleanVar(value=notif.get(key, default))
+                ctk.CTkSwitch(c, text=label, variable=var, command=self._save_settings).pack(
+                    anchor="w", padx=30, pady=4)
+                self._notif_vars[key] = var
+
+        section(
+            "Block Events",
+            "Fired when the daemon actively enforces a blocking rule.",
+            [
+                ("on_block",           "Notify when a block rule is applied",          True),
+                ("on_block_attempt",   "Notify when a blocked app is detected and killed", True),
+                ("on_exception_bypass","Notify when an exception allowlist bypasses a block", False),
+            ]
+        )
+
+        section(
+            "Schedule Events",
+            "Fired when scheduled rules change state.",
+            [
+                ("on_schedule",              "Notify when a schedule activates or deactivates", True),
+                ("on_schedule_window_miss",  "Notify if a schedule's time window is invalid",   True),
+            ]
+        )
+
+        section(
+            "Daemon Events",
+            "Low-level daemon lifecycle and config events.",
+            [
+                ("on_daemon_start",  "Notify on daemon startup",                     True),
+                ("on_config_reload", "Notify whenever the config is reloaded from disk", False),
+                ("on_hosts_write",   "Notify whenever the hosts file is written or cleared", False),
+            ]
+        )
+
+        section(
+            "Security Events",
+            "Fired when a security challenge is attempted.",
+            [
+                ("on_challenge_fail", "Notify on failed security challenge attempt", True),
+                ("on_challenge_pass", "Notify on successful challenge completion",   False),
+            ]
+        )
 
     # --- About tab ---
     def _build_about_tab(self, parent):
