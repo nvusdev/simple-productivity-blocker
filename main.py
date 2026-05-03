@@ -372,18 +372,20 @@ class ProductivityApp(ctk.CTk):
         for name, data in self.config_data["groups"].items():
             self.create_group_card(name, data)
             
-        add_btn = ctk.CTkButton(self.current_screen, text="+ Add New Group", command=self.add_new_group)
-        add_btn.pack(pady=10)
+        # --- Bottom Status Bar ---
+        self.status_frame = ctk.CTkFrame(self.current_screen, height=45, fg_color="#212121", corner_radius=0)
+        self.status_frame.pack(fill="x", side="bottom")
+        self.status_frame.pack_propagate(False)
         
-        # --- Bottom Bar ---
-        bottom_bar = ctk.CTkFrame(self.current_screen, fg_color="transparent")
-        bottom_bar.pack(fill="x", side="bottom", padx=20, pady=10)
+        self.status_lbl = ctk.CTkLabel(self.status_frame, text="Ready", text_color="gray", font=ctk.CTkFont(size=14))
+        self.status_lbl.pack(side="left", padx=20)
         
-        self.status_lbl = ctk.CTkLabel(bottom_bar, text="Ready", text_color="gray")
-        self.status_lbl.pack(side="left")
-        
-        self.timer_lbl = ctk.CTkLabel(bottom_bar, text="", text_color="green", font=ctk.CTkFont(size=12))
+        self.timer_lbl = ctk.CTkLabel(self.status_frame, text="", text_color="green", font=ctk.CTkFont(size=12))
         self.timer_lbl.pack(side="left", padx=10)
+
+        # Center the Add button in the same bar
+        add_btn = ctk.CTkButton(self.status_frame, text="+ Add New Group", command=self.add_new_group, height=32)
+        add_btn.place(relx=0.5, rely=0.5, anchor="center")
 
     def save_security(self, *args):
         self.config_data["groups"][self.group_name]["security"] = {
@@ -457,10 +459,12 @@ class ProductivityApp(ctk.CTk):
         self.tab_content = self.tabview.add("Content Filter")
         self.tab_schedule = self.tabview.add("Schedule")
         
-        self.status_frame = ctk.CTkFrame(self.current_screen, height=30, fg_color="transparent")
-        self.status_frame.pack(fill="x", padx=10, pady=5)
+        self.status_frame = ctk.CTkFrame(self.current_screen, height=45, fg_color="#212121", corner_radius=0)
+        self.status_frame.pack(fill="x", side="bottom")
+        self.status_frame.pack_propagate(False)
+        
         self.status_lbl = ctk.CTkLabel(self.status_frame, text="Ready", text_color="gray", font=ctk.CTkFont(size=14))
-        self.status_lbl.pack(side="left", padx=10)
+        self.status_lbl.pack(side="left", padx=20)
         
         self.timer_lbl = ctk.CTkLabel(self.status_frame, text="", text_color="green", font=ctk.CTkFont(size=12))
         self.timer_lbl.pack(side="left", padx=10)
