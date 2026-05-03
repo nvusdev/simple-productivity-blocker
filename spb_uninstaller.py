@@ -5,6 +5,32 @@ import ctypes
 import subprocess
 import time
 
+SPB_BEGIN = "# SPB BEGIN"
+SPB_END = "# SPB END"
+
+def _strip_spb_block(lines):
+    begin_idx = None
+    end_idx = None
+    for idx, line in enumerate(lines):
+        if line.strip() == SPB_BEGIN:
+            begin_idx = idx
+            break
+
+    if begin_idx is not None:
+        for idx in range(begin_idx + 1, len(lines)):
+            if lines[idx].strip() == SPB_END:
+                end_idx = idx
+                break
+
+    if begin_idx is not None and end_idx is not None and end_idx > begin_idx:
+        cleaned = lines[:begin_idx] + lines[end_idx + 1:]
+    else:
+        cleaned = list(lines)
+
+    cleaned = [line for line in cleaned if not line.strip().endswith("# SPB")]
+    cleaned = [line for line in cleaned if line.strip() not in (SPB_BEGIN, SPB_END)]
+    return cleaned
+
 def is_admin():
     try:
         return ctypes.windll.shell32.IsUserAnAdmin()
@@ -38,6 +64,17 @@ def restore_hosts():
             print("Hosts file restored from backup.")
         except Exception as e:
             print(f"Failed to restore hosts file: {e}")
+    else:
+        try:
+            if os.path.exists(hosts_path):
+                with open(hosts_path, 'r') as f:
+                    lines = f.readlines()
+                cleaned = _strip_spb_block(lines)
+                with open(hosts_path, 'w') as f:
+                    f.writelines(cleaned)
+                print("Removed SPB entries from hosts file.")
+        except Exception as e:
+            print(f"Failed to clean hosts file: {e}")
             
     print("Flushing DNS...")
     subprocess.run(["ipconfig", "/flushdns"], capture_output=True)
