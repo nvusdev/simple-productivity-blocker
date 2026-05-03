@@ -53,6 +53,31 @@ DEFAULT_CONFIG = {
     }
 }
 
+def _deep_merge_defaults(target, defaults):
+    for key, value in defaults.items():
+        if isinstance(value, dict):
+            if key not in target or not isinstance(target.get(key), dict):
+                target[key] = copy.deepcopy(value)
+            else:
+                _deep_merge_defaults(target[key], value)
+        else:
+            if key not in target:
+                target[key] = copy.deepcopy(value)
+
+def _migrate_exceptions(group_data):
+    if "exceptions" in group_data:
+        legacy = group_data.get("exceptions") or []
+        if legacy:
+            adblocker = group_data.setdefault("adblocker", {})
+            existing = adblocker.get("exceptions", [])
+            merged = list(dict.fromkeys(existing + legacy))
+            adblocker["exceptions"] = merged
+        del group_data["exceptions"]
+
+def _normalize_group(group_data):
+    _deep_merge_defaults(group_data, DEFAULT_GROUP_CONFIG)
+    _migrate_exceptions(group_data)
+
 def load_config():
     with _lock:
         if not os.path.exists(CONFIG_FILE):
@@ -64,22 +89,23 @@ def load_config():
                 # Migrate old config if it exists
                 if "groups" not in data:
                     migrated = copy.deepcopy(DEFAULT_CONFIG)
-                    group_data = copy.deepcopy(DEFAULT_GROUP_CONFIG)
-                    group_data["websites"] = data.get("websites", [])
-                    group_data["apps"] = data.get("apps", [])
-                    group_data["files"] = data.get("files", [])
-                    group_data["folders"] = data.get("folders", [])
-                    group_data["adblocker"] = data.get("adblocker", DEFAULT_GROUP_CONFIG["adblocker"])
-                    group_data["schedule"] = data.get("schedule", DEFAULT_GROUP_CONFIG["schedule"])
-                    group_data["security"] = data.get("security", DEFAULT_GROUP_CONFIG["security"])
+                    group_data = {
+                        "websites": data.get("websites", []),
+                        "apps": data.get("apps", []),
+                        "files": data.get("files", []),
+                        "folders": data.get("folders", []),
+                        "adblocker": data.get("adblocker", {}),
+                        "schedule": data.get("schedule", {}),
+                        "security": data.get("security", {}),
+                        "exceptions": data.get("exceptions", []),
+                    }
+                    _normalize_group(group_data)
                     migrated["groups"]["Default Profile"] = group_data
                     return migrated
                     
                 # Ensure structure
                 for group_name, group_data in data["groups"].items():
-                    for k, v in DEFAULT_GROUP_CONFIG.items():
-                        if k not in group_data:
-                            group_data[k] = copy.deepcopy(v)
+                    _normalize_group(group_data)
                 return data
         except Exception:
             return copy.deepcopy(DEFAULT_CONFIG)
