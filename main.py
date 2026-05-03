@@ -218,6 +218,7 @@ class ProductivityApp(ctk.CTk):
         
         self.title("Simple Productivity Blocker")
         
+        self.update_idletasks()
         ws = self.winfo_screenwidth()
         hs = self.winfo_screenheight()
         w = int(ws * 0.65)

@@ -13,7 +13,7 @@ python -m PyInstaller --noconfirm --onedir --windowed --uac-admin --icon="icon.i
 
 # Build the daemon
 Write-Host "Building daemon.exe..."
-python -m PyInstaller --noconfirm --onedir --console --name "daemon" daemon.py
+python -m PyInstaller --noconfirm --onedir --windowed --name "daemon" daemon.py
 
 # Copy daemon into main app directory
 Copy-Item "dist\daemon\daemon.exe" -Destination "dist\spb\"
@@ -31,6 +31,11 @@ python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="icon.i
 
 # Move uninstaller to the package directory
 Copy-Item "dist\spb_uninstaller.exe" -Destination "dist\spb\"
+
+# Copy CHANGELOG.md
+if (Test-Path "CHANGELOG.md") {
+    Copy-Item "CHANGELOG.md" -Destination "dist\spb\"
+}
 
 Write-Host "Build complete! Your deployable package is in dist\spb"
 Write-Host "Zip the 'dist\spb' folder to distribute it to users."

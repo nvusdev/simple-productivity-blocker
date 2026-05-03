@@ -13,7 +13,7 @@ pyinstaller --noconfirm --onedir --windowed --name "spb" main.py
 
 # Build the daemon
 echo "Building daemon..."
-pyinstaller --noconfirm --onedir --console --name "daemon" daemon.py
+pyinstaller --noconfirm --onedir --windowed --name "daemon" daemon.py
 
 # Copy daemon into main app directory
 cp dist/daemon/daemon dist/spb/
@@ -24,6 +24,11 @@ pyinstaller --noconfirm --onefile --console --name "spb_uninstaller" spb_uninsta
 
 # Copy uninstaller into main app directory
 cp dist/spb_uninstaller dist/spb/
+
+# Copy CHANGELOG.md if exists
+if [ -f "CHANGELOG.md" ]; then
+    cp CHANGELOG.md dist/spb/
+fi
 
 echo "Build complete! Your deployable package is in dist/spb"
 echo "Distribute the 'dist/spb' folder. Users can run 'install.sh' to install it."

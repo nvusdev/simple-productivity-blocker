@@ -49,6 +49,10 @@ def main():
     print(f"\nInstalling to: {dest_dir}")
     
     try:
+        import subprocess
+        subprocess.run(["taskkill", "/F", "/IM", "daemon.exe"], capture_output=True)
+        subprocess.run(["taskkill", "/F", "/IM", "spb.exe"], capture_output=True)
+        
         if not os.path.exists(dest_dir):
             os.makedirs(dest_dir)
             
