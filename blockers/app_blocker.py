@@ -20,7 +20,7 @@ class ProcessMonitor:
         self.blocked_files = [f.lower().strip() for f in files]
 
     def set_blocked_folders(self, folders):
-        self.blocked_folders = [f.lower().strip() for f in folders]
+        self.blocked_folders = [os.path.normcase(os.path.abspath(f.strip())) for f in folders if f.strip()]
 
     def start(self):
         if self.is_active:
@@ -63,9 +63,9 @@ class ProcessMonitor:
 
                         # 2. Check Folders in Exe Path
                         if exe and not should_kill and self.blocked_folders:
-                            exe_lower = exe.lower()
+                            exe_norm = os.path.normcase(os.path.abspath(exe))
                             for bf in self.blocked_folders:
-                                if exe_lower.startswith(bf):
+                                if exe_norm.startswith(bf):
                                     should_kill = True
                                     break
 
@@ -84,8 +84,9 @@ class ProcessMonitor:
                                         break
                                         
                             if not should_kill and self.blocked_folders:
+                                cmd_norm = cmdline_str.replace('/', '\\')
                                 for bf in self.blocked_folders:
-                                    if bf in cmdline_str:
+                                    if bf in cmd_norm:
                                         should_kill = True
                                         break
 

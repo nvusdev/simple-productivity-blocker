@@ -58,6 +58,8 @@ ADBLOCK_LISTS = {
         "adservice.google.com", "doubleclick.net", "googlesyndication.com",
         "googleadservices.com", "ads.msn.com", "bingads.microsoft.com",
         "bat.bing.com", "adsystem.com",
+        # Tinder ads
+        "tinder.com", "gotinder.com", "api.gotinder.com",
         # Analytics & telemetry
         "analytics.google.com", "google-analytics.com", "googletagmanager.com",
         "googletagservices.com", "scorecardresearch.com", "quantserve.com",
