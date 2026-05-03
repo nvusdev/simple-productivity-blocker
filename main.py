@@ -11,7 +11,7 @@ import ctypes
 import sys
 from daemon import ADBLOCK_LISTS
 
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
