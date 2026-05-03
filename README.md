@@ -9,8 +9,9 @@ Simple Productivity Blocker is a free, open-source Windows application that help
 * **Website Blocking:** Block domains at the system level via the hosts file. Both base domains and `www.` variants are blocked automatically. Blocks survive browser restarts and incognito mode.
 * **App Blocking:** Instantly terminates any running process that matches a blocked application name upon detection.
 * **File Blocking:** Prevents applications from opening a blocked file by monitoring process command-line arguments and terminating violators.
-* **Folder Blocking:** Block entire directories. Automatically closes any application or process that attempts to access or execute files within the blocked folder path.
+* **Folder Blocking:** Block entire directories. Actively intercepts and closes Windows File Explorer tabs navigating to the directory, and terminates any application that attempts to execute files within the path.
 * **Content Filters:** Enable curated blocklists across 9 categories: Ads & Trackers, Malware, Social Media, Adult Content (encrypted), Gambling (encrypted), Piracy (encrypted), Entertainment, Shopping, and AI.
+* **Silent Persistence:** The background daemon installs as a silent Windows Scheduled Task, automatically launching at system logon with elevated privileges without annoying UAC prompts.
 * **Exceptions (Allowlist):** Whitelist specific domains within Content Filters. Whitelisted domains are never blocked by content filters, but explicit Website blocks always take priority.
 * **Scheduling:** Set start and end times and active days per profile. The "Enforce All Day" option runs the Content Filter continuously.
 * **Multiple Profiles:** Create separate blocking profiles like Work, Study, or Personal that run simultaneously.
