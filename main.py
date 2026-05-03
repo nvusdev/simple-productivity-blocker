@@ -57,12 +57,16 @@ class InputListFrame(ctk.CTkFrame):
         self.add_btn = ctk.CTkButton(self.input_frame, text="+", width=40, height=35, corner_radius=8, command=self.add_item)
         self.add_btn.pack(side="left", padx=(8, 0))
         
-        if info_tooltip:
-            self.info_desc = ctk.CTkLabel(self, text=info_tooltip, text_color="gray", font=ctk.CTkFont(size=11))
-            self.info_desc.pack(fill="x", padx=15, pady=(2, 0))
-            
         self.feedback_lbl = ctk.CTkLabel(self, text="", font=ctk.CTkFont(size=12))
-        self.feedback_lbl.pack(fill="x", padx=10)
+        self.feedback_lbl.pack(fill="x", padx=10, pady=(0, 2))
+        
+        # Fixed height spacer to prevent layout jumps when info_tooltip is present/absent
+        if not info_tooltip:
+            ctk.CTkLabel(self, text="", font=ctk.CTkFont(size=11), height=1).pack(pady=(0, 15))
+        else:
+            self.info_desc = ctk.CTkLabel(self, text=info_tooltip, text_color="gray", font=ctk.CTkFont(size=11))
+            self.info_desc.pack(fill="x", padx=15, pady=(2, 5))
+
         
         self.scroll_frame = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self.scroll_frame.pack(fill="both", expand=True, padx=5, pady=5)
@@ -659,28 +663,29 @@ class ProductivityApp(ctk.CTk):
         self.timer_lbl.pack(side="left", padx=10, anchor="center")
         
         # Security controls: right-aligned, vertically centered within the bar
-        sec_frame = ctk.CTkFrame(self.status_frame, fg_color="transparent")
-        sec_frame.pack(side="right", fill="y")
-        
-        # Inner wrapper placed at vertical center of sec_frame
-        inner = ctk.CTkFrame(sec_frame, fg_color="transparent")
-        inner.place(relx=1.0, rely=0.5, anchor="e")
+        sec_wrapper = ctk.CTkFrame(self.status_frame, fg_color="transparent")
+        sec_wrapper.pack(side="right", anchor="center", padx=(0, 10))
         
         sec = self.config_data["groups"][self.group_name].get("security", {})
         
-        controls_frame = ctk.CTkFrame(inner, fg_color="transparent")
-        controls_frame.pack()
+        controls_frame = ctk.CTkFrame(sec_wrapper, fg_color="transparent")
+        controls_frame.pack(anchor="e")
+        
         ctk.CTkLabel(controls_frame, text="Challenge Length:").pack(side="left", padx=(0, 5))
+        
         self.length_var = ctk.StringVar(value=str(sec.get("challenge_length", 32)))
-        length_combo = ctk.CTkComboBox(controls_frame, values=["32", "64", "128", "256"], variable=self.length_var, command=self.save_security, width=70)
+        length_combo = ctk.CTkComboBox(controls_frame, values=["32", "64", "128", "256"], 
+                                      variable=self.length_var, command=self.save_security, width=75)
         length_combo.pack(side="left", padx=(0, 15))
+        
         self.sec_enabled = ctk.CTkSwitch(controls_frame, text="Enable Security Challenge", command=self.save_security)
         if sec.get("enabled", False):
             self.sec_enabled.select()
         self.sec_enabled.pack(side="left")
         
-        ctk.CTkLabel(inner, text="(Higher lengths are more secure but harder to type)",
+        ctk.CTkLabel(sec_wrapper, text="(Longer lengths are more secure but harder to type.)",
                      text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="e", pady=(2, 0))
+
         
         def validate_website(val):
             if "http" in val: return False, "Do not include http:// or https://"
@@ -701,22 +706,23 @@ class ProductivityApp(ctk.CTk):
         self.list_web = InputListFrame(self.tab_websites, "websites", "Enter URL (e.g. facebook.com)", 
                                        validation_fn=validate_website,
                                        info_tooltip=proxy_msg)
-        self.list_web.pack(fill="both", expand=True, padx=10, pady=10)
+        self.list_web.pack(fill="both", expand=True, padx=20, pady=10)
 
         self.tab_apps.app = self
         self.tab_apps.group_name = group_name
         self.list_apps = InputListFrame(self.tab_apps, "apps", "Enter App Name (e.g. notepad.exe)", validation_fn=validate_app, browse_mode="app")
-        self.list_apps.pack(fill="both", expand=True, padx=10, pady=10)
+        self.list_apps.pack(fill="both", expand=True, padx=20, pady=10)
 
         self.tab_files.app = self
         self.tab_files.group_name = group_name
         self.list_files = InputListFrame(self.tab_files, "files", "Enter absolute file path (e.g. C:\\Docs\\secret.txt)", browse_mode="file")
-        self.list_files.pack(fill="both", expand=True, padx=10, pady=10)
+        self.list_files.pack(fill="both", expand=True, padx=20, pady=10)
         
         self.tab_folders.app = self
         self.tab_folders.group_name = group_name
         self.list_folders = InputListFrame(self.tab_folders, "folders", "Enter absolute folder path (e.g. C:\\Games)", browse_mode="folder")
-        self.list_folders.pack(fill="both", expand=True, padx=10, pady=10)
+        self.list_folders.pack(fill="both", expand=True, padx=20, pady=10)
+
         
         self.content_ui = ContentFilterTab(self.tab_content, self, group_name)
         self.content_ui.pack(fill="both", expand=True)
