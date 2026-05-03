@@ -5,10 +5,13 @@ import datetime
 import os
 import subprocess
 import psutil
-from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG
+import webbrowser
+from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, get_config_dir
 import ctypes
 import sys
 from daemon import ADBLOCK_LISTS
+
+VERSION = "1.1.1"
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
@@ -396,6 +399,8 @@ class ProductivityApp(ctk.CTk):
         top_bar.pack(fill="x", padx=20, pady=10)
         
         ctk.CTkLabel(top_bar, text="Groups (Profiles)", font=ctk.CTkFont(size=24, weight="bold")).pack(side="left")
+        ctk.CTkButton(top_bar, text="⚙  Options", command=self.show_settings,
+                      fg_color="transparent", hover_color="#3a3a3a", width=100).pack(side="right")
         
         self.groups_scroll = ctk.CTkScrollableFrame(self.current_screen)
         self.groups_scroll.pack(fill="both", expand=True, padx=20, pady=10)
@@ -406,12 +411,6 @@ class ProductivityApp(ctk.CTk):
         actions_frame = ctk.CTkFrame(self.current_screen, fg_color="transparent")
         actions_frame.pack(fill="x", padx=20, pady=10)
         ctk.CTkButton(actions_frame, text="+ Add New Group", command=self.add_new_group).pack(side="left")
-
-        self.startup_var = ctk.BooleanVar(value=self._startup_task_exists())
-        self.startup_switch = ctk.CTkSwitch(actions_frame, text="Start on PC boot", variable=self.startup_var, command=self._on_startup_toggle)
-        if os.name != 'nt':
-            self.startup_switch.configure(state="disabled")
-        self.startup_switch.pack(side="left", padx=15)
 
         # --- Bottom Status Bar ---
         self.status_frame = ctk.CTkFrame(self.current_screen, height=30, fg_color="transparent")
@@ -631,7 +630,7 @@ class ProductivityApp(ctk.CTk):
         self.current_screen.pack(fill="both", expand=True)
         
         top_bar = ctk.CTkFrame(self.current_screen, fg_color="transparent")
-        top_bar.pack(fill="x", padx=10, pady=5)
+        top_bar.pack(fill="x", padx=20, pady=10)
         ctk.CTkButton(top_bar, text="Back to Dashboard", command=self.show_dashboard, fg_color="transparent", width=120).pack(side="left")
         ctk.CTkLabel(top_bar, text=f"Editing: {group_name}", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=20)
         
@@ -646,10 +645,10 @@ class ProductivityApp(ctk.CTk):
         self.tab_schedule = self.tabview.add("Schedule")
         
         self.status_frame = ctk.CTkFrame(self.current_screen, height=30, fg_color="transparent")
-        self.status_frame.pack(fill="x", padx=10, pady=5)
+        self.status_frame.pack(fill="x", padx=20, pady=10)
         
         self.status_lbl = ctk.CTkLabel(self.status_frame, text="Ready", text_color="gray", font=ctk.CTkFont(size=14))
-        self.status_lbl.pack(side="left", padx=10)
+        self.status_lbl.pack(side="left")
         
         self.timer_lbl = ctk.CTkLabel(self.status_frame, text="", text_color="green", font=ctk.CTkFont(size=12))
         self.timer_lbl.pack(side="left", padx=10)
@@ -801,6 +800,223 @@ class ProductivityApp(ctk.CTk):
             "days": [day for day, var in self.days_vars.items() if var.get()]
         }
         self.trigger_save()
+
+    # -----------------------------------------------------------------------
+    # Settings Screen
+    # -----------------------------------------------------------------------
+
+    def show_settings(self):
+        self.clear_screen()
+        self.current_screen = ctk.CTkFrame(self)
+        self.current_screen.pack(fill="both", expand=True)
+
+        top_bar = ctk.CTkFrame(self.current_screen, fg_color="transparent")
+        top_bar.pack(fill="x", padx=20, pady=10)
+        ctk.CTkButton(top_bar, text="Back to Dashboard", command=self.show_dashboard,
+                      fg_color="transparent", width=120).pack(side="left")
+        ctk.CTkLabel(top_bar, text="Settings", font=ctk.CTkFont(size=24, weight="bold")).pack(side="left", padx=20)
+
+        tabview = ctk.CTkTabview(self.current_screen)
+        tabview.pack(fill="both", expand=True, padx=20, pady=(5, 0))
+
+        tab_perf    = tabview.add("Performance")
+        tab_cloud   = tabview.add("Cloud Allowlist")
+        tab_notif   = tabview.add("Notifications")
+        tab_about   = tabview.add("About")
+
+        self._build_performance_tab(tab_perf)
+        self._build_cloud_tab(tab_cloud)
+        self._build_notifications_tab(tab_notif)
+        self._build_about_tab(tab_about)
+
+        # Status bar
+        self.status_frame = ctk.CTkFrame(self.current_screen, height=30, fg_color="transparent")
+        self.status_frame.pack(fill="x", padx=20, pady=10)
+        self.status_lbl = ctk.CTkLabel(self.status_frame, text="Ready", text_color="gray", font=ctk.CTkFont(size=14))
+        self.status_lbl.pack(side="left")
+        self.timer_lbl = ctk.CTkLabel(self.status_frame, text="", text_color="green", font=ctk.CTkFont(size=12))
+        self.timer_lbl.pack(side="left", padx=10)
+
+    def _settings_container(self, parent):
+        """Shared scrollable container matching Content Filter / Schedule style."""
+        c = ctk.CTkScrollableFrame(parent, fg_color="#2b2b2b", corner_radius=10)
+        c.pack(fill="both", expand=True, padx=10, pady=10)
+        return c
+
+    # --- Performance tab ---
+    def _build_performance_tab(self, parent):
+        c = self._settings_container(parent)
+        s = self.config_data.get("settings", {})
+
+        ctk.CTkLabel(c, text="Daemon Poll Rate", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=20, pady=(15, 0))
+
+        desc_map = {
+            "Passive":  "Checks every 5 seconds. Lightest on CPU — ideal for laptops on battery.",
+            "Balanced": "Checks every 2 seconds. Recommended for most users.",
+            "Strict":   "Checks every second. Near-instant enforcement — slightly higher CPU usage.",
+        }
+        self._perf_desc = ctk.CTkLabel(c, text=desc_map.get(s.get("performance_mode", "Balanced"), ""),
+                                       text_color="gray", wraplength=480, justify="left")
+
+        def on_perf(val):
+            self.config_data["settings"]["performance_mode"] = val
+            self._perf_desc.configure(text=desc_map.get(val, ""))
+            self.trigger_save()
+
+        seg = ctk.CTkSegmentedButton(c, values=["Passive", "Balanced", "Strict"], command=on_perf)
+        seg.set(s.get("performance_mode", "Balanced"))
+        seg.pack(padx=20, pady=(8, 4))
+        self._perf_desc.pack(anchor="w", padx=20, pady=(0, 15))
+
+        # Startup on boot
+        ctk.CTkLabel(c, text="System", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=20, pady=(10, 0))
+        self.startup_var = ctk.BooleanVar(value=self._startup_task_exists())
+        startup_sw = ctk.CTkSwitch(c, text="Start daemon on PC boot (Windows only)",
+                                   variable=self.startup_var, command=self._on_startup_toggle)
+        if os.name != 'nt':
+            startup_sw.configure(state="disabled")
+        startup_sw.pack(anchor="w", padx=20, pady=8)
+
+    # --- Cloud Allowlist tab ---
+    def _build_cloud_tab(self, parent):
+        c = self._settings_container(parent)
+        s = self.config_data.get("settings", {})
+
+        self._cloud_enabled = ctk.BooleanVar(value=s.get("cloud_allowlist_enabled", True))
+        ctk.CTkSwitch(c, text="Protect Cloud Sync Processes",
+                      variable=self._cloud_enabled,
+                      font=ctk.CTkFont(weight="bold"),
+                      command=self._save_settings).pack(anchor="w", padx=20, pady=(15, 4))
+        ctk.CTkLabel(c, text="Listed processes and paths are never terminated by the App Blocker,\neven if they match a blocked entry.",
+                     text_color="gray", justify="left").pack(anchor="w", padx=20, pady=(0, 10))
+
+        # --- Process names ---
+        ctk.CTkLabel(c, text="Protected Process Names (.exe):", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=20, pady=(8, 0))
+        self._cloud_exe_list = self._inline_list(c, s.get("cloud_allowlist", []), self._save_settings,
+                                                  placeholder="e.g. OneDrive.exe")
+
+        # --- Path keywords ---
+        ctk.CTkLabel(c, text="Protected Path Keywords:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=20, pady=(12, 0))
+        self._cloud_kw_list = self._inline_list(c, s.get("cloud_path_keywords", []), self._save_settings,
+                                                 placeholder="e.g. onedrive")
+
+    def _inline_list(self, parent, items, on_change, placeholder=""):
+        """Simple add/remove list widget for use inside settings tabs."""
+        state = {"items": list(items)}
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.pack(fill="x", padx=20, pady=4)
+
+        row = ctk.CTkFrame(frame, fg_color="transparent")
+        row.pack(fill="x")
+        entry = ctk.CTkEntry(row, placeholder_text=placeholder, height=32, corner_radius=8)
+        entry.pack(side="left", fill="x", expand=True)
+
+        list_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        list_frame.pack(fill="x", pady=(4, 0))
+        item_widgets = {}
+
+        def render_item(val):
+            r = ctk.CTkFrame(list_frame)
+            r.pack(fill="x", pady=2)
+            ctk.CTkLabel(r, text=val, anchor="w").pack(side="left", fill="x", expand=True, padx=5)
+            ctk.CTkButton(r, text="Remove", width=60, height=26,
+                          fg_color="#8b0000", hover_color="#5a0000",
+                          command=lambda v=val: remove_item(v)).pack(side="right", padx=4)
+            item_widgets[val] = r
+
+        def remove_item(val):
+            if val in state["items"]:
+                state["items"].remove(val)
+                item_widgets.pop(val).destroy()
+                on_change()
+
+        def add_item():
+            val = entry.get().strip()
+            if val and val not in state["items"]:
+                state["items"].append(val)
+                render_item(val)
+                entry.delete(0, "end")
+                on_change()
+
+        ctk.CTkButton(row, text="+", width=36, height=32, corner_radius=8,
+                      command=add_item).pack(side="left", padx=(6, 0))
+        entry.bind("<Return>", lambda e: add_item())
+
+        for v in state["items"]:
+            render_item(v)
+
+        return state
+
+    def _save_settings(self, *args):
+        s = self.config_data.setdefault("settings", {})
+        if hasattr(self, '_cloud_enabled'):
+            s["cloud_allowlist_enabled"] = self._cloud_enabled.get()
+        if hasattr(self, '_cloud_exe_list'):
+            s["cloud_allowlist"] = self._cloud_exe_list["items"]
+        if hasattr(self, '_cloud_kw_list'):
+            s["cloud_path_keywords"] = self._cloud_kw_list["items"]
+        if hasattr(self, '_notif_vars'):
+            s["notifications"] = {k: var.get() for k, var in self._notif_vars.items()}
+        self.trigger_save()
+
+    # --- Notifications tab ---
+    def _build_notifications_tab(self, parent):
+        c = self._settings_container(parent)
+        s = self.config_data.get("settings", {})
+        notif = s.get("notifications", {})
+
+        ctk.CTkLabel(c, text="Daemon Notifications", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=20, pady=(15, 4))
+        ctk.CTkLabel(c, text="Control which events the background daemon reports to the system console.",
+                     text_color="gray", justify="left").pack(anchor="w", padx=20, pady=(0, 12))
+
+        self._notif_vars = {}
+        notif_options = [
+            ("on_block",         "Notify when a block is enforced"),
+            ("on_schedule",      "Notify when a schedule activates or deactivates"),
+            ("on_daemon_start",  "Notify on daemon startup"),
+        ]
+        for key, label in notif_options:
+            var = ctk.BooleanVar(value=notif.get(key, True))
+            ctk.CTkSwitch(c, text=label, variable=var, command=self._save_settings).pack(
+                anchor="w", padx=20, pady=6)
+            self._notif_vars[key] = var
+
+    # --- About tab ---
+    def _build_about_tab(self, parent):
+        c = self._settings_container(parent)
+
+        ctk.CTkLabel(c, text="Simple Productivity Blocker",
+                     font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(20, 4))
+        ctk.CTkLabel(c, text=f"Version {VERSION}", text_color="gray").pack(pady=(0, 20))
+
+        btn_frame = ctk.CTkFrame(c, fg_color="transparent")
+        btn_frame.pack(pady=4)
+
+        ctk.CTkButton(btn_frame, text="View on GitHub", width=160,
+                      command=lambda: webbrowser.open("https://github.com/nvusdev/simple-productivity-blocker")
+                      ).pack(side="left", padx=6)
+
+        ctk.CTkButton(btn_frame, text="Open Config Folder", width=160,
+                      command=self._open_config_folder).pack(side="left", padx=6)
+
+        ctk.CTkButton(c, text="Reset All Settings to Defaults",
+                      fg_color="#8b0000", hover_color="#5a0000", width=200,
+                      command=self._reset_settings).pack(pady=(20, 4))
+
+    def _open_config_folder(self):
+        path = get_config_dir()
+        if os.name == 'nt':
+            os.startfile(path)
+        else:
+            subprocess.Popen(["xdg-open", path])
+
+    def _reset_settings(self):
+        from core.config_manager import DEFAULT_SETTINGS
+        import copy
+        if self._confirm_dialog("Reset Settings", "Reset all Settings to defaults? This cannot be undone."):
+            self.config_data["settings"] = copy.deepcopy(DEFAULT_SETTINGS)
+            self.trigger_save()
+            self.show_settings()
 
 if __name__ == "__main__":
     app = ProductivityApp()

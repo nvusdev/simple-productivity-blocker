@@ -10,10 +10,8 @@ else:
     BACKUP_FILE = "/etc/hosts.backup"
 
 REDIRECT_IP = "0.0.0.0"
-IPV6_LOOPBACK = "::1"
-
-SPB_BEGIN = "# SPB BEGIN"
-SPB_END = "# SPB END"
+BLOCK_BEGIN = "# --- SPB Block Begin ---"
+BLOCK_END   = "# --- SPB Block End ---"
 
 # Common DoH providers to block to prevent bypassing hosts file
 DOH_PROVIDERS = [
@@ -39,28 +37,25 @@ def flush_dns():
     except Exception:
         pass
 
-def _strip_spb_block(lines):
-    begin_idx = None
-    end_idx = None
-    for idx, line in enumerate(lines):
-        if line.strip() == SPB_BEGIN:
-            begin_idx = idx
-            break
-
-    if begin_idx is not None:
-        for idx in range(begin_idx + 1, len(lines)):
-            if lines[idx].strip() == SPB_END:
-                end_idx = idx
-                break
-
-    if begin_idx is not None and end_idx is not None and end_idx > begin_idx:
-        cleaned = lines[:begin_idx] + lines[end_idx + 1:]
-    else:
-        cleaned = list(lines)
-
-    cleaned = [line for line in cleaned if not line.strip().endswith("# SPB")]
-    cleaned = [line for line in cleaned if line.strip() not in (SPB_BEGIN, SPB_END)]
-    return cleaned
+def _strip_spb_entries(lines):
+    """Remove both old per-line # SPB comments and new block-marker sections."""
+    result = []
+    inside_block = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == BLOCK_BEGIN:
+            inside_block = True
+            continue
+        if stripped == BLOCK_END:
+            inside_block = False
+            continue
+        if inside_block:
+            continue
+        # Legacy migration: remove old per-line tagged entries
+        if stripped.endswith("# SPB") or stripped.endswith("# ProductivityApp"):
+            continue
+        result.append(line)
+    return result
 
 def apply_blocks(websites, block_doh=True):
     try:
@@ -70,13 +65,13 @@ def apply_blocks(websites, block_doh=True):
         with open(HOSTS_FILE, 'r') as f:
             lines = f.readlines()
             
-        # Clean existing blocks
-        new_lines = _strip_spb_block(lines)
+        # Strip all existing SPB entries (new block markers + legacy per-line tags)
+        clean_lines = _strip_spb_entries(lines)
         
-        if new_lines and not new_lines[-1].endswith('\n'):
-            new_lines[-1] += '\n'
+        if clean_lines and not clean_lines[-1].endswith('\n'):
+            clean_lines[-1] += '\n'
         
-        # Add new blocks
+        # Build the domain set
         domains_to_block = list(websites)
         if block_doh:
             domains_to_block.extend(DOH_PROVIDERS)
@@ -92,17 +87,17 @@ def apply_blocks(websites, block_doh=True):
                 else:
                     final_domains.add(d)
                     final_domains.add("www." + d)
-            
-        block_lines = [f"{SPB_BEGIN}\n"]
-        for domain in sorted(final_domains):
-            block_lines.append(f"{REDIRECT_IP} {domain}\n")
-            block_lines.append(f"{IPV6_LOOPBACK} {domain}\n")
-        block_lines.append(f"{SPB_END}\n")
 
-        new_lines.extend(block_lines)
-                
+        if final_domains:
+            block_lines = [BLOCK_BEGIN + "\n"]
+            for domain in sorted(final_domains):
+                block_lines.append(f"{REDIRECT_IP} {domain}\n")
+                block_lines.append(f":: {domain}\n")
+            block_lines.append(BLOCK_END + "\n")
+            clean_lines.extend(block_lines)
+
         with open(HOSTS_FILE, 'w') as f:
-            f.writelines(new_lines)
+            f.writelines(clean_lines)
             
         flush_dns()
             
@@ -114,10 +109,10 @@ def remove_blocks():
         with open(HOSTS_FILE, 'r') as f:
             lines = f.readlines()
             
-        new_lines = _strip_spb_block(lines)
+        clean_lines = _strip_spb_entries(lines)
         
         with open(HOSTS_FILE, 'w') as f:
-            f.writelines(new_lines)
+            f.writelines(clean_lines)
             
         flush_dns()
     except PermissionError:

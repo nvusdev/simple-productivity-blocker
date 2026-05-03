@@ -47,10 +47,32 @@ DEFAULT_GROUP_CONFIG = {
     }
 }
 
+DEFAULT_SETTINGS = {
+    "performance_mode": "Balanced",
+    "cloud_allowlist_enabled": True,
+    "cloud_allowlist": [
+        "OneDrive.exe",
+        "GoogleDriveFS.exe",
+        "GoogleDriveSync.exe",
+        "GoogleDrive.exe",
+    ],
+    "cloud_path_keywords": [
+        "onedrive",
+        "google drive",
+        "googledrive",
+    ],
+    "notifications": {
+        "on_block": True,
+        "on_schedule": True,
+        "on_daemon_start": True,
+    },
+}
+
 DEFAULT_CONFIG = {
     "groups": {
         "Default Profile": copy.deepcopy(DEFAULT_GROUP_CONFIG)
-    }
+    },
+    "settings": copy.deepcopy(DEFAULT_SETTINGS)
 }
 
 def _deep_merge_defaults(target, defaults):
@@ -78,6 +100,13 @@ def _normalize_group(group_data):
     _deep_merge_defaults(group_data, DEFAULT_GROUP_CONFIG)
     _migrate_exceptions(group_data)
 
+def _normalize_settings(config_data):
+    settings = config_data.get("settings")
+    if not isinstance(settings, dict):
+        config_data["settings"] = copy.deepcopy(DEFAULT_SETTINGS)
+        return
+    _deep_merge_defaults(settings, DEFAULT_SETTINGS)
+
 def load_config():
     with _lock:
         if not os.path.exists(CONFIG_FILE):
@@ -101,11 +130,15 @@ def load_config():
                     }
                     _normalize_group(group_data)
                     migrated["groups"]["Default Profile"] = group_data
+                    if "settings" in data:
+                        migrated["settings"] = data.get("settings", {})
+                        _normalize_settings(migrated)
                     return migrated
                     
                 # Ensure structure
                 for group_name, group_data in data["groups"].items():
                     _normalize_group(group_data)
+                _normalize_settings(data)
                 return data
         except Exception:
             return copy.deepcopy(DEFAULT_CONFIG)

@@ -21,6 +21,30 @@ class ProcessMonitor:
         self._fast_until = 0.0
         self._fast_interval = 0.5
         self._base_interval = 1.0
+        self._shell_interval = 2.0
+        self._allowlisted_processes = set()
+        self._allowlist_enabled = True
+
+    def configure_performance(self, mode):
+        mode = (mode or "").strip().lower()
+        if mode == "aggressive":
+            self._fast_interval = 0.25
+            self._base_interval = 0.5
+            self._shell_interval = 1.0
+        elif mode == "eco":
+            self._fast_interval = 1.0
+            self._base_interval = 2.0
+            self._shell_interval = 3.0
+        else:
+            self._fast_interval = 0.5
+            self._base_interval = 1.0
+            self._shell_interval = 2.0
+
+    def set_allowlisted_processes(self, processes, enabled=True):
+        self._allowlist_enabled = bool(enabled)
+        self._allowlisted_processes = {
+            str(p).strip().lower() for p in (processes or []) if str(p).strip()
+        }
 
     def _normalize_path(self, path):
         return os.path.normcase(os.path.abspath(path))
@@ -139,7 +163,7 @@ class ProcessMonitor:
             
         while not self._stop_event.is_set():
             now = time.time()
-            if self.blocked_folder_roots and shell and (now - self._last_shell_check) >= 2:
+            if self.blocked_folder_roots and shell and (now - self._last_shell_check) >= self._shell_interval:
                 self._last_shell_check = now
                 try:
                     for window in shell.Windows():
@@ -149,7 +173,13 @@ class ProcessMonitor:
                             path = path.replace('/', '\\')
                             path_norm = self._normalize_path(path)
                             if self._is_in_blocked_folder(path_norm):
-                                window.Quit()
+                                try:
+                                    window.Quit()
+                                except Exception:
+                                    try:
+                                        window.Navigate("C:\\")
+                                    except Exception:
+                                        pass
                 except Exception:
                     pass
 
@@ -159,12 +189,13 @@ class ProcessMonitor:
                         name = proc.info.get('name')
                         exe = proc.info.get('exe')
                         cmdline = proc.info.get('cmdline')
+                        name_lower = (name or "").lower()
+                        skip_file_folder = self._allowlist_enabled and name_lower in self._allowlisted_processes
                         
                         should_kill = False
                         
                         # 1. Check App Names
                         if name:
-                            name_lower = name.lower()
                             if name_lower in self.blocked_app_names:
                                 should_kill = True
 
@@ -175,7 +206,7 @@ class ProcessMonitor:
                                 should_kill = True
 
                         # 2. Check Folders in Exe Path
-                        if exe and not should_kill and self.blocked_folder_roots:
+                        if exe and not should_kill and self.blocked_folder_roots and not skip_file_folder:
                             if self._is_in_blocked_folder(exe_norm):
                                 should_kill = True
 
@@ -194,22 +225,23 @@ class ProcessMonitor:
                                 if should_kill:
                                     break
 
-                                for name in self.blocked_file_names:
-                                    if self._arg_mentions_filename(arg_lower, name):
-                                        should_kill = True
+                                if not skip_file_folder:
+                                    for name in self.blocked_file_names:
+                                        if self._arg_mentions_filename(arg_lower, name):
+                                            should_kill = True
+                                            break
+                                    if should_kill:
                                         break
-                                if should_kill:
-                                    break
 
                                 for candidate in self._extract_path_candidates(arg_str):
                                     arg_norm = self._normalize_path(candidate)
                                     if arg_norm in self.blocked_app_paths:
                                         should_kill = True
                                         break
-                                    if arg_norm in self.blocked_file_paths:
+                                    if not skip_file_folder and arg_norm in self.blocked_file_paths:
                                         should_kill = True
                                         break
-                                    if self.blocked_folder_roots and self._is_in_blocked_folder(arg_norm):
+                                    if not skip_file_folder and self.blocked_folder_roots and self._is_in_blocked_folder(arg_norm):
                                         should_kill = True
                                         break
                                 if should_kill:

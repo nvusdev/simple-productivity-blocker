@@ -238,6 +238,17 @@ def _is_excepted(domain: str, exc_set: set[str]) -> bool:
     return any(b == e or b.endswith("." + e) for e in exc_set)
 
 
+def _normalize_keywords(values) -> list[str]:
+    return [str(v).strip().lower() for v in (values or []) if str(v).strip()]
+
+
+def _is_cloud_path(path: str, keywords: list[str]) -> bool:
+    if not keywords:
+        return False
+    lower = path.lower()
+    return any(k in lower for k in keywords)
+
+
 # ---------------------------------------------------------------------------
 # Core compute
 # ---------------------------------------------------------------------------
@@ -351,10 +362,16 @@ def main() -> None:
     stable_mtime:   float = 0.0
     debounce:       int   = 0  # ticks stable (1 tick = 1 s, fire at 3)
 
+    POLL_INTERVALS = {"Passive": 5, "Balanced": 2, "Strict": 1}
+
     print("Daemon started.")
 
     try:
         while True:
+            # Resolve poll interval from current settings
+            poll_sleep = POLL_INTERVALS.get(
+                cfg_cache.get("settings", {}).get("performance_mode", "Balanced"), 2
+            )
             # 1 — Debounce config file
             try:
                 mtime = os.path.getmtime(cfg_path) if os.path.exists(cfg_path) else 0.0
@@ -405,7 +422,7 @@ def main() -> None:
                     else:
                         file_blocker.stop()
 
-            time.sleep(1)
+            time.sleep(poll_sleep)
 
     except KeyboardInterrupt:
         remove_blocks()
