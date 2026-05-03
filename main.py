@@ -234,11 +234,7 @@ class ProductivityApp(ctk.CTk):
         self.group_name = None
         
         self.check_daemon()
-        
-        if self.config_data.get("security", {}).get("enabled", False):
-            self.show_challenge_screen()
-        else:
-            self.show_dashboard()
+        self.show_dashboard()
 
     def check_daemon(self):
         try:
@@ -314,22 +310,25 @@ class ProductivityApp(ctk.CTk):
         if self.current_screen:
             self.current_screen.destroy()
 
-    def show_challenge_screen(self):
+    def show_challenge_screen(self, next_action):
         self.clear_screen()
         self.current_screen = ctk.CTkFrame(self)
         self.current_screen.pack(fill="both", expand=True)
         
-        length = self.config_data.get("security", {}).get("challenge_length", 32)
+        # Access security config for the current group
+        sec_cfg = self.config_data["groups"][self.group_name].get("security", {})
+        length = sec_cfg.get("challenge_length", 32)
+        
         chars = string.ascii_letters + string.digits + "!@#$%^&*()-_=+[]{}|;:',.<>?/"
         self.challenge_string = ''.join(random.choice(chars) for _ in range(length))
         
         challenge_frame = ctk.CTkFrame(self.current_screen)
         challenge_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
-        label = ctk.CTkLabel(challenge_frame, text="Security Challenge", font=ctk.CTkFont(size=24, weight="bold"))
+        label = ctk.CTkLabel(challenge_frame, text=f"Security Challenge: {self.group_name}", font=ctk.CTkFont(size=24, weight="bold"))
         label.pack(pady=20)
         
-        instructions = ctk.CTkLabel(challenge_frame, text="Please type the following text exactly to access settings:")
+        instructions = ctk.CTkLabel(challenge_frame, text="Please type the following text exactly to edit this group:")
         instructions.pack()
         
         mono_font = ctk.CTkFont(family="Consolas", size=16)
@@ -341,18 +340,18 @@ class ProductivityApp(ctk.CTk):
         self.input_entry.pack(fill="x", padx=20, pady=10)
         
         def on_enter(event):
-            self.verify_challenge()
+            self.verify_challenge(next_action)
             return "break"
             
         self.input_entry.bind("<Return>", on_enter)
         
-        btn = ctk.CTkButton(challenge_frame, text="Verify", command=self.verify_challenge)
+        btn = ctk.CTkButton(challenge_frame, text="Verify", command=lambda: self.verify_challenge(next_action))
         btn.pack(pady=10)
         
-    def verify_challenge(self):
+    def verify_challenge(self, next_action):
         user_input = self.input_entry.get("1.0", "end-1c").strip()
         if user_input == self.challenge_string:
-            self.show_dashboard()
+            next_action()
         else:
             self.input_entry.configure(fg_color="#3a1c1c")
             self.after(500, lambda: self.input_entry.configure(fg_color=["#F9F9FA", "#1D1E1E"]))
@@ -387,7 +386,7 @@ class ProductivityApp(ctk.CTk):
         self.timer_lbl.pack(side="left", padx=10)
 
     def save_security(self, *args):
-        self.config_data["security"] = {
+        self.config_data["groups"][self.group_name]["security"] = {
             "enabled": self.sec_enabled.get() == 1,
             "challenge_length": int(self.length_var.get())
         }
@@ -407,7 +406,7 @@ class ProductivityApp(ctk.CTk):
         
         ctk.CTkButton(btn_frame, text="Rename", width=60, fg_color="#4a4a4a", hover_color="#3a3a3a", 
                       command=lambda n=name: self.rename_group(n)).pack(side="left", padx=5)
-        ctk.CTkButton(btn_frame, text="Edit", width=60, command=lambda n=name: self.show_group_editor(n)).pack(side="left")
+        ctk.CTkButton(btn_frame, text="Edit", width=60, command=lambda n=name: self.on_edit_click(n)).pack(side="left")
         
         stats = f"Websites: {len(data.get('websites', []))} | Apps: {len(data.get('apps', []))} | Files: {len(data.get('files', []))} | Content Filter: {'On' if data.get('adblocker', {}).get('enabled') else 'Off'}"
         ctk.CTkLabel(card, text=stats, text_color="gray").pack(anchor="w", padx=10, pady=(0, 5))
@@ -428,6 +427,14 @@ class ProductivityApp(ctk.CTk):
             self.config_data["groups"][new_name] = self.config_data["groups"].pop(old_name)
             self.trigger_save()
             self.show_dashboard()
+
+    def on_edit_click(self, group_name):
+        self.group_name = group_name
+        sec_cfg = self.config_data["groups"][group_name].get("security", {})
+        if sec_cfg.get("enabled", False):
+            self.show_challenge_screen(lambda: self.show_group_editor(group_name))
+        else:
+            self.show_group_editor(group_name)
 
     def show_group_editor(self, group_name):
         self.group_name = group_name
@@ -469,7 +476,7 @@ class ProductivityApp(ctk.CTk):
 
         ctk.CTkLabel(controls_frame, text="Challenge Length:").pack(side="left", padx=(0, 5))
         
-        sec = self.config_data.get("security", {})
+        sec = self.config_data["groups"][self.group_name].get("security", {})
         self.length_var = ctk.StringVar(value=str(sec.get("challenge_length", 32)))
         length_combo = ctk.CTkComboBox(controls_frame, values=["32", "64", "128", "256"], variable=self.length_var, command=self.save_security, width=70)
         length_combo.pack(side="left", padx=(0, 15))

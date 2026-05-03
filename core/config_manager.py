@@ -40,14 +40,14 @@ DEFAULT_GROUP_CONFIG = {
         "start_time": "09:00",
         "end_time": "17:00",
         "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    },
+    "security": {
+        "enabled": False,
+        "challenge_length": 32
     }
 }
 
 DEFAULT_CONFIG = {
-    "security": {
-        "challenge_length": 32,
-        "enabled": False
-    },
     "groups": {
         "Default Profile": copy.deepcopy(DEFAULT_GROUP_CONFIG)
     }
@@ -71,8 +71,8 @@ def load_config():
                     group_data["folders"] = data.get("folders", [])
                     group_data["adblocker"] = data.get("adblocker", DEFAULT_GROUP_CONFIG["adblocker"])
                     group_data["schedule"] = data.get("schedule", DEFAULT_GROUP_CONFIG["schedule"])
+                    group_data["security"] = data.get("security", DEFAULT_GROUP_CONFIG["security"])
                     migrated["groups"]["Default Profile"] = group_data
-                    migrated["security"] = data.get("security", DEFAULT_CONFIG["security"])
                     return migrated
                     
                 # Ensure structure
