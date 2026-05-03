@@ -9,9 +9,13 @@ import concurrent.futures
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from core.config_manager import load_config
-from core.scheduler import is_active
+from core.scheduler import is_active, is_day_active
 from blockers.website_blocker import apply_blocks, remove_blocks
 from blockers.app_blocker import ProcessMonitor
+try:
+    from blockers.file_blocker import FileBlocker
+except Exception:
+    FileBlocker = None
 
 import urllib.request
 import tempfile
@@ -36,19 +40,11 @@ def _dec(payload: str) -> list[str]:
     return [d.strip() for d in dec.decode("utf-8").split(",") if d.strip()]
 
 
-def _enc(plain: str) -> str:
-    """Helper (run once offline) to encode a plain comma-separated domain string."""
-    key = _K
-    raw = plain.encode("utf-8")
-    xored = bytes(b ^ key[i % len(key)] for i, b in enumerate(raw))
-    return base64.b64encode(zlib.compress(xored)).decode()
-
-
 # Sensitive payloads — XOR+zlib+base64. Domains are not readable without the key.
-# Generated with _enc() and embedded here.
-_ADULT   = _enc("pornhub.com,xvideos.com,xnxx.com,xhamster.com,chaturbate.com,livejasmin.com,cam4.com,myfreecams.com,stripchat.com,bongacams.com,brazzers.com,bangbros.com,onlyfans.com,fapello.com,redtube.com")
-_GAMBLE  = _enc("bet365.com,draftkings.com,fanduel.com,bovada.lv,betway.com,williamhill.com,pokerstars.com,888casino.com,betfair.com,unibet.com,caesarscasino.com,mgmresorts.com,betmgm.com")
-_PIRACY  = _enc("thepiratebay.org,1337x.to,rutracker.org,fitgirl-repacks.site,nyaa.si,rarbg.to,kickasstorrents.to,torrentz2.eu,yts.mx,eztv.re,limetorrents.cc,isozone.net,crackedgames.net,skidrowreloaded.com,repack-games.com")
+# Generated offline (see tools/encode_sensitive_lists.py) and embedded here.
+_ADULT = "eJwdzG0LwUAAAOBE8pL2B3zYdrNmHHdHszB7v3PuLKGk2D76QJLyjfx15Qc8D/BRDNBMAZLXzU0sHR+XLXvccten8yNN069lS9OBCWmx1ajBA2JMiq4Bk3sgls9VnDtTkJv9yd97jLU/IxhcLJURGlJfHKvIH5Zc3FuiQCZ2jbPFW406uhtp2aHpcVbBOjhgtbf9f4mgY4Ii9zrNoCIEKST3wC0zrBfTdiEnvCLm3r0YaHCv0wbF4gcLsyv0"
+_GAMBLE = "eJwzNDWTqy0od9L343DUcfeJsbDU8bLItvLT5XdyMXCK97WvU3RSy7T2M3NycCnwimExNDWL0rIBqw8y93JzNLLVclHXBPNDDX39oxRUlOMh+mVk01y9o63sdJk1tEx4ldwCnO39I9gM7PUZ7bQNnFXDudwMvdm8jUwNfSzNrByMvby8ClxdXettVR0sFbT8jMLDuW093UH2OehogMwHAOJMKHs="
+_PIRACY = "eJxTt1CPVTK3CFV1dI0p8Izwr08slKuxLQ/V5w8L0Arx9rYwNWBWMbfjVfMKcDIPcWNVNDXy0dDT4jf2CnAo8gj2NKozdEk3twhWcuEKNORydDSwVo6zMDQLNnLzCtTliHOvV9GNt1QwD7US5HLQ5gqOUajTD01XUA414w1zKPJydjWDyhvzursV+Ue6a9rreKRq24TmOIS52Pr6+5gY6ntYZJu7mPCH+5k7RbirKKk7qqjYuqjwunsZc0X4KhsquqUpWfioBnC5GXoDAI+1MeE="
 
 
 ADBLOCK_LISTS = {
@@ -86,7 +82,7 @@ ADBLOCK_LISTS = {
         "facebook.com", "fb.com", "fb.me", "connect.facebook.net",
         "pixel.facebook.com", "graph.facebook.com", "staticxx.facebook.com",
         # Twitter / X
-        "twitter.com", "x.com", "t.co", "twimg.com",
+        "twitter.com", "x.com", "www.x.com", "t.co", "twimg.com",
         # Instagram
         "instagram.com", "cdninstagram.com",
         # TikTok
@@ -207,8 +203,18 @@ class CustomListManager:
         out = []
         for line in content.splitlines():
             line = line.strip()
-            if not line or line.startswith("#"):
+            if not line or line.startswith("#") or line.startswith("!"):
                 continue
+
+            if line.startswith("||"):
+                domain = line[2:]
+                domain = domain.split("^", 1)[0]
+                domain = domain.split("/", 1)[0]
+                domain = domain.strip().lstrip(".").replace("*", "")
+                if domain and "." in domain:
+                    out.append(domain)
+                continue
+
             parts = line.split()
             if len(parts) >= 2 and parts[0] in ("0.0.0.0", "127.0.0.1"):
                 d = parts[1]
@@ -254,6 +260,8 @@ def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, se
     schedule_anywhere = False
 
     for _, gdata in config.get("groups", {}).items():
+        schedule = gdata.get("schedule", {})
+        day_active = is_day_active(schedule)
         sched_active = is_active(gdata)
         ad = gdata.get("adblocker", {})
         ad_on = ad.get("enabled", False)
@@ -268,7 +276,9 @@ def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, se
             all_folders.extend(gdata.get("folders", []))
 
         # Tier 2 — content filter
-        adblocker_active = ad_on and (ad_persist or sched_active)
+        adblocker_active = ad_on and ((day_active if ad_persist else sched_active))
+        if adblocker_active:
+            schedule_anywhere = True
         group_content: list[str] = []
         if adblocker_active:
             keys = ["ads_trackers", "malware_annoyances", "adult_content", "social_media",
@@ -284,7 +294,7 @@ def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, se
                         group_content.extend(res)
 
         # Apply exceptions to Tier 2 only
-        raw_exc = gdata.get("exceptions", [])
+        raw_exc = ad.get("exceptions", [])
         exc_set = {_base(e) for e in raw_exc if e.strip()}
         if exc_set:
             group_content = [d for d in group_content if not _is_excepted(d, exc_set)]
@@ -328,6 +338,7 @@ def main() -> None:
             "SimpleProductivityBlocker", "config.json")
 
     pm = ProcessMonitor()
+    file_blocker = FileBlocker() if FileBlocker else None
     clm = CustomListManager()
 
     cur_domains: set = set()
@@ -383,11 +394,24 @@ def main() -> None:
                 else:
                     pm.stop()
 
+                if file_blocker:
+                    lock_targets = set(cur_files)
+                    for app in cur_apps:
+                        if isinstance(app, str) and (os.path.isabs(app) or os.path.sep in app or (os.path.altsep and os.path.altsep in app)):
+                            lock_targets.add(app)
+                    if lock_targets:
+                        file_blocker.set_blocked_files(list(lock_targets))
+                        file_blocker.start()
+                    else:
+                        file_blocker.stop()
+
             time.sleep(1)
 
     except KeyboardInterrupt:
         remove_blocks()
         pm.stop()
+        if file_blocker:
+            file_blocker.stop()
         print("Daemon stopped.")
 
 
