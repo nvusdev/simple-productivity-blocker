@@ -385,27 +385,6 @@ class ProductivityApp(ctk.CTk):
         
         self.timer_lbl = ctk.CTkLabel(bottom_bar, text="", text_color="green", font=ctk.CTkFont(size=12))
         self.timer_lbl.pack(side="left", padx=10)
-        
-        sec_frame = ctk.CTkFrame(bottom_bar, fg_color="transparent")
-        sec_frame.pack(side="right")
-        
-        info_lbl = ctk.CTkLabel(sec_frame, text="(Higher lengths are more secure but harder to type)", text_color="gray", font=ctk.CTkFont(size=11))
-        info_lbl.pack(side="bottom", anchor="e", pady=(0, 5))
-        
-        controls_frame = ctk.CTkFrame(sec_frame, fg_color="transparent")
-        controls_frame.pack(side="top")
-
-        ctk.CTkLabel(controls_frame, text="Challenge Length:").pack(side="left", padx=(0, 5))
-        
-        sec = self.config_data.get("security", {})
-        self.length_var = ctk.StringVar(value=str(sec.get("challenge_length", 32)))
-        length_combo = ctk.CTkComboBox(controls_frame, values=["32", "64", "128", "256"], variable=self.length_var, command=self.save_security, width=70)
-        length_combo.pack(side="left", padx=(0, 15))
-        
-        self.sec_enabled = ctk.CTkSwitch(controls_frame, text="Enable Security Challenge", command=self.save_security)
-        if sec.get("enabled", False):
-            self.sec_enabled.select()
-        self.sec_enabled.pack(side="left")
 
     def save_security(self, *args):
         self.config_data["security"] = {
@@ -478,6 +457,27 @@ class ProductivityApp(ctk.CTk):
         
         self.timer_lbl = ctk.CTkLabel(self.status_frame, text="", text_color="green", font=ctk.CTkFont(size=12))
         self.timer_lbl.pack(side="left", padx=10)
+        
+        sec_frame = ctk.CTkFrame(self.status_frame, fg_color="transparent")
+        sec_frame.pack(side="right")
+        
+        info_lbl = ctk.CTkLabel(sec_frame, text="(Higher lengths are more secure but harder to type)", text_color="gray", font=ctk.CTkFont(size=11))
+        info_lbl.pack(side="bottom", anchor="e", pady=(0, 5))
+        
+        controls_frame = ctk.CTkFrame(sec_frame, fg_color="transparent")
+        controls_frame.pack(side="top")
+
+        ctk.CTkLabel(controls_frame, text="Challenge Length:").pack(side="left", padx=(0, 5))
+        
+        sec = self.config_data.get("security", {})
+        self.length_var = ctk.StringVar(value=str(sec.get("challenge_length", 32)))
+        length_combo = ctk.CTkComboBox(controls_frame, values=["32", "64", "128", "256"], variable=self.length_var, command=self.save_security, width=70)
+        length_combo.pack(side="left", padx=(0, 15))
+        
+        self.sec_enabled = ctk.CTkSwitch(controls_frame, text="Enable Security Challenge", command=self.save_security)
+        if sec.get("enabled", False):
+            self.sec_enabled.select()
+        self.sec_enabled.pack(side="left")
         
         def validate_website(val):
             if "http" in val: return False, "Do not include http:// or https://"
