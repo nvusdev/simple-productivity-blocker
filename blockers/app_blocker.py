@@ -8,22 +8,112 @@ import urllib.parse
 
 class ProcessMonitor:
     def __init__(self):
-        self.blocked_apps = []
-        self.blocked_files = []
-        self.blocked_folders = []
+        self.blocked_app_names = set()
+        self.blocked_app_paths = set()
+        self.blocked_file_paths = set()
+        self.blocked_file_names = set()
+        self.blocked_folder_roots = []
+        self.blocked_folder_prefixes = []
         self.is_active = False
         self._watcher_thread = None
         self._stop_event = threading.Event()
+        self._last_shell_check = 0.0
+        self._fast_until = 0.0
+        self._fast_interval = 0.5
+        self._base_interval = 1.0
+
+    def _normalize_path(self, path):
+        return os.path.normcase(os.path.abspath(path))
+
+    def _looks_like_path(self, value):
+        if not value:
+            return False
+        if os.path.isabs(value):
+            return True
+        if value.startswith("\\\\"):
+            return True
+        if len(value) >= 3 and value[1] == ":" and value[2] in ("\\", "/"):
+            return True
+        if os.path.sep in value:
+            return True
+        if os.path.altsep and os.path.altsep in value:
+            return True
+        return False
+
+    def _extract_path_candidates(self, arg):
+        candidates = []
+        if not arg:
+            return candidates
+        parts = arg.split("=") if "=" in arg else [arg]
+        for part in parts:
+            part = part.strip("\"'")
+            if not part:
+                continue
+            if self._looks_like_path(part):
+                candidates.append(part)
+        return candidates
+
+    def _arg_mentions_filename(self, arg_lower, name):
+        if arg_lower == name:
+            return True
+        if arg_lower.endswith(os.path.sep + name):
+            return True
+        if os.path.altsep and arg_lower.endswith(os.path.altsep + name):
+            return True
+        if "=" in arg_lower and arg_lower.endswith(name):
+            return True
+        return False
+
+    def _is_in_blocked_folder(self, path_norm):
+        for root, prefix in zip(self.blocked_folder_roots, self.blocked_folder_prefixes):
+            if path_norm == root or path_norm.startswith(prefix):
+                return True
+        return False
 
     def set_blocked_apps(self, apps):
-        self.blocked_apps = [app.lower().strip() for app in apps]
+        self._fast_until = time.time() + 10
+        self.blocked_app_names.clear()
+        self.blocked_app_paths.clear()
+        for app in apps:
+            app = app.strip()
+            if not app:
+                continue
+            app_lower = app.lower()
+            base = os.path.basename(app_lower)
+            if base:
+                self.blocked_app_names.add(base)
+                stem = os.path.splitext(base)[0]
+                if stem and stem != base:
+                    self.blocked_app_names.add(stem)
+            if self._looks_like_path(app):
+                self.blocked_app_paths.add(self._normalize_path(app))
 
     def set_blocked_files(self, files):
-        # We store exact paths or basenames lowercased
-        self.blocked_files = [f.lower().strip() for f in files]
+        self._fast_until = time.time() + 10
+        self.blocked_file_paths.clear()
+        self.blocked_file_names.clear()
+        for file_path in files:
+            file_path = file_path.strip()
+            if not file_path:
+                continue
+            norm = self._normalize_path(file_path)
+            self.blocked_file_paths.add(norm)
+            base = os.path.basename(norm)
+            if base:
+                self.blocked_file_names.add(base.lower())
 
     def set_blocked_folders(self, folders):
-        self.blocked_folders = [os.path.normcase(os.path.abspath(f.strip())) for f in folders if f.strip()]
+        self._fast_until = time.time() + 10
+        self.blocked_folder_roots = []
+        self.blocked_folder_prefixes = []
+        for folder in folders:
+            folder = folder.strip()
+            if not folder:
+                continue
+            root = self._normalize_path(folder)
+            prefix = root if root.endswith(os.path.sep) else root + os.path.sep
+            self.blocked_folder_roots.append(root)
+            self.blocked_folder_prefixes.append(prefix)
 
     def start(self):
         if self.is_active:
@@ -48,22 +138,22 @@ class ProcessMonitor:
             pass
             
         while not self._stop_event.is_set():
-            if self.blocked_folders and shell:
+            now = time.time()
+            if self.blocked_folder_roots and shell and (now - self._last_shell_check) >= 2:
+                self._last_shell_check = now
                 try:
                     for window in shell.Windows():
                         url = window.LocationURL
                         if url.startswith("file:///"):
                             path = urllib.parse.unquote(url[8:])
                             path = path.replace('/', '\\')
-                            path_norm = os.path.normcase(os.path.abspath(path))
-                            for bf in self.blocked_folders:
-                                if path_norm.startswith(bf):
-                                    window.Quit()
-                                    break
+                            path_norm = self._normalize_path(path)
+                            if self._is_in_blocked_folder(path_norm):
+                                window.Quit()
                 except Exception:
                     pass
 
-            if self.blocked_apps or self.blocked_files or self.blocked_folders:
+            if self.blocked_app_names or self.blocked_app_paths or self.blocked_file_paths or self.blocked_folder_roots:
                 for proc in psutil.process_iter(['name', 'pid', 'exe', 'cmdline']):
                     try:
                         name = proc.info.get('name')
@@ -75,49 +165,60 @@ class ProcessMonitor:
                         # 1. Check App Names
                         if name:
                             name_lower = name.lower()
-                            if name_lower in self.blocked_apps:
+                            if name_lower in self.blocked_app_names:
                                 should_kill = True
-                            for blocked in self.blocked_apps:
-                                if os.path.basename(blocked) == name_lower:
-                                    should_kill = True
-                                    
+
                         if exe and not should_kill:
-                            exe_lower = exe.lower()
-                            if exe_lower in self.blocked_apps:
+                            exe_norm = self._normalize_path(exe)
+                            exe_base = os.path.basename(exe_norm).lower()
+                            if exe_base in self.blocked_app_names or exe_norm in self.blocked_app_paths:
                                 should_kill = True
 
                         # 2. Check Folders in Exe Path
-                        if exe and not should_kill and self.blocked_folders:
-                            exe_norm = os.path.normcase(os.path.abspath(exe))
-                            for bf in self.blocked_folders:
-                                if exe_norm.startswith(bf):
-                                    should_kill = True
-                                    break
+                        if exe and not should_kill and self.blocked_folder_roots:
+                            if self._is_in_blocked_folder(exe_norm):
+                                should_kill = True
 
                         # 3. Check File/Folder Paths in CmdLine
-                        if not should_kill and cmdline and (self.blocked_files or self.blocked_folders):
-                            cmdline_str = " ".join([str(arg).lower() for arg in cmdline])
-                            
-                            if self.blocked_files:
-                                for blocked_file in self.blocked_files:
-                                    if blocked_file in cmdline_str:
+                        if not should_kill and cmdline and (self.blocked_app_names or self.blocked_app_paths or self.blocked_file_paths or self.blocked_folder_roots):
+                            for arg in cmdline:
+                                arg_str = str(arg).strip("\"'")
+                                if not arg_str:
+                                    continue
+
+                                arg_lower = arg_str.lower()
+                                for name in self.blocked_app_names:
+                                    if self._arg_mentions_filename(arg_lower, name):
                                         should_kill = True
                                         break
-                                    basename = os.path.basename(blocked_file)
-                                    if basename and basename in cmdline_str:
+                                if should_kill:
+                                    break
+
+                                for name in self.blocked_file_names:
+                                    if self._arg_mentions_filename(arg_lower, name):
                                         should_kill = True
                                         break
-                                        
-                            if not should_kill and self.blocked_folders:
-                                cmd_norm = cmdline_str.replace('/', '\\')
-                                for bf in self.blocked_folders:
-                                    if bf in cmd_norm:
+                                if should_kill:
+                                    break
+
+                                for candidate in self._extract_path_candidates(arg_str):
+                                    arg_norm = self._normalize_path(candidate)
+                                    if arg_norm in self.blocked_app_paths:
                                         should_kill = True
                                         break
+                                    if arg_norm in self.blocked_file_paths:
+                                        should_kill = True
+                                        break
+                                    if self.blocked_folder_roots and self._is_in_blocked_folder(arg_norm):
+                                        should_kill = True
+                                        break
+                                if should_kill:
+                                    break
 
                         if should_kill:
                             proc.kill()
                             
                     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                         pass
-            time.sleep(1)
+            interval = self._fast_interval if time.time() < self._fast_until else self._base_interval
+            time.sleep(interval)
