@@ -9,27 +9,32 @@ if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
 
 # Prepare icon from newlogo.png
 $iconPng = Join-Path $PSScriptRoot "newlogo.png"
-$tempIco = Join-Path $PSScriptRoot "icon.ico" # Use icon.ico as the target
+$tempIco = Join-Path $PSScriptRoot "icon.ico"
 
 if (-not (Test-Path $iconPng)) {
     Write-Host "Error: Missing newlogo.png in the project root."
     exit 1
 }
 
-# Convert PNG to ICO if needed
+# Convert PNG to ICO using a temporary script for robustness
+$scriptPath = Join-Path $env:TEMP "spb_icon_gen.py"
 $py = @"
 import sys
 from PIL import Image
 try:
-    img = Image.open(r"$iconPng")
-    img.save(r"$tempIco", format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
-    print("Icon converted successfully.")
+    img = Image.open(r'$iconPng')
+    img.save(r'$tempIco', format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
 except Exception as e:
-    print(f"Icon conversion failed: {e}")
+    print(e)
     sys.exit(1)
 "@
-python -c "$py"
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Set-Content -Path $scriptPath -Value $py -Encoding UTF8
+python $scriptPath
+if ($LASTEXITCODE -ne 0) { 
+    Write-Host "Icon conversion failed."
+    exit $LASTEXITCODE 
+}
+Remove-Item $scriptPath -Force
 
 # Build the main app (Bundled with assets for a clean dist folder)
 Write-Host "Building SimpleProductivityBlocker.exe..."
