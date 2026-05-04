@@ -166,22 +166,29 @@ class ProcessMonitor:
             if self.blocked_folder_roots and shell and (now - self._last_shell_check) >= self._shell_interval:
                 self._last_shell_check = now
                 try:
+                    targets = []
                     for window in shell.Windows():
-                        url = window.LocationURL
-                        if url.startswith("file:///"):
-                            path = urllib.parse.unquote(url[8:])
-                            path = path.replace('/', '\\')
-                            path_norm = self._normalize_path(path)
-                            if self._is_in_blocked_folder(path_norm):
-                                try:
-                                    window.Quit()
-                                except Exception:
-                                    try:
-                                        window.Navigate("C:\\")
-                                    except Exception:
-                                        pass
+                        try:
+                            url = getattr(window, "LocationURL", "")
+                            if url.startswith("file:///"):
+                                path = urllib.parse.unquote(url[8:]).replace('/', '\\')
+                                path_norm = self._normalize_path(path)
+                                if self._is_in_blocked_folder(path_norm):
+                                    targets.append(window)
+                        except Exception:
+                            continue
+                    
+                    for window in targets:
+                        try:
+                            window.Quit()
+                        except Exception:
+                            try:
+                                window.Navigate("C:\\")
+                            except Exception:
+                                pass
                 except Exception:
                     pass
+
 
             if self.blocked_app_names or self.blocked_app_paths or self.blocked_file_paths or self.blocked_folder_roots:
                 for proc in psutil.process_iter(['name', 'pid', 'exe', 'cmdline']):
@@ -205,10 +212,23 @@ class ProcessMonitor:
                             if exe_base in self.blocked_app_names or exe_norm in self.blocked_app_paths:
                                 should_kill = True
 
-                        # 2. Check Folders in Exe Path
-                        if exe and not should_kill and self.blocked_folder_roots and not skip_file_folder:
-                            if self._is_in_blocked_folder(exe_norm):
-                                should_kill = True
+                        # 2. Check Folders in Exe Path or CWD
+                        if not should_kill and self.blocked_folder_roots and not skip_file_folder:
+                            if exe:
+                                exe_norm = self._normalize_path(exe)
+                                if self._is_in_blocked_folder(exe_norm):
+                                    should_kill = True
+                            
+                            if not should_kill:
+                                try:
+                                    cwd = proc.cwd()
+                                    if cwd:
+                                        cwd_norm = self._normalize_path(cwd)
+                                        if self._is_in_blocked_folder(cwd_norm):
+                                            should_kill = True
+                                except Exception:
+                                    pass
+
 
                         # 3. Check File/Folder Paths in CmdLine
                         if not should_kill and cmdline and (self.blocked_app_names or self.blocked_app_paths or self.blocked_file_paths or self.blocked_folder_roots):
@@ -248,9 +268,13 @@ class ProcessMonitor:
                                     break
 
                         if should_kill:
-                            proc.kill()
+                            try:
+                                proc.kill()
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                pass
                             
                     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                         pass
+
             interval = self._fast_interval if time.time() < self._fast_until else self._base_interval
             time.sleep(interval)

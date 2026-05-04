@@ -11,7 +11,7 @@ import ctypes
 import sys
 from daemon import ADBLOCK_LISTS
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
@@ -243,10 +243,29 @@ class ProductivityApp(ctk.CTk):
         ws = self.winfo_screenwidth()
         hs = self.winfo_screenheight()
         w = int(ws * 0.65)
-        h = int(hs * 0.75)
+        h = int(hs * 0.8)
         x = (ws - w) // 2
         y = (hs - h) // 2
         self.geometry(f"{w}x{h}+{x}+{y}")
+        
+        # Set window icon
+        try:
+            if getattr(sys, 'frozen', False):
+                base_path = os.path.dirname(sys.executable)
+            else:
+                base_path = os.path.dirname(os.path.abspath(__file__))
+
+            png_path = os.path.join(base_path, "newlogo.png")
+
+            if os.path.exists(png_path):
+                from PIL import Image, ImageTk
+                img = Image.open(png_path)
+                self._icon_img = ImageTk.PhotoImage(img)
+                self.wm_iconphoto(True, self._icon_img)
+        except Exception as e:
+            print(f"Icon error: {e}")
+
+
         
         self.config_data = load_config()
         self.save_job = None

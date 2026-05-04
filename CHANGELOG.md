@@ -1,6 +1,17 @@
 # Simple Productivity Blocker - Version History
 
-## [Unreleased]
+## [1.2.1] - 2026-05-04
+### Added
+- **New Branding**: Replaced the default CustomTkinter logo with a custom application icon (`newlogo.png`).
+- **Enhanced Folder Redundancy**: The folder blocker now monitors the Working Directory (CWD) of all running processes. If a process is launched from within a blocked folder (or any of its subfolders), it is immediately terminated.
+
+### Changed
+- **UI Scaling**: Increased the default window height to prevent UI elements from being squished on smaller screens or high-DPI displays.
+- **Robust Explorer Interception**: Refactored the File Explorer monitoring loop to prevent accidental crashes or stalls when closing multiple windows simultaneously.
+
+### Fixed
+- **Folder Blocking Loop**: Resolved an issue where folder enforcement could prematurely stop after terminating a single process.
+
 ### Added
 - **Directory/Folder Blocking**: Added a new 'Folders' tab allowing users to block entire directories. The daemon now actively uses Windows Shell COM (`win32com.client`) to intercept and close any Windows File Explorer windows attempting to access blocked directories.
 - **Uninstaller Packaging**: Created a standalone `spb_uninstaller.exe` that safely removes the scheduled daemon task, restores the Windows hosts file, and deletes program files. It is now automatically packaged in the build process.

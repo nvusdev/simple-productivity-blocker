@@ -85,7 +85,9 @@ def main():
     desktop = os.path.join(os.environ["USERPROFILE"], "Desktop")
     shortcut_path = os.path.join(desktop, "Simple Productivity Blocker.lnk")
     
-    if create_shortcut(os.path.join(dest_dir, "spb.exe"), shortcut_path):
+    icon_location = f"{os.path.join(dest_dir, 'spb.exe')},0"
+
+    if create_shortcut(os.path.join(dest_dir, "spb.exe"), shortcut_path, icon=icon_location):
         print("\nDesktop shortcut created successfully!")
     else:
         print("\nWarning: Failed to create desktop shortcut. You may need to run 'pip install pywin32'.")

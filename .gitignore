@@ -17,3 +17,19 @@ __pycache__/
 Thumbs.db
 Implementation\ Plan.md
 tools/encode_sensitive_lists.py
+
+# Local configuration and state
+config.json
+*.local
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Scratch scripts
+test_close.py
+test_shell.py
+
