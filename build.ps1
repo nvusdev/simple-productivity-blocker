@@ -1,5 +1,5 @@
 # build.ps1
-# Requires PyInstaller to be installed (pip install pyinstaller)
+# Requires PyInstaller and Pillow (pip install pyinstaller Pillow)
 
 Write-Host "Building Simple Productivity Blocker for Windows..."
 
@@ -9,69 +9,60 @@ if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
 
 # Prepare icon from newlogo.png
 $iconPng = Join-Path $PSScriptRoot "newlogo.png"
-$tempIco = Join-Path $PSScriptRoot "newlogo_temp.ico"
-$scriptPath = Join-Path $env:TEMP "spb_icon_convert.py"
+$tempIco = Join-Path $PSScriptRoot "icon.ico" # Use icon.ico as the target
 
 if (-not (Test-Path $iconPng)) {
-    Write-Host "Missing newlogo.png in the project root."
+    Write-Host "Error: Missing newlogo.png in the project root."
     exit 1
 }
 
+# Convert PNG to ICO if needed
 $py = @"
 import sys
 from PIL import Image
-
-png = r"$iconPng"
-ico = r"$tempIco"
-
 try:
-    img = Image.open(png)
-    img.save(ico)
+    img = Image.open(r"$iconPng")
+    img.save(r"$tempIco", format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
+    print("Icon converted successfully.")
 except Exception as e:
     print(f"Icon conversion failed: {e}")
     sys.exit(1)
 "@
-
-Set-Content -Path $scriptPath -Value $py -Encoding ASCII
-python $scriptPath
+python -c "$py"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-# Build the main app
-Write-Host "Building spb.exe..."
-python -m PyInstaller --noconfirm --onedir --windowed --uac-admin --icon="$tempIco" --name "spb" main.py
+# Build the main app (Bundled with assets for a clean dist folder)
+Write-Host "Building SimpleProductivityBlocker.exe..."
+python -m PyInstaller --noconfirm --onedir --windowed --uac-admin `
+    --icon="$tempIco" `
+    --add-data "newlogo.png;." `
+    --add-data "icon.ico;." `
+    --name "SimpleProductivityBlocker" main.py
 
 # Build the daemon
-Write-Host "Building daemon.exe..."
-python -m PyInstaller --noconfirm --onedir --windowed --name "daemon" daemon.py
+Write-Host "Building SPB_Daemon.exe..."
+python -m PyInstaller --noconfirm --onedir --windowed `
+    --icon="$tempIco" `
+    --name "SPB_Daemon" daemon.py
 
-# Copy daemon into main app directory
-Copy-Item "dist\daemon\daemon.exe" -Destination "dist\spb\"
+# Assemble the package
+Write-Host "Assembling package..."
+$pkgDir = "dist\SimpleProductivityBlocker"
+Copy-Item "dist\SPB_Daemon\SPB_Daemon.exe" -Destination "$pkgDir\"
 
-# Copy newlogo.png into the app directory
-Copy-Item $iconPng -Destination "dist\spb\"
-
-# Build the installer
+# Build and copy installer/uninstaller
 Write-Host "Building spb_installer.exe..."
 python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempIco" --name "spb_installer" spb_installer.py
+Copy-Item "dist\spb_installer.exe" -Destination "$pkgDir\"
 
-# Move installer to the package directory
-Copy-Item "dist\spb_installer.exe" -Destination "dist\spb\"
-
-# Build the uninstaller
 Write-Host "Building spb_uninstaller.exe..."
 python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempIco" --name "spb_uninstaller" spb_uninstaller.py
+Copy-Item "dist\spb_uninstaller.exe" -Destination "$pkgDir\"
 
-# Move uninstaller to the package directory
-Copy-Item "dist\spb_uninstaller.exe" -Destination "dist\spb\"
-
-# Copy CHANGELOG.md
+# Copy Documentation
 if (Test-Path "CHANGELOG.md") {
-    Copy-Item "CHANGELOG.md" -Destination "dist\spb\"
+    Copy-Item "CHANGELOG.md" -Destination "$pkgDir\"
 }
 
-Write-Host "Build complete! Your deployable package is in dist\spb"
-Write-Host "Zip the 'dist\spb' folder to distribute it to users."
-
-# Cleanup temporary icon conversion artifacts
-if (Test-Path $tempIco) { Remove-Item $tempIco -Force }
-if (Test-Path $scriptPath) { Remove-Item $scriptPath -Force }
+Write-Host "Build complete! Your deployable package is in dist\SimpleProductivityBlocker"
+Write-Host "Zip the 'dist\SimpleProductivityBlocker' folder to distribute it to users."

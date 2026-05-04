@@ -13,6 +13,16 @@ from daemon import ADBLOCK_LISTS
 
 VERSION = "1.2.1"
 
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
@@ -248,15 +258,14 @@ class ProductivityApp(ctk.CTk):
         y = (hs - h) // 2
         self.geometry(f"{w}x{h}+{x}+{y}")
         
-        # Set window icon
+        # Set window icon (bundled)
         try:
-            if getattr(sys, 'frozen', False):
-                base_path = os.path.dirname(sys.executable)
-            else:
-                base_path = os.path.dirname(os.path.abspath(__file__))
-
-            png_path = os.path.join(base_path, "newlogo.png")
-
+            ico_path = resource_path("icon.ico")
+            png_path = resource_path("newlogo.png")
+            
+            if os.path.exists(ico_path):
+                self.iconbitmap(ico_path)
+            
             if os.path.exists(png_path):
                 from PIL import Image, ImageTk
                 img = Image.open(png_path)
@@ -264,6 +273,7 @@ class ProductivityApp(ctk.CTk):
                 self.wm_iconphoto(True, self._icon_img)
         except Exception as e:
             print(f"Icon error: {e}")
+
 
 
         
@@ -284,7 +294,8 @@ class ProductivityApp(ctk.CTk):
             self.launch_daemon()
 
     def _daemon_running(self):
-        daemon_name = "daemon.exe" if os.name == 'nt' else "daemon"
+        daemon_name = "SPB_Daemon.exe" if os.name == 'nt' else "SPB_Daemon"
+
         daemon_name_lower = daemon_name.lower()
         for proc in psutil.process_iter(['name', 'cmdline', 'exe']):
             try:
@@ -300,13 +311,15 @@ class ProductivityApp(ctk.CTk):
                     for arg in cmdline:
                         if "daemon.py" in str(arg).lower():
                             return True
+
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
         return False
 
     def launch_daemon(self):
         if getattr(sys, 'frozen', False):
-            daemon_path = os.path.join(os.path.dirname(sys.executable), "daemon.exe" if os.name == 'nt' else "daemon")
+            daemon_path = os.path.join(os.path.dirname(sys.executable), "SPB_Daemon.exe" if os.name == 'nt' else "SPB_Daemon")
+
             exe_to_run = daemon_path
         else:
             daemon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daemon.py")

@@ -34,9 +34,10 @@ def main():
         sys.exit()
         
     src_dir = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__))
-    app_exe = os.path.join(src_dir, "spb.exe")
-    daemon_exe = os.path.join(src_dir, "daemon.exe")
+    app_exe = os.path.join(src_dir, "SimpleProductivityBlocker.exe")
+    daemon_exe = os.path.join(src_dir, "SPB_Daemon.exe")
     uninstaller_exe = os.path.join(src_dir, "spb_uninstaller.exe")
+
     
     if not os.path.exists(app_exe) or not os.path.exists(daemon_exe):
         print("Error: Could not find spb.exe or daemon.exe in the installation directory.")
@@ -50,14 +51,16 @@ def main():
     
     try:
         import subprocess
-        subprocess.run(["taskkill", "/F", "/IM", "daemon.exe"], capture_output=True)
-        subprocess.run(["taskkill", "/F", "/IM", "spb.exe"], capture_output=True)
+        subprocess.run(["taskkill", "/F", "/IM", "SPB_Daemon.exe"], capture_output=True)
+        subprocess.run(["taskkill", "/F", "/IM", "SimpleProductivityBlocker.exe"], capture_output=True)
+
         
         if not os.path.exists(dest_dir):
             os.makedirs(dest_dir)
             
-        shutil.copy2(app_exe, os.path.join(dest_dir, "spb.exe"))
-        shutil.copy2(daemon_exe, os.path.join(dest_dir, "daemon.exe"))
+        shutil.copy2(app_exe, os.path.join(dest_dir, "SimpleProductivityBlocker.exe"))
+        shutil.copy2(daemon_exe, os.path.join(dest_dir, "SPB_Daemon.exe"))
+
         if os.path.exists(uninstaller_exe):
             shutil.copy2(uninstaller_exe, os.path.join(dest_dir, "spb_uninstaller.exe"))
         
@@ -73,7 +76,8 @@ def main():
         
         print("\nCreating Scheduled Task for persistent background protection...")
         import subprocess
-        daemon_dest = os.path.join(dest_dir, "daemon.exe")
+        daemon_dest = os.path.join(dest_dir, "SPB_Daemon.exe")
+
         subprocess.run(['schtasks', '/create', '/tn', 'SPB_Daemon', '/tr', f'"{daemon_dest}"', '/sc', 'onlogon', '/rl', 'highest', '/f'], capture_output=True)
         subprocess.run(['schtasks', '/run', '/tn', 'SPB_Daemon'], capture_output=True)
         
@@ -85,9 +89,10 @@ def main():
     desktop = os.path.join(os.environ["USERPROFILE"], "Desktop")
     shortcut_path = os.path.join(desktop, "Simple Productivity Blocker.lnk")
     
-    icon_location = f"{os.path.join(dest_dir, 'spb.exe')},0"
+    icon_location = f"{os.path.join(dest_dir, 'SimpleProductivityBlocker.exe')},0"
 
-    if create_shortcut(os.path.join(dest_dir, "spb.exe"), shortcut_path, icon=icon_location):
+    if create_shortcut(os.path.join(dest_dir, "SimpleProductivityBlocker.exe"), shortcut_path, icon=icon_location):
+
         print("\nDesktop shortcut created successfully!")
     else:
         print("\nWarning: Failed to create desktop shortcut. You may need to run 'pip install pywin32'.")

@@ -40,8 +40,9 @@ def is_admin():
 def kill_processes():
     print("Terminating background processes...")
     try:
-        subprocess.run(["taskkill", "/F", "/IM", "spb.exe"], capture_output=True)
-        subprocess.run(["taskkill", "/F", "/IM", "daemon.exe"], capture_output=True)
+        subprocess.run(["taskkill", "/F", "/IM", "SimpleProductivityBlocker.exe"], capture_output=True)
+        subprocess.run(["taskkill", "/F", "/IM", "SPB_Daemon.exe"], capture_output=True)
+
     except:
         pass
     time.sleep(2)
