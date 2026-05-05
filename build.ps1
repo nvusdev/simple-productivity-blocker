@@ -4,8 +4,17 @@
 Write-Host "Building Simple Productivity Blocker for Windows..."
 
 # Clean previous builds
-if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" }
-if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
+Write-Host "Cleaning previous build artifacts and terminating running instances..."
+Get-Process "SimpleProductivityBlocker" -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process "SPB_Daemon" -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Seconds 2 # Wait for file handles to release
+
+if (Test-Path "dist") { 
+    Remove-Item -Recurse -Force "dist" -ErrorAction SilentlyContinue
+}
+if (Test-Path "build") { 
+    Remove-Item -Recurse -Force "build" -ErrorAction SilentlyContinue
+}
 
 # Prepare icon from newlogo.png
 $iconPng = Join-Path $PSScriptRoot "newlogo.png"
@@ -44,6 +53,10 @@ python -m PyInstaller --noconfirm --onedir --windowed --uac-admin `
     --add-data "icon.ico;." `
     --collect-all pywin32 `
     --hidden-import=pywintypes `
+    --hidden-import=pythoncom `
+    --hidden-import=win32com `
+    --exclude-module redis `
+    --exclude-module opentelemetry `
     --name "SimpleProductivityBlocker" main.py
 
 # Build the daemon
@@ -52,6 +65,10 @@ python -m PyInstaller --noconfirm --onedir --windowed `
     --icon="$tempIco" `
     --collect-all pywin32 `
     --hidden-import=pywintypes `
+    --hidden-import=pythoncom `
+    --hidden-import=win32com `
+    --exclude-module redis `
+    --exclude-module opentelemetry `
     --name "SPB_Daemon" daemon.py
 
 # Assemble the package
@@ -67,6 +84,16 @@ Copy-Item "dist\spb_installer.exe" -Destination "$pkgDir\"
 Write-Host "Building spb_uninstaller.exe..."
 python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempIco" --name "spb_uninstaller" spb_uninstaller.py
 Copy-Item "dist\spb_uninstaller.exe" -Destination "$pkgDir\"
+
+# Explicitly bundle pywin32 system DLLs to ensure Folder Monitoring works
+Write-Host "Bundling pywin32 system components..."
+$pywin32SysDir = "C:\Users\You\AppData\Roaming\Python\Python314\site-packages\pywin32_system32"
+if (Test-Path $pywin32SysDir) {
+    Copy-Item "$pywin32SysDir\*.dll" -Destination "$pkgDir\"
+    Write-Host "COM Drivers bundled successfully."
+} else {
+    Write-Host "Warning: Could not find pywin32_system32. Folder monitoring may be limited."
+}
 
 # Copy Documentation
 if (Test-Path "CHANGELOG.md") {
