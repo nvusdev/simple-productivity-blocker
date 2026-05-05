@@ -8,6 +8,11 @@ import concurrent.futures
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+# Prevent crashing dependencies (redis/opentelemetry) from loading via portalocker/others
+sys.modules['redis'] = None
+sys.modules['opentelemetry'] = None
+sys.modules['opentelemetry.context'] = None
+
 if os.name == 'nt':
     try:
         import pywintypes
@@ -33,9 +38,9 @@ import hashlib
 _K = bytes([0x53, 0x50, 0x42, 0x2D, 0x4B, 0x45, 0x59, 0x21,
             0x40, 0x23, 0x24, 0x25, 0x5E, 0x26, 0x2A, 0x28])
 
-_ADULT = "eJwdzG0LwUAAAOBE8pL2B3zYdrNmHHdHszB7v3PuLKGk2D76QJLyjfx15Qc8D/BRDNBMAZLXzU0sHR+XLXvccten8yNN069lS9OBCWmx1ajBA2JMiq4Bk3sgls9VnDtTkJv9yd97jLU/IxhcLJURGlJfHKvIH5Zc3FuiQCZ2jbPFW406uhtp2aHpcVbBOjhgtbf9f4mgY4Ii9zrNoCIEKST3wC0zrBfTdiEnvCLm3r0YaHCv0wbF4gcLsyv0"
-_GAMBLE = "eJwzNDWTqy0od9L343DUcfeJsbDU8bLItvLT5XdyMXCK97WvU3RSy7T2M3NycCnwimExNDWL0rIBqw8y93JzNLLVclHXBPNDDX39oxRUlOMh+mVk01y9o63sdJk1tEx4ldwCnO39I9gM7PUZ7bQNnFXDudwMvdm8jUwNfSzNrByMvby8ClxdXettVR0sFbT8jMLDuW093UH2OehogMwHAOJMKHs="
-_PIRACY = "eJxTt1CPVTK3CFV1dI0p8Izwr08slKuxLQ/V5w8L0Arx9rYwNWBWMbfjVfMKcDIPcWNVNDXy0dDT4jf2CnAo8gj2NKozdEk3twhWcuEKNORydDSwVo6zMDQLNnLzCtTliHOvV9GNt1QwD7US5HLQ5gqOUajTD01XUA414w1zKPJydjWDyhvzursV+Ue6a9rreKRq24TmOIS52Pr6+5gY6ntYZJu7mPCH+5k7RbirKKk7qqjYuqjwunsZc0X4KhsquqUpWfioBnC5GXoDAI+1MeE="
+_ADULT = "eJwt0FtLwmAAxnFCGVbE6iKK6sLXzQNu7lDu4Glz27vt3cnpXAczJxQhoogJZjfpV4/Eyx//m4cH5Bn087UZyMPMM+WGt5PtvU9k5WARaL1VPIbix/cwB5qdRdtDB7+SkmDubdzdvG9ppE6b16vLE68RYYbYqhjkrBzPkYZ4ZGJcbmExJTFkz2JIR/00p1bajLTpgV73bWWatiJwKZlbW/nQcvl4jHEqe8SSksH6T92lbloKT6UUcR2BIIRC37GVLIMeZvVOBR9BTg8xICwskpL1ku6ethw7TdTqsDWTYBV3gwZKnPp+H4+qvuMvXS9dJKR2jhJxwneOmf7LCNToVK68dkAQoEYmSXZy0VBJzgGPmrdMou7BOK1nYMXTgxZJwM+C6M/P/TYXedqvUhxMBLHPeD17aZrmrlSFbFaM9v8ksEttgV6YUjFtXV389z8Qql00"
+_GAMBLE = "eJwdzu1rgkAAx3HGQmIQ7R9YmF2zmZrnfNim5eHj6Z1eUSuD9nLRmEgEozfb/z64lz/48uMDbWfwd76Gs6r7cBzkufiqhp+PDm3WpPI2+4MpwduJYvXAKomUMkqtUVOByU82LNHSKzrEn7cMPL8kwx5eX2J2ANDjvVvg3M0y9ObrfEvpMgpYLRjB7EYG88ikDGndPFv8upEk++8tIvgSJ9R3G7z4MpiVbldwuxeccct06DC1KNA5KztHa4p05xrb/Q01MCGBzT2pzL3c86G4Wm1QhlT+D2r5ScPq7i6FRLj/PpmhKE77I5r/A7ERPFY="
+_PIRACY = "eJwd0Mlu2kAAANBGWCkEIe5VD97A8XgBG2xjghnv23hnsQkVnCI1CkVVJEovqL9eiQ94l0ewWsPTU3fSC+LJU1MOB4NkiIO+6BedWX7I56T4RcdZkwrrrpAf0n9TISJ/cu7YDjKhvbMY5fz975/z7lyjDsjyZk5SO5GZNedka38eD/ubMX/Qac5hekX8uYl8CAetIX6puNispbJJIaQikbjao6yd6NbXXDaYw9tQTU5FYUJ09CEkfJG45oO6Xb9sEZrdRuGzMMtZs+4aUYCNqdOR5K4rpR/U0LOOMk14d1+WJR9EjkqebJ28pGxmldK6SQ1aakFw2YzKrTmuim83RXuQgFrw/pMvoUdP1vgQEkqfSqKOkkeOTEk7WuNcsa67IHo84DSwl+qiL2/bK6GKXuUJ23oG0x6xNROp8gJIndzBO7sa1SiWNxhaGOdXoC32vyy/K61TDJf4EH6AzalADgga9KJPwzce9OhkheA6MudDpkVryx7j/Sj54O5jwTAywU7Rb8/DlhB3GR4k99/YiacK3yLVS0XFnZRzsb36H6ukby0="
 
 def _dec(payload: str) -> list[str]:
     raw = zlib.decompress(base64.b64decode(payload))
@@ -91,7 +96,12 @@ ADBLOCK_LISTS = {
         "pandora.com", "tidal.com", "deezer.com", "music.apple.com",
         "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com",
         "youtubei.googleapis.com", "ytimg.l.google.com", "9anime.to", 
-        "zoro.to", "aniwave.to", "aniwatch.to",
+        "zoro.to", "aniwave.to", "aniwatch.to", "animepahe.ru",
+        "gogoanime.pe", "gogoanime.hu", "kayoanime.com", "kaminari.to",
+        "mangadex.org", "mangakakalot.com", "mangatoto.com", "manganelo.com",
+        "readmanganato.com", "mangaone.com", "viz.com", "shonenjump.com",
+        "manganato.com", "mangapark.net", "mangasee123.com", "mangaowl.net",
+        "mangafreak.net", "mangareader.to", "anime-planet.com", "crunchyroll.it",
     ],
     "shopping": [
         "amazon.com", "temu.com", "ebay.com", "aliexpress.com",
@@ -100,6 +110,19 @@ ADBLOCK_LISTS = {
         "zappos.com", "overstock.com", "newegg.com", "homedepot.com",
         "lowes.com", "costco.com", "samsclub.com", "macys.com",
         "nordstrom.com", "shopify.com", "zara.com", "hm.com",
+        "craigslist.org", "mercari.com", "poshmark.com", "offerup.com",
+        "fb.com/marketplace", "facebook.com/marketplace", "rakuten.com",
+    ],
+    "gaming": [
+        "steampowered.com", "steamcommunity.com", "steamgames.com", 
+        "epicgames.com", "gog.com", "uplay.com", "ubisoft.com", 
+        "origin.com", "ea.com", "battle.net", "blizzard.com", 
+        "roblox.com", "minecraft.net", "riotgames.com", "playvalorant.com", 
+        "leagueoflegends.com", "humblebundle.com", "fanatical.com", 
+        "greenmangaming.com", "instant-gaming.com", "cdkeys.com", 
+        "g2a.com", "kinguin.net", "eneba.com", "itch.io", "gamejolt.com",
+        "rockstargames.com", "socialclub.rockstargames.com", "nexusmods.com",
+        "curseforge.com", "moddb.com", "speedrun.com", "discord.com",
     ],
     "ai_tech": [
         "chatgpt.com", "openai.com", "chat.openai.com", "anthropic.com", 
@@ -111,9 +134,9 @@ ADBLOCK_LISTS = {
         "news.ycombinator.com", "techcrunch.com", "theverge.com", "wired.com", 
         "arstechnica.com", "engadget.com",
     ],
-    "adult_content": _dec(_ADULT),
-    "gambling":      _dec(_GAMBLE),
     "piracy_illegal": _dec(_PIRACY),
+    "adult_content":  _dec(_ADULT),
+    "gambling":      _dec(_GAMBLE),
 }
 
 class CustomListManager:
@@ -205,10 +228,15 @@ def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, se
         if adblocker_active:
             schedule_anywhere = True
             keys = ["ads_trackers", "malware_annoyances", "adult_content", "social_media",
-                    "gambling", "piracy_illegal", "entertainment", "shopping", "ai_tech"]
+                    "gambling", "piracy_illegal", "entertainment", "shopping", "ai_tech", "gaming"]
             group_content: list[str] = []
             for k in keys:
-                if ad.get(k): group_content.extend(ADBLOCK_LISTS[k])
+                if ad.get(k):
+                    val = ADBLOCK_LISTS[k]
+                    if isinstance(val, list):
+                        group_content.extend([d for d in val if isinstance(d, str)])
+                    elif isinstance(val, str):
+                        group_content.append(val)
 
             custom_paths = ad.get("custom_lists", [])
             if custom_paths:
