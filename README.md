@@ -1,88 +1,131 @@
-# Simple Productivity Blocker - Version History
-
-## [1.3.0] - 2026-05-05
-### Added
-- **Micro DNS Proxy Server**: Implemented a local DNS server on `127.0.0.1:53` for proactive website blocking. Supports new regex syntax: wildcards (`*`), keywords (`~word`), and prefix/suffix matches.
-- **Proactive App Prevention**: Transitioned from polling-based killing to Windows `DisallowRun` Registry policies. Blocked applications are now prevented from starting by the OS itself.
-- **Exclusive File Locking**: Implemented OS-level file locking for blocked files, ensuring they remain unopenable by any process.
-- **Portable Configuration**: Added Import/Export functionality for settings. Users can now backup their configuration to encoded `.spb` files and restore them on any machine.
-- **Unified Startup Management**: New cross-platform persistence layer using the Windows Registry `Run` key and Linux `.desktop` files.
-
-### Changed
-- **Architecture Refactor**: The daemon now operates as a stateful security engine rather than a reactive script.
-- **Improved DNS Fallback**: If Port 53 is occupied, the daemon automatically falls back to the legacy `hosts` file method to ensure continuous protection.
-
-### Fixed
-- **UI Consistency**: Updated tooltips and descriptions across the app to reflect new v1.3.0 capabilities.
-
 # Simple Productivity Blocker
 
-Block distracting apps, files, and websites with schedules, content filters, and group profiles.
+**Block distracting apps, files, and websites with schedules, content filters, and group profiles.**
 
-Simple Productivity Blocker is a free, open-source application that helps you manage your time. **v1.3.0** introduces a major shift from reactive polling to proactive prevention using system-integrated security engines.
+Simple Productivity Blocker is a free, open-source application that helps you manage your time. Block websites at the system level via the hosts file, terminate distracting applications when they open, prevent access to specific files, and enforce content filters across categories like social media, adult content, gambling, and piracy. You can schedule blocks by day and time, create multiple blocking profiles, and protect your settings with a security challenge.
 
-## Features
+---
 
-* **Website Blocking (DNS Proxy):** [NEW] v1.3.0 uses a local DNS Proxy (127.0.0.1:53) for "invisible" and instant blocking. Supports advanced syntax:
-    * **Explicit:** `site.com` (Exact match)
-    * **Wildcard:** `*.site.com` (All subdomains)
-    * **Keyword:** `~word` (Matches phrase anywhere in domain)
-    * **Prefix/Suffix:** `~abc*` or `~*xyz`
-* **App Blocking (DisallowRun):** [NEW] Uses Windows Registry policies to prevent restricted applications from even initializing. A secondary polling layer remains for path-based and command-line enforcement.
-* **File Blocking (Exclusive Locking):** [NEW] Proactively locks blocked files at the OS level, triggering native "File in use" errors and preventing access by any application.
-* **Folder Blocking:** Block entire directories. Actively intercepts and closes File Explorer tabs navigating to the directory, and terminates any application that attempts to execute files within the path.
-* **Content Filters:** Enable curated blocklists across 9 categories. v1.3.0 features optimized regex matching for near-zero latency.
-* **Exceptions (Allowlist):** Whitelist specific domains within Content Filters.
-* **Scheduling:** Set start and end times and active days per profile.
-* **Multiple Profiles:** Create separate blocking profiles that run simultaneously.
-* **Security Challenge:** Require typing a randomly generated string before accessing settings.
-* **Portable Configs:** [NEW] Backup and restore your entire configuration via encoded `.spb` files from the About dashboard.
-* **Startup Management:** [NEW] Unified "Start at Login" toggle for Windows (Registry-based) and Linux (.desktop based).
-* **Performance Modes:** Toggle between Passive, Balanced, and Strict rates.
-* **Cloud Allowlist:** Absolute protection for critical system and developer processes (antigravity, node, git, etc.).
+## 🚀 Features
 
-## Installation
+*   **Website Blocking**: Block domains at the system level via the hosts file. Both base domains and `www.` variants are blocked automatically. Blocks survive browser restarts and incognito mode.
+*   **App Blocking**: Instantly terminates any running process that matches a blocked application name upon detection.
+*   **File Blocking**: Prevents applications from opening a blocked file by monitoring process command-line arguments and terminating violators.
+*   **Folder Blocking**: Block entire directories. Actively intercepts and closes File Explorer tabs navigating to the directory, and terminates any application that attempts to execute files within the path.
+*   **Content Filters**: Enable curated blocklists across **10 categories**: Ads & Trackers, Malware, Social Media, Adult Content (encrypted), Gambling (encrypted), Piracy (encrypted), Entertainment, Shopping, AI/Tech, and Gaming & Game Stores.
+*   **Exceptions (Allowlist)**: Whitelist specific domains within Content Filters. Whitelisted domains are never blocked by content filters, but explicit Website blocks always take priority.
+*   **Scheduling**: Set start and end times and active days per profile. The "Enforce All Day" option runs the Content Filter continuously.
+*   **Multiple Profiles**: Create separate blocking profiles like Work, Study, or Personal that run simultaneously.
+*   **Security Challenge**: Require typing a randomly generated string before accessing settings to make the blocker tamper-resistant.
+*   **Custom Lists**: Add your own blocklist URLs or local `.txt` files to extend the content filter.
+*   **Global Settings**: Centralized "Options" menu for application-wide configuration.
+*   **Performance Modes**: Toggle between **Passive, Balanced, and Strict** polling rates to optimize CPU usage vs. enforcement speed.
+*   **Cloud Allowlist**: Enhanced protection for 30+ critical system and cloud synchronization processes (OneDrive, Dropbox, etc.).
+*   **Advanced Notifications**: 10+ toggleable notification events for block attempts, schedule changes, and daemon activity.
+*   **Silent Persistence**: The background daemon installs as a silent background task, automatically launching at system logon with elevated privileges without prompts.
+
+---
+
+## 📦 Installation
 
 ### Windows
-1. Download the latest release `.zip` from the [Releases](https://github.com/nvusdev/simple-productivity-blocker/releases) page.
-2. Extract the archive.
-3. Run `spb_installer.exe`.
-4. A desktop shortcut is created automatically.
+1.  Download the latest release `.zip` from the **Releases** page.
+2.  Extract the archive.
+3.  Run `spb_installer.exe`. It will prompt for Administrator privileges.
+4.  A desktop shortcut is created automatically. Launch **Simple Productivity Blocker** from your desktop.
 
-> **Administrator privileges are required.** v1.3.0 requires elevated access to manage Port 53 (DNS), Registry Policies (DisallowRun), and system processes.
+> [!IMPORTANT]
+> **Administrator privileges are required.** The application modifies the system hosts file and manages processes, requiring elevated access on Windows.
 
 ### Linux
-1. Download the latest release `.zip`.
-2. Extract and run `sudo ./install.sh`.
-3. The daemon integrates with your desktop environment's Autostart or Systemd.
+1.  Download the latest release `.zip` from the **Releases** page.
+2.  Extract the archive.
+3.  Open a terminal in the extracted directory and run `sudo ./install.sh` (or manually configure the daemon to run as a systemd service).
+4.  Launch the application from your desktop environment or terminal.
 
-## Uninstallation
+> [!IMPORTANT]
+> **Root privileges are required.** The application modifies `/etc/hosts` and terminates system processes, requiring root access on Linux.
+
+---
+
+## 🗑️ Uninstallation
 
 ### Windows
 Run `spb_uninstaller.exe` located in `C:\Program Files\Simple Productivity Blocker\`.
 
-The uninstaller will:
-* Restore system DNS settings
-* Clear Registry Blocking policies
-* Flush DNS and restore `hosts` backup
-* Remove all application files
+### Linux
+Run `sudo /opt/SimpleProductivityBlocker/spb_uninstaller` (or the equivalent path depending on your installation method) to remove the application.
 
-## Architecture
+**The uninstaller will:**
+*   Terminate all background SPB processes.
+*   Restore your original hosts file.
+*   Flush DNS cache.
+*   Remove all application files and configuration data.
+*   Remove the desktop shortcut.
 
-Simple Productivity Blocker v1.3.0 utilizes a proactive, system-integrated architecture:
+*All blocks are fully lifted upon uninstallation.*
 
-1. **User Interface (spb):** A CustomTkinter editor for `config.json`.
-2. **Background Daemon (daemon):** A high-performance interceptor that:
-    * Runs a **Micro DNS Server** to intercept domain requests.
-    * Manages **Windows Registry Policies** for app execution prevention.
-    * Maintains **Exclusive File Locks** on restricted resources.
-    * Automatically falls back to legacy `hosts` blocking if Port 53 is occupied.
+---
 
-## Security Notes
+## 🛠️ Running from Source (Developers)
 
-* Sensitive blocklists (Adult, Gambling, Piracy) are XOR-encrypted within binaries.
-* v1.3.0 uses OS-native prevention mechanisms which are significantly harder to bypass than simple process-killing loops.
+**Requires Python 3.10 or newer.**
 
-## Disclaimer
+```bash
+git clone https://github.com/nvusdev/simple-productivity-blocker.git
+cd simple-productivity-blocker
+pip install -r requirements.txt
+```
 
-This application modifies system-level network and policy settings. A backup of the `hosts` file is created. Use responsibly.
+### Windows
+Run the application as Administrator:
+```powershell
+python main.py
+```
+
+### Linux
+Run the application with sudo:
+```bash
+sudo python3 main.py
+```
+
+---
+
+## 🏗️ Building Executables
+
+### Windows
+```powershell
+# Run as Administrator
+.\build.ps1
+```
+
+### Linux
+```bash
+# Run with necessary permissions
+./build.sh
+```
+*Output is placed in `dist/SimpleProductivityBlocker/`. Zip that folder to distribute.*
+
+---
+
+## 📐 Architecture
+
+Simple Productivity Blocker utilizes a decoupled, two-part architecture to ensure stability, performance, and tamper resistance:
+
+1.  **User Interface (`spb`)**: Built with CustomTkinter, this application acts purely as a configuration editor. It reads and writes to a central `config.json` file. It does not enforce blocks directly.
+2.  **Background Daemon (`daemon`)**: A headless background process that constantly monitors the `config.json` file for changes using a 3-second debounce mechanism. When changes are detected, it recomputes the active blocking rules and applies them to the system. It handles writing to the system hosts file for website blocks and utilizes `psutil` and OS Shell integrations to actively terminate restricted applications, files, and folders.
+
+The daemon installs itself as a persistent background task (e.g., Windows Scheduled Task) that launches silently at system boot with elevated privileges. Sensitive content blocklists are **XOR-encrypted** within the compiled binaries to prevent trivial circumvention via source code inspection.
+
+---
+
+## 🛡️ Security Notes
+
+*   **Encrypted Payloads**: Sensitive blocklist categories (Adult Content, Gambling, Piracy) are stored encrypted in the compiled binary. They cannot be read from plaintext source.
+*   **Privilege Requirement**: The application requires Administrator/Root privileges to function. This is the only reliable way to modify the hosts file and terminate system processes.
+*   **Managed Environments**: Non-admin users on a machine cannot open the settings UI or change the configuration without the Administrator password, making this effective for parental controls and managed environments.
+
+---
+
+## ⚖️ Disclaimer
+This application modifies the system hosts file (`C:\Windows\System32\drivers\etc\hosts` or `/etc/hosts`). A backup is automatically created at `hosts.backup` before any modifications. The uninstaller restores this backup. Use responsibly.
