@@ -13,13 +13,14 @@ REDIRECT_IP = "0.0.0.0"
 BLOCK_BEGIN = "# --- SPB Block Begin ---"
 BLOCK_END   = "# --- SPB Block End ---"
 
-# Common DoH providers to block to prevent bypassing hosts file
+# Common DoH providers to block to prevent bypassing DNS rules
 DOH_PROVIDERS = [
-    "dns.google",
-    "cloudflare-dns.com",
-    "dns.quad9.net",
-    "doh.opendns.com",
-    "doh.adguard.com"
+    "dns.google", "dns64.dns.google", "8.8.8.8", "8.8.4.4",
+    "cloudflare-dns.com", "1.1.1.1", "1.0.0.1",
+    "dns.quad9.net", "9.9.9.9",
+    "doh.opendns.com", "doh.adguard.com",
+    "doh.cleanbrowsing.org", "doh.mullvad.net",
+    "dns.nextdns.io", "dns.controld.com"
 ]
 
 def flush_dns():
@@ -79,14 +80,16 @@ def apply_blocks(websites, block_doh=True):
         final_domains = set()
         for domain in domains_to_block:
             d = domain.strip().lower()
-            if d:
-                if d.startswith("www."):
-                    base = d[4:]
-                    final_domains.add(base)
-                    final_domains.add(d)
-                else:
-                    final_domains.add(d)
-                    final_domains.add("www." + d)
+            if not d or "~" in d or "*" in d:
+                continue # Skip keyword/wildcard patterns in hosts file (unsupported)
+                
+            if d.startswith("www."):
+                base = d[4:]
+                final_domains.add(base)
+                final_domains.add(d)
+            else:
+                final_domains.add(d)
+                final_domains.add("www." + d)
 
         if final_domains:
             block_lines = [BLOCK_BEGIN + "\n"]
