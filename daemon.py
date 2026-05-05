@@ -409,10 +409,20 @@ def main() -> None:
                         print("Hosts file cleared.")
                 cur_domains = want_domains
 
-            if want_apps != cur_apps or want_files != cur_files or want_folders != cur_folders:
+            if want_apps != cur_apps or want_files != cur_files or want_folders != cur_folders or debounce == 3:
                 cur_apps  = want_apps
                 cur_files = want_files
                 cur_folders = want_folders
+                
+                # Update Cloud Allowlist settings
+                settings = cfg_cache.get("settings", {})
+                cloud_enabled = settings.get("cloud_allowlist_enabled", True)
+                cloud_list = settings.get("cloud_allowlist", [])
+                cloud_keywords = settings.get("cloud_path_keywords", [])
+                
+                pm.set_allowlisted_processes(cloud_list, enabled=cloud_enabled)
+                pm.set_allowlisted_keywords(cloud_keywords)
+                
                 if cur_apps or cur_files or cur_folders:
                     pm.set_blocked_apps(list(cur_apps))
                     pm.set_blocked_files(list(cur_files))
