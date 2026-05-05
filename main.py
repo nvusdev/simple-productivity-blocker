@@ -12,7 +12,7 @@ import copy
 from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, get_config_dir, export_config, import_config
 from core.persistence import set_startup, is_startup_enabled
 
-VERSION = "1.3.1"
+VERSION = "1.3.2"
 
 def resource_path(relative_path):
     try:
@@ -84,6 +84,7 @@ class InputListFrame(ctk.CTkFrame):
         if filename:
             self.entry.delete(0, "end")
             self.entry.insert(0, filename)
+            self.add_item() # Auto-Submit UX
 
     def render_list(self):
         for frame in self.item_frames.values():
@@ -199,6 +200,10 @@ class ProductivityApp(ctk.CTk):
 
         self.config_data = load_config()
         self._save_timer = None
+        self._debounce_timer = None # 3s Batching timer
+        self._countdown_timer = None # UI update timer
+        self._countdown_val = 0
+        
         self.show_dashboard()
         
         # Anti-Flash: Show window once UI is ready
@@ -220,8 +225,31 @@ class ProductivityApp(ctk.CTk):
         except: pass
 
     def trigger_save(self):
-        if self._save_timer: self.after_cancel(self._save_timer)
-        self._save_timer = self.after(1000, lambda: save_config(self.config_data))
+        """Batches changes and triggers a system-wide reload after a 3s cooldown."""
+        if self._debounce_timer:
+            self.after_cancel(self._debounce_timer)
+        if self._countdown_timer:
+            self.after_cancel(self._countdown_timer)
+        
+        self._countdown_val = 3
+        self._update_cooldown_ui()
+        
+        # Debounce for 3 seconds of inactivity
+        self._debounce_timer = self.after(3000, self._finalize_save)
+
+    def _update_cooldown_ui(self):
+        if self._countdown_val > 0:
+            self.cooldown_label.configure(text=f"SYNCING IN {self._countdown_val}.0s...", text_color="#888888")
+            self._countdown_val -= 1
+            self._countdown_timer = self.after(1000, self._update_cooldown_ui)
+        else:
+            self.cooldown_label.configure(text="SHIELD SYNCHRONIZED", text_color="#aaaaaa")
+            self._countdown_timer = self.after(2000, lambda: self.cooldown_label.configure(text=""))
+
+    def _finalize_save(self):
+        save_config(self.config_data)
+        self.status_lbl.configure(text="Changes Saved & Applied", text_color="green")
+        self._debounce_timer = None
 
     def clear_screen(self):
         for widget in self.winfo_children():
@@ -246,6 +274,11 @@ class ProductivityApp(ctk.CTk):
         self.status_frame.pack_propagate(False)
         self.status_lbl = ctk.CTkLabel(self.status_frame, text="Ready", text_color="gray", font=ctk.CTkFont(size=14))
         self.status_lbl.pack(side="left")
+        
+        # Cooldown/Countdown Label in margin
+        self.cooldown_label = ctk.CTkLabel(self.status_frame, text="", font=ctk.CTkFont(family="Consolas", size=13, weight="bold"))
+        self.cooldown_label.pack(side="left", padx=20)
+
         center_f = ctk.CTkFrame(self.status_frame, fg_color="transparent")
         center_f.pack(side="left", fill="both", expand=True)
         ctk.CTkButton(center_f, text="+ Create New Profile", font=ctk.CTkFont(weight="bold"), width=200, height=40, command=self.add_new_group).place(relx=0.5, rely=0.5, anchor="center")
@@ -295,7 +328,7 @@ class ProductivityApp(ctk.CTk):
         def validate_web(val):
             if "http" in val: return False, "Do not include http:// or https://"
             return True, ""
-        dns_msg = "Supports Wildcards (*.site.com), Keywords (~word), Prefix (~abc*), and Suffix (~*xyz).\nNote: Subdirectory/path blocking (site.com/abc) is NOT supported at the DNS level."
+        dns_msg = "Blocks absolute domains, wildcards (*.site.com), and keywords (~amazon). Path-level blocking (site.com/path) is not supported at the DNS level. Changes apply after a 3s cooldown."
         self.list_web = InputListFrame(t_web, self, "websites", "Enter URL or Pattern", validation_fn=validate_web, info_tooltip=dns_msg)
         self.list_web.pack(fill="both", expand=True, padx=10, pady=10)
         self.list_apps = InputListFrame(t_apps, self, "apps", "Enter App Name (e.g. notepad.exe)", browse_mode="app")
@@ -318,6 +351,12 @@ class ProductivityApp(ctk.CTk):
         self.sec_enabled = ctk.CTkSwitch(sec_f, text="Enable Security Challenge", command=self.save_security)
         if sec.get("enabled"): self.sec_enabled.select()
         self.sec_enabled.pack(side="left")
+
+        # Cooldown/Countdown Label in margin (consistent across screens)
+        self.cooldown_label = ctk.CTkLabel(sec_f, text="", font=ctk.CTkFont(family="Consolas", size=13, weight="bold"))
+        self.cooldown_label.pack(side="right", padx=10)
+        self.status_lbl = ctk.CTkLabel(sec_f, text="Editor Active", text_color="gray", font=ctk.CTkFont(size=12))
+        self.status_lbl.pack(side="right", padx=10)
 
     def save_security(self, *args):
         self.config_data["groups"][self.group_name]["security"] = {
