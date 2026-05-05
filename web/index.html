@@ -43,7 +43,7 @@
             <div class="container">
                 <div class="hero-content">
                     <h1>A distraction blocker for <br><span id="dynamic-tagline"></span></h1>
-                    <p class="hero-subtitle">The simplest, most powerful productivity tool for Windows and Linux. Built for humans who need to get things done.</p>
+                    <p class="hero-subtitle">The simplest, most powerful productivity tool for Windows and Linux. Built for people who need to get things done.</p>
                     <div class="hero-cta">
                         <a href="#download" class="btn primary">Get Started Free</a>
                         <a href="https://github.com/nvusdev/simple-productivity-blocker" class="btn secondary">View Source Code</a>
@@ -82,25 +82,33 @@
                     
                     <div class="download-actions">
                         <div class="platform">
-                            <h3>Windows</h3>
-                            <a href="#" id="download-win" class="btn primary">Download .exe</a>
-                            <p class="os-version">Works on Windows 10 & 11</p>
-                        </div>
-                        <div class="platform">
-                            <h3>Linux</h3>
-                            <a href="#" id="download-linux" class="btn secondary">Download .sh</a>
-                            <p class="os-version">Ubuntu, Fedora, Arch, & more</p>
+                            <a href="#" id="download-btn" class="btn primary">Download .zip</a>
+                            <p class="os-version">Works on Windows, Linux, Fedora, & more</p>
                         </div>
                     </div>
 
                     <div class="install-guide">
                         <h3>Quick Install Guide</h3>
-                        <ol>
-                            <li><strong>Download & Extract:</strong> Download the .zip file for your OS and <strong>extract all files</strong> to a folder.</li>
-                            <li><strong>Run Installer:</strong> Launch <code>spb_installer.exe</code> (Windows) or run <code>sudo ./install.sh</code> in your terminal (Linux).</li>
-                            <li><strong>Elevate:</strong> Grant Administrator/Root privileges when prompted to allow SPB to manage system rules.</li>
-                            <li><strong>Launch:</strong> Open "Simple Productivity Blocker" from your desktop and start focusing.</li>
-                        </ol>
+                        <div class="guide-grid">
+                            <div class="guide-item">
+                                <h4>Windows</h4>
+                                <ol>
+                                    <li><strong>Download & Extract:</strong> Download the .zip file and <strong>extract all files</strong> to a folder.</li>
+                                    <li><strong>Run Installer:</strong> Launch <code>spb_installer.exe</code> from the extracted folder.</li>
+                                    <li><strong>Elevate:</strong> Grant Administrator privileges when prompted.</li>
+                                    <li><strong>Launch:</strong> Open "Simple Productivity Blocker" and start focusing.</li>
+                                </ol>
+                            </div>
+                            <div class="guide-item">
+                                <h4>Linux</h4>
+                                <ol>
+                                    <li><strong>Download & Extract:</strong> Download the .zip file and <strong>extract all files</strong>.</li>
+                                    <li><strong>Run Installer:</strong> Open terminal in the folder and run <code>sudo ./install.sh</code>.</li>
+                                    <li><strong>Elevate:</strong> Provide your root password to allow system-level blocking.</li>
+                                    <li><strong>Launch:</strong> Open SPB from your applications menu.</li>
+                                </ol>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

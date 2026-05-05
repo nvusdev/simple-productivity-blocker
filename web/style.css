@@ -249,12 +249,9 @@ h1, h2, h3, .logo {
 }
 
 .download-card {
-    background-color: var(--card-bg);
-    padding: 80px 40px;
-    border-radius: 32px;
-    box-shadow: var(--shadow-lg);
+    padding: 100px 40px;
     text-align: center;
-    border: 1px solid var(--border);
+    border-top: 1px solid var(--border);
 }
 
 .download-card h2 {
@@ -289,15 +286,31 @@ h1, h2, h3, .logo {
 
 .install-guide {
     text-align: left;
-    max-width: 650px;
+    max-width: 800px;
     margin: 0 auto;
     padding-top: 48px;
     border-top: 1px solid var(--border);
 }
 
 .install-guide h3 {
-    margin-bottom: 24px;
+    margin-bottom: 32px;
     font-size: 1.2rem;
+    text-align: center;
+}
+
+.guide-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+}
+
+.guide-item h4 {
+    margin-bottom: 20px;
+    color: var(--primary);
+    font-size: 1.1rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .install-guide ol {
@@ -305,8 +318,9 @@ h1, h2, h3, .logo {
 }
 
 .install-guide li {
-    margin-bottom: 20px;
+    margin-bottom: 16px;
     color: var(--text-muted);
+    font-size: 0.9rem;
 }
 
 .install-guide li strong {

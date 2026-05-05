@@ -82,32 +82,32 @@ document.addEventListener('DOMContentLoaded', () => {
         updateIcon(newTheme);
     });
 
-    // GitHub Release Link (Simulated logic to find latest assets)
+    // GitHub Release Link
     const GITHUB_REPO = 'nvusdev/simple-productivity-blocker';
     const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 
-    const downloadWin = document.getElementById('download-win');
-    const downloadLinux = document.getElementById('download-linux');
+    const downloadBtn = document.getElementById('download-btn');
 
     fetch(GITHUB_API)
         .then(response => response.json())
         .then(data => {
             const assets = data.assets;
             
-            // Look for Windows asset (SimpleProductivityBlocker-vX.X.X.zip)
-            const winAsset = assets.find(a => a.name.includes('Windows') || a.name.includes('.exe') || a.name.includes('win'));
-            if (winAsset) downloadWin.href = winAsset.browser_download_url;
-            else downloadWin.href = `https://github.com/${GITHUB_REPO}/releases/latest`;
-
-            // Look for Linux asset
-            const linuxAsset = assets.find(a => a.name.includes('Linux') || a.name.includes('.sh') || a.name.includes('linux'));
-            if (linuxAsset) downloadLinux.href = linuxAsset.browser_download_url;
-            else downloadLinux.href = `https://github.com/${GITHUB_REPO}/releases/latest`;
+            // Look for the consolidated zip (SPB_Windows_vX.X.X.zip)
+            const zipAsset = assets.find(a => 
+                a.name.includes('SPB_Windows') || 
+                (a.name.endsWith('.zip') && !a.name.includes('Source'))
+            );
+            
+            if (zipAsset) {
+                downloadBtn.href = zipAsset.browser_download_url;
+            } else {
+                // Fallback to the latest release page if specific asset not found
+                downloadBtn.href = `https://github.com/${GITHUB_REPO}/releases/latest`;
+            }
         })
         .catch(err => {
             console.error("Failed to fetch latest release:", err);
-            const latestUrl = `https://github.com/${GITHUB_REPO}/releases/latest`;
-            downloadWin.href = latestUrl;
-            downloadLinux.href = latestUrl;
+            downloadBtn.href = `https://github.com/${GITHUB_REPO}/releases/latest`;
         });
 });
