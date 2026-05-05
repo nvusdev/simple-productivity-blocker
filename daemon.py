@@ -8,6 +8,13 @@ import concurrent.futures
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+if os.name == 'nt':
+    try:
+        import pywintypes
+        import pythoncom
+    except ImportError:
+        pass
+
 from core.config_manager import load_config
 from core.scheduler import is_active, is_day_active
 from blockers.website_blocker import apply_blocks, remove_blocks

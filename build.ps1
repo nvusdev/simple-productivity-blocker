@@ -42,12 +42,16 @@ python -m PyInstaller --noconfirm --onedir --windowed --uac-admin `
     --icon="$tempIco" `
     --add-data "newlogo.png;." `
     --add-data "icon.ico;." `
+    --collect-all pywin32 `
+    --hidden-import=pywintypes `
     --name "SimpleProductivityBlocker" main.py
 
 # Build the daemon
 Write-Host "Building SPB_Daemon.exe..."
 python -m PyInstaller --noconfirm --onedir --windowed `
     --icon="$tempIco" `
+    --collect-all pywin32 `
+    --hidden-import=pywintypes `
     --name "SPB_Daemon" daemon.py
 
 # Assemble the package
