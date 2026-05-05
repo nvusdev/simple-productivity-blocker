@@ -15,6 +15,9 @@ class DomainMatcher:
 
     def compile_pattern(self, pattern):
         p = pattern.strip().lower()
+        if p.startswith("."): # Handle .domain.com as wildcard
+            p = "*" + p
+            
         if p.startswith("~"):
             # Keyword / Prefix / Suffix logic
             body = p[1:]
@@ -32,15 +35,17 @@ class DomainMatcher:
                 regex = re.escape(body)
             return re.compile(regex)
         elif "*" in p:
-            # Wildcard: *.site.com -> .*\.site\.com$
-            regex = p.replace(".", "\\.").replace("*", ".*") + "$"
+            # Wildcard: *.site.com -> ^(.*\.)?site\.com$
+            base = p.replace("*.", "").replace("*", "")
+            regex = r"^(.*\.)?" + re.escape(base) + r"$"
             return re.compile(regex)
         else:
-            # Explicit: site.com -> ^site\.com$ (and handle trailing dot)
-            regex = r"^" + re.escape(p) + r"\.?$"
+            # Explicit: site.com -> ^(.*\.)?site\.com$ (includes subdomains for safety)
+            regex = r"^(.*\.)?" + re.escape(p) + r"\.?$"
             return re.compile(regex)
 
     def matches(self, domain):
+        if not domain: return False
         domain = domain.lower().rstrip('.')
         for regex in self.patterns:
             if regex.search(domain):
@@ -48,8 +53,9 @@ class DomainMatcher:
         return False
 
 class DNSProxyServer:
-    def __init__(self, blocklist, upstream_dns=None):
-        self.matcher = DomainMatcher(blocklist)
+    def __init__(self, blocklist, allowlist=None, upstream_dns=None):
+        self.block_matcher = DomainMatcher(blocklist)
+        self.allow_matcher = DomainMatcher(allowlist if allowlist else [])
         # Fallback to standard if no upstreams detected
         self.upstream_dnss = upstream_dns if upstream_dns else ["8.8.8.8", "1.1.1.1"]
         self.port = 53
@@ -102,7 +108,14 @@ class DNSProxyServer:
                 qname = str(request.q.qname).lower().rstrip(".")
                 qtype = request.q.qtype
                 
-                if self.matcher.matches(qname):
+                # Priority: Allowlist bypasses Blocklist
+                if self.allow_matcher.matches(qname):
+                    forwarded_data = self._forward_query(data)
+                    if forwarded_data:
+                        self._sock.sendto(forwarded_data, addr)
+                    continue
+
+                if self.block_matcher.matches(qname):
                     # Blocked!
                     reply = request.reply()
                     if qtype == QTYPE.A:

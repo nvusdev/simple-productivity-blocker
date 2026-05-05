@@ -205,8 +205,8 @@ def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, se
     tier1: list[str] = []
     tier2: list[str] = []
     all_apps:  list[str] = []
-    all_files: list[str] = []
     all_folders: list[str] = []
+    all_exceptions: set[str] = set()
     schedule_anywhere = False
 
     for _, gdata in config.get("groups", {}).items():
@@ -246,6 +246,7 @@ def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, se
 
             raw_exc = ad.get("exceptions", [])
             exc_set = {_base(e) for e in raw_exc if e.strip()}
+            all_exceptions.update(exc_set)
             if exc_set:
                 group_content = [d for d in group_content if not _is_excepted(d, exc_set)]
             tier2.extend(group_content)
@@ -255,7 +256,7 @@ def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, se
     for d in tier2:
         if _base(d) not in t1_bases: merged.append(d)
 
-    return set(merged), set(all_apps), set(all_files), set(all_folders), schedule_anywhere
+    return set(merged), set(all_apps), set(all_files), set(all_folders), all_exceptions, schedule_anywhere
 
 def is_admin() -> bool:
     if os.name == "nt":
@@ -308,15 +309,16 @@ def main() -> None:
                 cfg_cache = load_config()
                 if _notif("on_config_reload", False): print("Config reloaded.")
 
-            want_domains, want_apps, want_files, want_folders, sched_anywhere = _compute_targets(cfg_cache, clm)
+            want_domains, want_apps, want_files, want_folders, want_exceptions, sched_anywhere = _compute_targets(cfg_cache, clm)
 
             # --- DNS/Web Blocking ---
-            if want_domains != cur_domains:
+            if want_domains != cur_domains or want_exceptions != getattr(dns_server, "cur_exc", None):
                 if want_domains:
                     # Try DNS Proxy first
                     if not dns_server:
                         upstream = detect_system_dns()
-                        dns_server = DNSProxyServer(list(want_domains), upstream_dns=upstream)
+                        dns_server = DNSProxyServer(list(want_domains), allowlist=list(want_exceptions), upstream_dns=upstream)
+                        dns_server.cur_exc = want_exceptions
                         if dns_server.start():
                             using_dns_proxy = True
                             print("DNS Proxy Server active.")
@@ -326,12 +328,14 @@ def main() -> None:
                     
                     if using_dns_proxy:
                         # Update existing DNS server matcher
-                        dns_server.matcher = dns_server.matcher.__class__(list(want_domains))
+                        dns_server.block_matcher = DomainMatcher(list(want_domains))
+                        dns_server.allow_matcher = DomainMatcher(list(want_exceptions))
+                        dns_server.cur_exc = want_exceptions
                     else:
                         apply_blocks(list(want_domains), block_doh=sched_anywhere)
                     
                     if _notif("on_hosts_write", False):
-                        print(f"Blocking {len(want_domains)} domain(s).")
+                        print(f"Blocking {len(want_domains)} domain(s) with {len(want_exceptions)} exceptions.")
                 else:
                     if dns_server:
                         dns_server.stop()
