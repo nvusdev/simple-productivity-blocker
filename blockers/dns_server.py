@@ -31,8 +31,8 @@ class DomainMatcher:
                 # Prefix: ~crypto* -> crypto[^.]*
                 regex = r"^" + re.escape(body[:-1]) + r"[^.]*"
             else:
-                # Keyword (phrase anywhere): ~green_eggs -> .*green_eggs.*
-                regex = re.escape(body)
+                # Keyword (phrase anywhere): ~amazon -> .*amazon.*
+                regex = r".*" + re.escape(body) + r".*"
             return re.compile(regex)
         elif "*" in p:
             # Wildcard: *.site.com -> ^(.*\.)?site\.com$
