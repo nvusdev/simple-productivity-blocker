@@ -11,7 +11,7 @@ import ctypes
 import sys
 from daemon import ADBLOCK_LISTS
 
-VERSION = "1.2.2"
+VERSION = "1.2.3"
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """

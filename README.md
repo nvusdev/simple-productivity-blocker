@@ -18,7 +18,7 @@ Simple Productivity Blocker is a free, open-source application that helps you ma
 * **Custom Lists:** Add your own blocklist URLs or local `.txt` files to extend the content filter.
 * **Global Settings:** Centralized "Options" menu for application-wide configuration.
 * **Performance Modes:** Toggle between Passive, Balanced, and Strict polling rates to optimize CPU usage vs. enforcement speed.
-* **Cloud Allowlist:** Enhanced protection for 30+ critical system and cloud synchronization processes (OneDrive, Dropbox, etc.).
+* **Cloud Allowlist:** Enhanced protection for critical system and cloud processes. Supports both executable names and path keywords (OneDrive, AppData, etc.) to ensure productive tools are never accidentally blocked.
 * **Advanced Notifications:** 10+ toggleable notification events for block attempts, schedule changes, and daemon activity.
 
 * **Silent Persistence:** The background daemon installs as a silent background task, automatically launching at system logon with elevated privileges without prompts.

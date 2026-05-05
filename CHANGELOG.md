@@ -1,5 +1,14 @@
 # Simple Productivity Blocker - Version History
 
+## [1.2.3] - 2026-05-05
+### Added
+- **Protected Path Keywords**: The Cloud Allowlist now supports path-based keywords. Any process running from a directory containing a protected keyword (e.g., `OneDrive`, `AppData`, `antigravity`) is automatically exempted from all blocking logic.
+- **Deep Command-Line Inspection**: Improved the allowlist engine to protect processes based on command-line arguments, ensuring that script-based tools (like Python agents) aren't killed while performing productive tasks.
+
+### Fixed
+- **Allowlist Integration Bug**: Resolved a major issue where the background daemon was not receiving allowlist updates from the GUI configuration, rendering the "Cloud Allowlist" ineffective in previous versions.
+- **False Positive Termination**: Fixed a logic error where an allowlisted process could still be killed if its arguments contained the name of a blocked app. The allowlist now provides absolute immunity.
+
 ## [1.2.2] - 2026-05-04
 ### Added
 - **Protected Environment Support**: Added `antigravity.exe`, `gemini.exe`, `node.exe`, `git.exe`, and common shells to the default Cloud Allowlist to ensure AI agents and developer tools are never accidentally blocked.
