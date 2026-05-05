@@ -12,7 +12,7 @@ import copy
 from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, get_config_dir, export_config, import_config
 from core.persistence import set_startup, is_startup_enabled
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 
 def resource_path(relative_path):
     try:
@@ -182,6 +182,7 @@ class ContentFilterTab(ctk.CTkFrame):
 class ProductivityApp(ctk.CTk):
     def __init__(self):
         super().__init__()
+        self.withdraw() # Anti-Flash: Hide window during construction
         self.title(f"Simple Productivity Blocker v{VERSION}")
         
         self.update_idletasks()
@@ -199,6 +200,9 @@ class ProductivityApp(ctk.CTk):
         self.config_data = load_config()
         self._save_timer = None
         self.show_dashboard()
+        
+        # Anti-Flash: Show window once UI is ready
+        self.after(250, self.deiconify)
 
     def _apply_app_icon(self):
         try:
@@ -291,7 +295,7 @@ class ProductivityApp(ctk.CTk):
         def validate_web(val):
             if "http" in val: return False, "Do not include http:// or https://"
             return True, ""
-        dns_msg = "Supports Wildcards (*.site.com), Keywords (~word), Prefix (~abc*), and Suffix (~*xyz)."
+        dns_msg = "Supports Wildcards (*.site.com), Keywords (~word), Prefix (~abc*), and Suffix (~*xyz).\nNote: Subdirectory/path blocking (site.com/abc) is NOT supported at the DNS level."
         self.list_web = InputListFrame(t_web, self, "websites", "Enter URL or Pattern", validation_fn=validate_web, info_tooltip=dns_msg)
         self.list_web.pack(fill="both", expand=True, padx=10, pady=10)
         self.list_apps = InputListFrame(t_apps, self, "apps", "Enter App Name (e.g. notepad.exe)", browse_mode="app")
@@ -585,6 +589,8 @@ class ProductivityApp(ctk.CTk):
         def ok():
             res["v"] = e.get().strip()
             d.destroy()
+        
+        e.bind("<Return>", lambda event: ok()) # UX: Enter to save
         ctk.CTkButton(d, text="Save", width=140, height=40, command=ok).pack(pady=30)
         d.wait_window()
         return res["v"]
