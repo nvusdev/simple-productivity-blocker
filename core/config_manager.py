@@ -2,6 +2,7 @@ import json
 import os
 import threading
 import copy
+import base64
 
 def get_config_dir():
     if os.name == 'nt':
@@ -49,81 +50,29 @@ DEFAULT_GROUP_CONFIG = {
 
 DEFAULT_SETTINGS = {
     "performance_mode": "Balanced",
+    "startup_enabled": False,
     "cloud_allowlist_enabled": True,
     "cloud_allowlist": [
-        # Cloud sync
-        "OneDrive.exe",
-        "OneDriveStandaloneUpdater.exe",
-        "GoogleDriveFS.exe",
-        "GoogleDriveSync.exe",
-        "GoogleDrive.exe",
-        "BackupAndSync.exe",
-        "Dropbox.exe",
-        "DropboxUpdate.exe",
-        "iCloudDrive.exe",
-        "iCloudServices.exe",
-        "MegaSync.exe",
-        "SynologyDrive.exe",
-        "pCloud Drive.exe",
-        "Nextcloud.exe",
-        # Windows shell and critical system processes
-        "explorer.exe",
-        "taskmgr.exe",
-        "svchost.exe",
-        "lsass.exe",
-        "winlogon.exe",
-        "dwm.exe",
-        "csrss.exe",
-        # Security and antivirus
-        "MsMpEng.exe",
-        "SecurityHealthService.exe",
-        "MpCmdRun.exe",
-        # Common productivity tools (not to be blocked by accident)
-        "python.exe",
-        "pythonw.exe",
-        "SimpleProductivityBlocker.exe",
-        "SPB_Daemon.exe",
-        "antigravity.exe",
-        "gemini.exe",
-        "node.exe",
-        "git.exe",
-        "code.exe",
-        "powershell.exe",
-        "cmd.exe",
-        "bash.exe",
-        "sh.exe",
+        "OneDrive.exe", "OneDriveStandaloneUpdater.exe", "GoogleDriveFS.exe",
+        "GoogleDriveSync.exe", "GoogleDrive.exe", "BackupAndSync.exe",
+        "Dropbox.exe", "DropboxUpdate.exe", "iCloudDrive.exe", "iCloudServices.exe",
+        "MegaSync.exe", "SynologyDrive.exe", "pCloud Drive.exe", "Nextcloud.exe",
+        "explorer.exe", "taskmgr.exe", "svchost.exe", "lsass.exe", "winlogon.exe",
+        "dwm.exe", "csrss.exe", "MsMpEng.exe", "SecurityHealthService.exe",
+        "MpCmdRun.exe", "python.exe", "pythonw.exe", "SimpleProductivityBlocker.exe",
+        "SPB_Daemon.exe", "antigravity.exe", "gemini.exe", "node.exe", "git.exe",
+        "code.exe", "powershell.exe", "cmd.exe", "bash.exe", "sh.exe"
     ],
     "cloud_path_keywords": [
-        "onedrive",
-        "google drive",
-        "googledrive",
-        "dropbox",
-        "icloud",
-        "mega",
-        "synology drive",
-        "pcloud",
-        "nextcloud",
-        "backup and sync",
-        "appdata\\roaming",
-        "appdata\\local",
-        "programdata",
-        "windows\\system32",
+        "onedrive", "google drive", "googledrive", "dropbox", "icloud", "mega",
+        "synology drive", "pcloud", "nextcloud", "backup and sync",
+        "appdata\\roaming", "appdata\\local", "programdata", "windows\\system32"
     ],
     "notifications": {
-        # Block events
-        "on_block":              True,
-        "on_block_attempt":      True,
-        "on_exception_bypass":   False,
-        # Schedule events
-        "on_schedule":           True,
-        "on_schedule_window_miss": True,
-        # Daemon events
-        "on_daemon_start":       True,
-        "on_config_reload":      False,
-        "on_hosts_write":        False,
-        # Security events
-        "on_challenge_fail":     True,
-        "on_challenge_pass":     False,
+        "on_block": True, "on_block_attempt": True, "on_exception_bypass": False,
+        "on_schedule": True, "on_schedule_window_miss": True,
+        "on_daemon_start": True, "on_config_reload": False, "on_hosts_write": False,
+        "on_challenge_fail": True, "on_challenge_pass": False
     },
 }
 
@@ -145,7 +94,8 @@ def _deep_merge_defaults(target, defaults):
             if key not in target:
                 target[key] = copy.deepcopy(value)
 
-def _migrate_exceptions(group_data):
+def _normalize_group(group_data):
+    _deep_merge_defaults(group_data, DEFAULT_GROUP_CONFIG)
     if "exceptions" in group_data:
         legacy = group_data.get("exceptions") or []
         if legacy:
@@ -154,10 +104,6 @@ def _migrate_exceptions(group_data):
             merged = list(dict.fromkeys(existing + legacy))
             adblocker["exceptions"] = merged
         del group_data["exceptions"]
-
-def _normalize_group(group_data):
-    _deep_merge_defaults(group_data, DEFAULT_GROUP_CONFIG)
-    _migrate_exceptions(group_data)
 
 def _normalize_settings(config_data):
     settings = config_data.get("settings")
@@ -173,8 +119,6 @@ def load_config():
         try:
             with open(CONFIG_FILE, 'r') as f:
                 data = json.load(f)
-                
-                # Migrate old config if it exists
                 if "groups" not in data:
                     migrated = copy.deepcopy(DEFAULT_CONFIG)
                     group_data = {
@@ -193,8 +137,6 @@ def load_config():
                         migrated["settings"] = data.get("settings", {})
                         _normalize_settings(migrated)
                     return migrated
-                    
-                # Ensure structure
                 for group_name, group_data in data["groups"].items():
                     _normalize_group(group_data)
                 _normalize_settings(data)
@@ -207,3 +149,33 @@ def save_config(config):
         os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
         with open(CONFIG_FILE, 'w') as f:
             json.dump(config, f, indent=4)
+
+def export_config(config, path):
+    try:
+        data_str = json.dumps(config)
+        encoded = base64.b64encode(data_str.encode()).decode()
+        with open(path, 'w') as f:
+            f.write(encoded)
+        return True
+    except Exception:
+        return False
+
+def import_config(path, current_config=None, merge=True):
+    try:
+        with open(path, 'r') as f:
+            encoded = f.read().strip()
+        decoded = base64.b64decode(encoded).decode()
+        new_data = json.loads(decoded)
+        
+        if not merge or not current_config:
+            return new_data
+            
+        merged = copy.deepcopy(current_config)
+        if "groups" in new_data:
+            for g_name, g_data in new_data["groups"].items():
+                merged["groups"][g_name] = g_data
+        if "settings" in new_data:
+            merged["settings"].update(new_data["settings"])
+        return merged
+    except Exception:
+        return None
