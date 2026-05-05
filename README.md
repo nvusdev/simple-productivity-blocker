@@ -6,12 +6,12 @@ Simple Productivity Blocker is a free, open-source application that helps you ma
 
 ## Features
 
-* **Website Blocking:** Block domains at the system level via the hosts file and a local DNS interceptor. Supports **absolute domains**, **wildcards** (`*.site.com`), and **advanced pattern matching** (prefixes `~pre*`, suffixes `~*suf`, and keywords `~key`). Blocks survive browser restarts and incognito mode.
-* **Micro DNS Server:** Includes a built-in, lightweight DNS proxy that transparently intercepts requests on port 53. It is cross-compatible with external firewalls (like **Portmaster**), third-party DNS services (like **1.1.1.1** or **NextDNS**), and corporate network settings.
+* **Website Blocking:** Block domains at the system level via the hosts file and a local DNS interceptor. Supports absolute domains, wildcards (`*.site.com`), and advanced pattern matching (prefixes `~pre*`, suffixes `~*suf`, and keywords `~key`). Blocks survive browser restarts and incognito mode.
+* **Micro DNS Server:** Includes a built-in, lightweight DNS proxy that transparently intercepts requests on port 53. It is cross-compatible with external firewalls (like Portmaster), third-party DNS services (like 1.1.1.1 or NextDNS), and corporate network settings.
 * **App Blocking:** Instantly terminates any running process that matches a blocked application name upon detection.
 * **File Blocking:** Prevents applications from opening a blocked file by monitoring process command-line arguments and terminating violators.
 * **Folder Blocking:** Block entire directories. Actively intercepts and closes File Explorer tabs navigating to the directory, and terminates any application that attempts to execute files within the path.
-* **Content Filters:** Enable curated blocklists across **10 categories**: Ads & Trackers, Malware, Social Media, Adult Content (encrypted), Gambling (encrypted), Piracy (encrypted), Entertainment, Shopping, AI/Tech, and **Gaming & Game Stores**.
+* **Content Filters:** Enable curated blocklists across 10 categories*: Ads & Trackers, Malware, Social Media, Adult Content (encrypted), Gambling (encrypted), Piracy (encrypted), Entertainment, Shopping, AI/Tech, and Gaming & Game Stores.
 * **Exceptions (Allowlist):** Whitelist specific domains within Content Filters. Whitelisted domains are never blocked by content filters, but explicit Website blocks always take priority.
 * **Scheduling:** Set start and end times and active days per profile. The "Enforce All Day" option runs the Content Filter continuously.
 * **Multiple Profiles:** Create separate blocking profiles like Work, Study, or Personal that run simultaneously.
