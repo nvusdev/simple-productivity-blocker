@@ -6,45 +6,42 @@ import os
 import subprocess
 import psutil
 import webbrowser
-from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, get_config_dir
 import ctypes
 import sys
-from daemon import ADBLOCK_LISTS
+import copy
+from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, get_config_dir, export_config, import_config
+from core.persistence import set_startup, is_startup_enabled
 
-VERSION = "1.2.3"
+VERSION = "1.3.0"
 
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
-
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
 def is_admin():
     if os.name == 'nt':
-        try:
-            return ctypes.windll.shell32.IsUserAnAdmin()
-        except:
-            return False
+        try: return ctypes.windll.shell32.IsUserAnAdmin()
+        except: return False
     else:
         return os.geteuid() == 0
 
 class InputListFrame(ctk.CTkFrame):
-    def __init__(self, master, config_key, placeholder, validation_fn=None, info_tooltip=None, browse_mode=None, config_section=None, **kwargs):
+    def __init__(self, master, app, config_key, placeholder, validation_fn=None, info_tooltip=None, browse_mode=None, config_section=None, **kwargs):
         super().__init__(master, fg_color="#2b2b2b", corner_radius=10, **kwargs)
-        
+        self.app = app
         self.config_key = config_key
         self.validation_fn = validation_fn
         self.browse_mode = browse_mode
         self.config_section = config_section
-        self.app = master.app
-        self.group_name = master.group_name
+        self.group_name = getattr(master, "group_name", None)
+        if not self.group_name and hasattr(master, "master"):
+             self.group_name = getattr(master.master, "group_name", None)
         
         group_data = self.app.config_data["groups"][self.group_name]
         if self.config_section:
@@ -54,32 +51,26 @@ class InputListFrame(ctk.CTkFrame):
             self.items = group_data.get(config_key, [])
         
         self.input_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.input_frame.pack(fill="x", padx=10, pady=(10, 0))
-        
-        self.entry = ctk.CTkEntry(self.input_frame, placeholder_text=placeholder, height=35, corner_radius=8, border_width=1)
+        self.input_frame.pack(fill="x", padx=20, pady=(15, 0)) # Reduced margins
+        self.entry = ctk.CTkEntry(self.input_frame, placeholder_text=placeholder, height=38, corner_radius=8, border_width=1)
         self.entry.pack(side="left", fill="x", expand=True)
         self.entry.bind("<Return>", lambda e: self.add_item())
         
         if self.browse_mode:
-            self.browse_btn = ctk.CTkButton(self.input_frame, text="Browse", width=70, height=35, corner_radius=8, command=self.browse_file)
-            self.browse_btn.pack(side="left", padx=(8, 0))
-            
-        self.add_btn = ctk.CTkButton(self.input_frame, text="+", width=40, height=35, corner_radius=8, command=self.add_item)
-        self.add_btn.pack(side="left", padx=(8, 0))
+            self.browse_btn = ctk.CTkButton(self.input_frame, text="Browse", width=80, height=38, corner_radius=8, command=self.browse_file)
+            self.browse_btn.pack(side="left", padx=(10, 0))
+        self.add_btn = ctk.CTkButton(self.input_frame, text="+", width=45, height=38, corner_radius=8, font=ctk.CTkFont(size=18, weight="bold"), command=self.add_item)
+        self.add_btn.pack(side="left", padx=(10, 0))
         
-        self.feedback_lbl = ctk.CTkLabel(self, text="", font=ctk.CTkFont(size=12))
-        self.feedback_lbl.pack(fill="x", padx=10, pady=(0, 2))
-        
-        # Fixed height spacer to prevent layout jumps when info_tooltip is present/absent
-        if not info_tooltip:
-            ctk.CTkLabel(self, text="", font=ctk.CTkFont(size=11), height=1).pack(pady=(0, 15))
-        else:
-            self.info_desc = ctk.CTkLabel(self, text=info_tooltip, text_color="gray", font=ctk.CTkFont(size=11))
-            self.info_desc.pack(fill="x", padx=15, pady=(2, 5))
-
+        if info_tooltip:
+            self.info_desc = ctk.CTkLabel(self, text=info_tooltip, text_color="gray", font=ctk.CTkFont(size=11), justify="left")
+            self.info_desc.pack(fill="x", padx=20, pady=(8, 2))
         
         self.scroll_frame = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        self.scroll_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        self.scroll_frame.pack(fill="both", expand=True, padx=15, pady=(5, 5))
+        
+        self.feedback_lbl = ctk.CTkLabel(self, text="", font=ctk.CTkFont(size=12))
+        self.feedback_lbl.pack(side="bottom", fill="x", padx=20, pady=(2, 10))
         
         self.item_frames = {}
         self.render_list()
@@ -88,473 +79,220 @@ class InputListFrame(ctk.CTkFrame):
         if self.browse_mode == "folder":
             filename = ctk.filedialog.askdirectory(title="Select Folder")
         else:
-            filetypes = []
-            if self.browse_mode == "app":
-                filetypes = [("Executables", "*.exe")] if os.name == 'nt' else [("All Files", "*.*")]
-            elif self.browse_mode == "file":
-                filetypes = [("All Files", "*.*")]
-                
+            filetypes = [("Executables", "*.exe")] if self.browse_mode == "app" else [("All Files", "*.*")]
             filename = ctk.filedialog.askopenfilename(title="Select File", filetypes=filetypes)
         if filename:
             self.entry.delete(0, "end")
             self.entry.insert(0, filename)
-            self.add_item()
-            
-    def add_item(self):
-        val = self.entry.get().strip()
-        if not val:
-            return
-            
-        if self.validation_fn:
-            is_valid, err_msg = self.validation_fn(val)
-            if not is_valid:
-                self.feedback_lbl.configure(text=f"❌ {err_msg}", text_color="red")
-                return
-                
-        if val in self.items:
-            self.feedback_lbl.configure(text="❌ Item already exists", text_color="red")
-            return
-            
-        self.items.append(val)
-        self.entry.delete(0, "end")
-        self.feedback_lbl.configure(text="✅ Added successfully", text_color="green")
-        self.after(2000, lambda: self.feedback_lbl.configure(text=""))
-        
-        if self.config_section:
-            section = self.app.config_data["groups"][self.group_name].setdefault(self.config_section, {})
-            section[self.config_key] = self.items
-        else:
-            self.app.config_data["groups"][self.group_name][self.config_key] = self.items
-        self.app.trigger_save()
-        self.add_item_ui(val)
-
-    def remove_item(self, val):
-        if val in self.items:
-            self.items.remove(val)
-            if self.config_section:
-                section = self.app.config_data["groups"][self.group_name].setdefault(self.config_section, {})
-                section[self.config_key] = self.items
-            else:
-                self.app.config_data["groups"][self.group_name][self.config_key] = self.items
-            self.app.trigger_save()
-            frame = self.item_frames.pop(val)
-            frame.destroy()
 
     def render_list(self):
-        for val in self.items:
-            self.add_item_ui(val)
-            
-    def add_item_ui(self, val):
-        frame = ctk.CTkFrame(self.scroll_frame)
-        frame.pack(fill="x", pady=2)
-        lbl = ctk.CTkLabel(frame, text=val, anchor="w")
-        lbl.pack(side="left", fill="x", expand=True, padx=5)
-        del_btn = ctk.CTkButton(frame, text="Remove", width=60, fg_color="#8b0000", hover_color="#5a0000",
-                                command=lambda v=val: self.remove_item(v))
-        del_btn.pack(side="right", padx=5)
-        self.item_frames[val] = frame
+        for frame in self.item_frames.values():
+            frame.destroy()
+        self.item_frames = {}
+        for item in self.items:
+            frame = ctk.CTkFrame(self.scroll_frame, fg_color="#333333", corner_radius=8)
+            frame.pack(fill="x", padx=5, pady=4)
+            lbl = ctk.CTkLabel(frame, text=item, font=ctk.CTkFont(size=14), anchor="w")
+            lbl.pack(side="left", fill="x", expand=True, padx=15, pady=8)
+            btn = ctk.CTkButton(frame, text="Remove", width=70, height=32, fg_color="#8b0000", hover_color="#5a0000", command=lambda i=item: self.remove_item(i))
+            btn.pack(side="right", padx=10)
+            self.item_frames[item] = frame
 
+    def add_item(self):
+        val = self.entry.get().strip()
+        if not val: return
+        if self.validation_fn:
+            valid, msg = self.validation_fn(val)
+            if not valid:
+                self.feedback_lbl.configure(text=msg, text_color="red")
+                return
+        if val in self.items:
+            self.feedback_lbl.configure(text="Already in list", text_color="orange")
+            return
+        self.items.append(val)
+        self.save_to_config()
+        self.render_list()
+        self.entry.delete(0, "end")
+        self.feedback_lbl.configure(text="Added successfully", text_color="green")
 
-class ContentFilterTab(ctk.CTkFrame):
-    def __init__(self, master, app, group_name, **kwargs):
-        super().__init__(master, fg_color="transparent", **kwargs)
-        self.app = app
-        self.group_name = group_name
-        
-        ad_cfg = self.app.config_data["groups"][self.group_name].get("adblocker", {})
-        
-        container = ctk.CTkScrollableFrame(self, fg_color="#2b2b2b", corner_radius=10)
-        container.pack(fill="both", expand=True, padx=10, pady=10)
-        container.app = self.app
-        container.group_name = self.group_name
-        
-        self.enabled_var = ctk.BooleanVar(value=ad_cfg.get("enabled", False))
-        self.enabled_switch = ctk.CTkSwitch(container, text="Enable Content Filter", variable=self.enabled_var, font=ctk.CTkFont(weight="bold"), command=self.on_change)
-        self.enabled_switch.pack(pady=10, anchor="w", padx=20)
-        
-        self.persist_var = ctk.BooleanVar(value=ad_cfg.get("persist_all_day", False))
-        self.persist_switch = ctk.CTkSwitch(container, text="Enforce All Day (Ignores Schedule)", variable=self.persist_var, command=self.on_change)
-        self.persist_switch.pack(pady=5, anchor="w", padx=20)
-        
-        lbl = ctk.CTkLabel(container, text="Block Categories:", font=ctk.CTkFont(weight="bold"))
-        lbl.pack(anchor="w", padx=20, pady=(10, 0))
-        
-        self.ads_var = ctk.BooleanVar(value=ad_cfg.get("ads_trackers", False))
-        ctk.CTkCheckBox(container, text="Ads, Trackers & Telemetry", variable=self.ads_var, command=self.on_change).pack(anchor="w", padx=30, pady=2)
-        
-        self.malware_var = ctk.BooleanVar(value=ad_cfg.get("malware_annoyances", False))
-        ctk.CTkCheckBox(container, text="Malware & Annoyances", variable=self.malware_var, command=self.on_change).pack(anchor="w", padx=30, pady=2)
-        
-        self.social_var = ctk.BooleanVar(value=ad_cfg.get("social_media", False))
-        ctk.CTkCheckBox(container, text="Social Media & Chat (Twitter, Discord)", variable=self.social_var, command=self.on_change).pack(anchor="w", padx=30, pady=2)
+    def remove_item(self, item):
+        if item in self.items:
+            self.items.remove(item)
+            self.save_to_config()
+            self.render_list()
 
-        self.adult_var = ctk.BooleanVar(value=ad_cfg.get("adult_content", False))
-        ctk.CTkCheckBox(container, text="Adult Content (18+)", variable=self.adult_var, command=self.on_change).pack(anchor="w", padx=30, pady=2)
-
-        self.gambling_var = ctk.BooleanVar(value=ad_cfg.get("gambling", False))
-        ctk.CTkCheckBox(container, text="Gambling & Betting", variable=self.gambling_var, command=self.on_change).pack(anchor="w", padx=30, pady=2)
-        
-        self.piracy_var = ctk.BooleanVar(value=ad_cfg.get("piracy_illegal", False))
-        ctk.CTkCheckBox(container, text="Piracy & Illegal Sites", variable=self.piracy_var, command=self.on_change).pack(anchor="w", padx=30, pady=2)
-        
-        self.entertainment_var = ctk.BooleanVar(value=ad_cfg.get("entertainment", False))
-        ctk.CTkCheckBox(container, text="Entertainment & Anime (Netflix, Crunchyroll)", variable=self.entertainment_var, command=self.on_change).pack(anchor="w", padx=30, pady=2)
-        
-        self.shopping_var = ctk.BooleanVar(value=ad_cfg.get("shopping", False))
-        ctk.CTkCheckBox(container, text="Shopping (Amazon, Temu)", variable=self.shopping_var, command=self.on_change).pack(anchor="w", padx=30, pady=2)
-        
-        self.ai_var = ctk.BooleanVar(value=ad_cfg.get("ai_tech", False))
-        ctk.CTkCheckBox(container, text="AI & Tech Newsletters", variable=self.ai_var, command=self.on_change).pack(anchor="w", padx=30, pady=2)
-
-        lbl = ctk.CTkLabel(container, text="Exceptions (Allowlist):", font=ctk.CTkFont(weight="bold"))
-        lbl.pack(anchor="w", padx=20, pady=(15, 0))
-        
-        def validate_domain(domain):
-            if "http" in domain: return False, "Exclude http/https"
-            return True, ""
-            
-        self.app.group_name = self.group_name
-        self.exceptions_list = InputListFrame(container, "exceptions", "Enter domain to exclude (e.g. google.com)", validation_fn=validate_domain, config_section="adblocker")
-        self.exceptions_list.pack(fill="both", expand=True, padx=20, pady=5)
-
-        lbl_custom = ctk.CTkLabel(container, text="Custom Lists (URLs or local .txt paths):", font=ctk.CTkFont(weight="bold"))
-        lbl_custom.pack(anchor="w", padx=20, pady=(15, 0))
-        
-        self.custom_lists = InputListFrame(container, "custom_lists", "Enter URL or absolute Path", browse_mode="file", config_section="adblocker")
-        self.custom_lists.pack(fill="both", expand=True, padx=20, pady=5)
-        
-    def on_change(self, *args):
-        ad_cfg = self.app.config_data["groups"][self.group_name].get("adblocker", {})
-        ad_cfg["enabled"] = self.enabled_var.get()
-        ad_cfg["persist_all_day"] = self.persist_var.get()
-        ad_cfg["ads_trackers"] = self.ads_var.get()
-        ad_cfg["malware_annoyances"] = self.malware_var.get()
-        ad_cfg["social_media"] = self.social_var.get()
-        ad_cfg["adult_content"] = self.adult_var.get()
-        ad_cfg["gambling"] = self.gambling_var.get()
-        ad_cfg["piracy_illegal"] = self.piracy_var.get()
-        ad_cfg["entertainment"] = self.entertainment_var.get()
-        ad_cfg["shopping"] = self.shopping_var.get()
-        ad_cfg["ai_tech"] = self.ai_var.get()
-        ad_cfg["exceptions"] = self.exceptions_list.items
-        # Persist custom_lists into the adblocker block (daemon reads from here)
-        ad_cfg["custom_lists"] = self.custom_lists.items
-        self.app.config_data["groups"][self.group_name]["adblocker"] = ad_cfg
+    def save_to_config(self):
+        group_data = self.app.config_data["groups"][self.group_name]
+        if self.config_section:
+            group_data.setdefault(self.config_section, {})[self.config_key] = self.items
+        else:
+            group_data[self.config_key] = self.items
         self.app.trigger_save()
 
+class ContentFilterTab(ctk.CTkFrame):
+    def __init__(self, master, app, group_name):
+        super().__init__(master, fg_color="transparent")
+        self.app = app
+        self.group_name = group_name
+        self.config_data = app.config_data
+        self.ad = self.config_data["groups"][self.group_name].setdefault("adblocker", {})
+        
+        self.container = ctk.CTkScrollableFrame(self, fg_color="#2b2b2b", corner_radius=12)
+        self.container.pack(fill="both", expand=True, padx=20, pady=15)
+        
+        self.enabled_var = ctk.BooleanVar(value=self.ad.get("enabled", False))
+        ctk.CTkSwitch(self.container, text="Enable Content Filter", variable=self.enabled_var, command=self.save, font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", padx=25, pady=(20, 8))
+        
+        self.persist_var = ctk.BooleanVar(value=self.ad.get("persist_all_day", False))
+        ctk.CTkSwitch(self.container, text="Enforce All Day (Bypass Schedule)", variable=self.persist_var, command=self.save).pack(anchor="w", padx=25, pady=8)
+        
+        ctk.CTkLabel(self.container, text="Filter Categories:", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=25, pady=(20, 8))
+        self.cat_vars = {}
+        cats = [("Ads & Trackers", "ads_trackers"), ("Malware & Annoyances", "malware_annoyances"), ("Social Media", "social_media"), ("Entertainment & Video", "entertainment"), ("Shopping & E-commerce", "shopping"), ("AI & Tech News", "ai_tech"), ("Adult Content", "adult_content"), ("Gambling", "gambling"), ("Piracy & Illegal", "piracy_illegal")]
+        for label, key in cats:
+            var = ctk.BooleanVar(value=self.ad.get(key, False))
+            ctk.CTkCheckBox(self.container, text=label, variable=var, command=self.save).pack(anchor="w", padx=35, pady=4)
+            self.cat_vars[key] = var
+            
+        ctk.CTkLabel(self.container, text="Exceptions (Allowlist):", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=25, pady=(20, 0))
+        self.exc_list = self.app._inline_list(self.container, self.ad.get("exceptions", []), self.save, "e.g. google.com")
+
+        ctk.CTkLabel(self.container, text="Custom Blocklists (URL or Local Path):", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=25, pady=(20, 0))
+        self.custom_list = self.app._inline_list(self.container, self.ad.get("custom_lists", []), self.save, "e.g. https://example.com/blocklist.txt")
+
+    def save(self, *args):
+        self.ad["enabled"] = self.enabled_var.get()
+        self.ad["persist_all_day"] = self.persist_var.get()
+        for key, var in self.cat_vars.items(): self.ad[key] = var.get()
+        self.ad["exceptions"] = self.exc_list["items"]
+        self.ad["custom_lists"] = self.custom_list["items"]
+        self.app.trigger_save()
 
 class ProductivityApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        
-        self.title("Simple Productivity Blocker")
+        self.title(f"Simple Productivity Blocker v{VERSION}")
         
         self.update_idletasks()
         ws = self.winfo_screenwidth()
         hs = self.winfo_screenheight()
         w = int(ws * 0.65)
-        h = int(hs * 0.8)
+        h = int(hs * 0.85)
         x = (ws - w) // 2
         y = (hs - h) // 2
         self.geometry(f"{w}x{h}+{x}+{y}")
         
-        # Set window icon (bundled)
         try:
-            ico_path = resource_path("icon.ico")
-            png_path = resource_path("newlogo.png")
-            
-            if os.path.exists(ico_path):
-                self.iconbitmap(ico_path)
-            
-            if os.path.exists(png_path):
-                from PIL import Image, ImageTk
-                img = Image.open(png_path)
-                self._icon_img = ImageTk.PhotoImage(img)
-                self.wm_iconphoto(True, self._icon_img)
-        except Exception as e:
-            print(f"Icon error: {e}")
+            from PIL import Image
+            import tkinter as tk
+            logo_path = resource_path("newlogo.png")
+            if os.name == 'nt' and os.path.exists(logo_path):
+                self.iconphoto(False, tk.PhotoImage(file=logo_path))
+        except: pass
 
-
-
-        
         self.config_data = load_config()
-        self.save_job = None
-        self.countdown_job = None
-        self.current_screen = None
-        self.group_name = None
-        
-        self.check_daemon()
+        self._save_timer = None
         self.show_dashboard()
 
-    def check_daemon(self):
-        try:
-            if not self._daemon_running():
-                self.launch_daemon()
-        except:
-            self.launch_daemon()
-
-    def _daemon_running(self):
-        daemon_name = "SPB_Daemon.exe" if os.name == 'nt' else "SPB_Daemon"
-
-        daemon_name_lower = daemon_name.lower()
-        for proc in psutil.process_iter(['name', 'cmdline', 'exe']):
-            try:
-                name = (proc.info.get('name') or '').lower()
-                cmdline = proc.info.get('cmdline') or []
-                if getattr(sys, 'frozen', False):
-                    if name == daemon_name_lower:
-                        return True
-                    exe = (proc.info.get('exe') or '').lower()
-                    if exe.endswith(daemon_name_lower):
-                        return True
-                else:
-                    for arg in cmdline:
-                        if "daemon.py" in str(arg).lower():
-                            return True
-
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                continue
-        return False
-
-    def launch_daemon(self):
-        if getattr(sys, 'frozen', False):
-            daemon_path = os.path.join(os.path.dirname(sys.executable), "SPB_Daemon.exe" if os.name == 'nt' else "SPB_Daemon")
-
-            exe_to_run = daemon_path
-        else:
-            daemon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daemon.py")
-            exe_to_run = sys.executable
-
-        args = [exe_to_run] if getattr(sys, 'frozen', False) else [sys.executable, daemon_path]
-
-        if not is_admin():
-            if os.name == 'nt':
-                ctypes.windll.shell32.ShellExecuteW(None, "runas", args[0], daemon_path if not getattr(sys, 'frozen', False) else "", None, 0)
-            else:
-                try:
-                    subprocess.Popen(["pkexec"] + args)
-                except FileNotFoundError:
-                    pass
-        else:
-            if os.name == 'nt':
-                subprocess.Popen(args, creationflags=subprocess.CREATE_NO_WINDOW)
-            else:
-                subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
     def trigger_save(self):
-        self.show_saving()
-        if self.save_job:
-            self.after_cancel(self.save_job)
-        self.save_job = self.after(1000, self._do_save)
-        
-    def _do_save(self):
-        save_config(self.config_data)
-        self.start_countdown(3.00)
-        
-    def start_countdown(self, remaining):
-        if self.countdown_job:
-            self.after_cancel(self.countdown_job)
-        if remaining <= 0:
-            self.hide_saving()
-        else:
-            if hasattr(self, 'timer_lbl') and self.timer_lbl.winfo_exists():
-                self.timer_lbl.configure(text=f"{remaining:.2f}s left until applied...", text_color="orange")
-            self.countdown_job = self.after(50, self.start_countdown, remaining - 0.05)
-        
-    def show_saving(self):
-        if hasattr(self, 'status_lbl') and self.status_lbl.winfo_exists():
-            self.status_lbl.configure(text="Saving... ⏳", text_color="#1f538d")
-        if hasattr(self, 'timer_lbl') and self.timer_lbl.winfo_exists():
-            self.timer_lbl.configure(text="")
-        
-    def hide_saving(self):
-        if hasattr(self, 'status_lbl') and self.status_lbl.winfo_exists():
-            self.status_lbl.configure(text="All changes saved ✅", text_color="green")
-        if hasattr(self, 'timer_lbl') and self.timer_lbl.winfo_exists():
-            self.timer_lbl.configure(text="")
+        if self._save_timer: self.after_cancel(self._save_timer)
+        self._save_timer = self.after(1000, lambda: save_config(self.config_data))
 
     def clear_screen(self):
-        if self.current_screen:
-            self.current_screen.destroy()
-
-    def show_challenge_screen(self, next_action):
-        self.clear_screen()
-        self.current_screen = ctk.CTkFrame(self)
-        self.current_screen.pack(fill="both", expand=True)
-        
-        # Access security config for the current group
-        sec_cfg = self.config_data["groups"][self.group_name].get("security", {})
-        length = sec_cfg.get("challenge_length", 32)
-        
-        chars = string.ascii_letters + string.digits + "!@#$%^&*()-_=+[]{}|;:',.<>?/"
-        self.challenge_string = ''.join(random.choice(chars) for _ in range(length))
-        
-        challenge_frame = ctk.CTkFrame(self.current_screen)
-        challenge_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        label = ctk.CTkLabel(challenge_frame, text=f"Security Challenge: {self.group_name}", font=ctk.CTkFont(size=24, weight="bold"))
-        label.pack(pady=20)
-        
-        instructions = ctk.CTkLabel(challenge_frame, text="Please type the following text exactly to edit this group:")
-        instructions.pack()
-        
-        mono_font = ctk.CTkFont(family="Consolas", size=16)
-        
-        self.text_display = ctk.CTkLabel(challenge_frame, text=self.challenge_string, font=mono_font, wraplength=800)
-        self.text_display.pack(fill="x", padx=20, pady=20)
-        
-        self.input_entry = ctk.CTkTextbox(challenge_frame, height=80, wrap="word", font=mono_font)
-        self.input_entry.pack(fill="x", padx=20, pady=10)
-        
-        def on_enter(event):
-            self.verify_challenge(next_action)
-            return "break"
-            
-        self.input_entry.bind("<Return>", on_enter)
-        
-        btn_frame = ctk.CTkFrame(challenge_frame, fg_color="transparent")
-        btn_frame.pack(pady=10)
-
-        ctk.CTkButton(btn_frame, text="Back to Dashboard", fg_color="transparent", width=140, command=self.show_dashboard).pack(side="left", padx=6)
-        ctk.CTkButton(btn_frame, text="Verify", command=lambda: self.verify_challenge(next_action)).pack(side="left", padx=6)
-        
-    def verify_challenge(self, next_action):
-        user_input = self.input_entry.get("1.0", "end-1c").strip()
-        if user_input == self.challenge_string:
-            next_action()
-        else:
-            self.input_entry.configure(fg_color="#3a1c1c")
-            self.after(500, lambda: self.input_entry.configure(fg_color=["#F9F9FA", "#1D1E1E"]))
+        for widget in self.winfo_children():
+            widget.destroy()
 
     def show_dashboard(self):
         self.clear_screen()
         self.current_screen = ctk.CTkFrame(self)
         self.current_screen.pack(fill="both", expand=True)
-        
         top_bar = ctk.CTkFrame(self.current_screen, fg_color="transparent")
-        top_bar.pack(fill="x", padx=20, pady=10)
+        top_bar.pack(fill="x", padx=30, pady=20) # Tightened header
+        ctk.CTkLabel(top_bar, text="Group Profiles", font=ctk.CTkFont(size=28, weight="bold")).pack(side="left")
+        ctk.CTkButton(top_bar, text="⚙  Settings", command=self.show_settings, fg_color="#3a3a3a", hover_color="#4a4a4a", width=120, height=35).pack(side="right")
         
-        ctk.CTkLabel(top_bar, text="Groups (Profiles)", font=ctk.CTkFont(size=24, weight="bold")).pack(side="left")
-        ctk.CTkButton(top_bar, text="⚙  Options", command=self.show_settings,
-                      fg_color="transparent", hover_color="#3a3a3a", width=100).pack(side="right")
-        
-        self.groups_scroll = ctk.CTkScrollableFrame(self.current_screen)
-        self.groups_scroll.pack(fill="both", expand=True, padx=20, pady=(10, 0))
-        
+        self.groups_scroll = ctk.CTkScrollableFrame(self.current_screen, fg_color="transparent")
+        self.groups_scroll.pack(fill="both", expand=True, padx=30, pady=(0, 10))
         for name, data in self.config_data["groups"].items():
             self.create_group_card(name, data)
-
-        # --- Bottom Status Bar ---
-        self.status_frame = ctk.CTkFrame(self.current_screen, height=44, fg_color="transparent")
-        self.status_frame.pack(fill="x", side="bottom", padx=20, pady=10)
+            
+        self.status_frame = ctk.CTkFrame(self.current_screen, height=60, fg_color="transparent")
+        self.status_frame.pack(fill="x", side="bottom", padx=30, pady=15)
         self.status_frame.pack_propagate(False)
-        
         self.status_lbl = ctk.CTkLabel(self.status_frame, text="Ready", text_color="gray", font=ctk.CTkFont(size=14))
-        self.status_lbl.pack(side="left", anchor="center")
+        self.status_lbl.pack(side="left")
+        center_f = ctk.CTkFrame(self.status_frame, fg_color="transparent")
+        center_f.pack(side="left", fill="both", expand=True)
+        ctk.CTkButton(center_f, text="+ Create New Profile", font=ctk.CTkFont(weight="bold"), width=200, height=40, command=self.add_new_group).place(relx=0.5, rely=0.5, anchor="center")
+
+    def create_group_card(self, name, data):
+        card = ctk.CTkFrame(self.groups_scroll, fg_color="#2b2b2b", corner_radius=12)
+        card.pack(fill="x", pady=8, padx=2)
+        header = ctk.CTkFrame(card, fg_color="transparent")
+        header.pack(fill="x", padx=20, pady=15)
+        ctk.CTkLabel(header, text=name, font=ctk.CTkFont(size=20, weight="bold")).pack(side="left")
+        btn_f = ctk.CTkFrame(header, fg_color="transparent")
+        btn_f.pack(side="right")
+        ctk.CTkButton(btn_f, text="Delete", width=75, height=32, fg_color="#8b0000", hover_color="#5a0000", command=lambda n=name: self.delete_group(n)).pack(side="left", padx=6)
+        ctk.CTkButton(btn_f, text="Rename", width=75, height=32, fg_color="#4a4a4a", hover_color="#5a5a5a", command=lambda n=name: self.rename_group(n)).pack(side="left", padx=6)
+        ctk.CTkButton(btn_f, text="Edit", width=75, height=32, fg_color="#1f538d", hover_color="#14375e", command=lambda n=name: self.on_edit_click(n)).pack(side="left", padx=6)
+        stats = f"Websites: {len(data.get('websites', []))}  |  Apps: {len(data.get('apps', []))}  |  Files: {len(data.get('files', []))}  |  Folders: {len(data.get('folders', []))}"
+        ctk.CTkLabel(card, text=stats, text_color="gray", font=ctk.CTkFont(size=13)).pack(anchor="w", padx=20, pady=(0, 15))
+
+    def on_edit_click(self, group_name):
+        self.group_name = group_name
+        sec = self.config_data["groups"][group_name].get("security", {})
+        if sec.get("enabled", False):
+            self.show_challenge_screen(lambda: self.show_group_editor(group_name))
+        else:
+            self.show_group_editor(group_name)
+
+    def show_group_editor(self, group_name):
+        self.clear_screen()
+        self.current_screen = ctk.CTkFrame(self)
+        self.current_screen.pack(fill="both", expand=True)
+        top = ctk.CTkFrame(self.current_screen, fg_color="transparent", height=60)
+        top.pack(fill="x", padx=30, pady=10) # Reduced pady
+        top.pack_propagate(False)
+        ctk.CTkButton(top, text="⇚ Dashboard", command=self.show_dashboard, fg_color="transparent", width=120, height=35, font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
+        ctk.CTkLabel(top, text=f"Editing: {group_name}", font=ctk.CTkFont(size=20, weight="bold")).pack(side="left", padx=30)
         
-        self.timer_lbl = ctk.CTkLabel(self.status_frame, text="", text_color="green", font=ctk.CTkFont(size=12))
-        self.timer_lbl.pack(side="left", padx=10, anchor="center")
+        self.tabview = ctk.CTkTabview(self.current_screen, corner_radius=12)
+        self.tabview.pack(fill="both", expand=True, padx=30, pady=(5, 10)) # Tightened TabView
+        t_web = self.tabview.add("Websites")
+        t_apps = self.tabview.add("Apps")
+        t_files = self.tabview.add("Files")
+        t_folders = self.tabview.add("Folders")
+        t_content = self.tabview.add("Content Filter")
+        t_schedule = self.tabview.add("Schedule")
+        
+        t_web.group_name = group_name; t_apps.group_name = group_name; t_files.group_name = group_name; t_folders.group_name = group_name
+        def validate_web(val):
+            if "http" in val: return False, "Do not include http:// or https://"
+            return True, ""
+        dns_msg = "Supports Wildcards (*.site.com), Keywords (~word), Prefix (~abc*), and Suffix (~*xyz)."
+        self.list_web = InputListFrame(t_web, self, "websites", "Enter URL or Pattern", validation_fn=validate_web, info_tooltip=dns_msg)
+        self.list_web.pack(fill="both", expand=True, padx=10, pady=10)
+        self.list_apps = InputListFrame(t_apps, self, "apps", "Enter App Name (e.g. notepad.exe)", browse_mode="app")
+        self.list_apps.pack(fill="both", expand=True, padx=10, pady=10)
+        self.list_files = InputListFrame(t_files, self, "files", "Enter File Path", browse_mode="file")
+        self.list_files.pack(fill="both", expand=True, padx=10, pady=10)
+        self.list_folders = InputListFrame(t_folders, self, "folders", "Enter Folder Path", browse_mode="folder")
+        self.list_folders.pack(fill="both", expand=True, padx=10, pady=10)
+        ContentFilterTab(t_content, self, group_name).pack(fill="both", expand=True)
+        self.build_schedule_ui(t_schedule)
 
-        # Center frame absorbs remaining space so the button sits at true center
-        center_frame = ctk.CTkFrame(self.status_frame, fg_color="transparent")
-        center_frame.pack(side="left", fill="both", expand=True)
-        ctk.CTkButton(center_frame, text="+ Add New Group", command=self.add_new_group
-                      ).place(relx=0.5, rely=0.5, anchor="center")
-
-    def _center_dialog(self, dialog, width, height):
-        self.update_idletasks()
-        x = self.winfo_x() + max(0, (self.winfo_width() - width) // 2)
-        y = self.winfo_y() + max(0, (self.winfo_height() - height) // 2)
-        dialog.geometry(f"{width}x{height}+{x}+{y}")
-
-    def _prompt_text_dialog(self, title, message, initial=""):
-        dialog = ctk.CTkToplevel(self)
-        dialog.title(title)
-        dialog.resizable(False, False)
-        dialog.transient(self)
-        dialog.grab_set()
-        dialog.lift()
-        self._center_dialog(dialog, 420, 180)
-
-        ctk.CTkLabel(dialog, text=message).pack(padx=20, pady=(20, 10))
-        entry = ctk.CTkEntry(dialog)
-        entry.pack(fill="x", padx=20)
-        if initial:
-            entry.insert(0, initial)
-        entry.focus_set()
-
-        result = {"value": None}
-
-        def on_ok():
-            value = entry.get().strip()
-            result["value"] = value if value else None
-            dialog.destroy()
-
-        def on_cancel():
-            dialog.destroy()
-
-        dialog.protocol("WM_DELETE_WINDOW", on_cancel)
-        entry.bind("<Return>", lambda event: (on_ok(), "break"))
-
-        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        btn_frame.pack(pady=15)
-        ctk.CTkButton(btn_frame, text="Cancel", fg_color="transparent", command=on_cancel).pack(side="left", padx=6)
-        ctk.CTkButton(btn_frame, text="OK", command=on_ok).pack(side="left", padx=6)
-
-        dialog.wait_window()
-        return result["value"]
-
-    def _confirm_dialog(self, title, message):
-        dialog = ctk.CTkToplevel(self)
-        dialog.title(title)
-        dialog.resizable(False, False)
-        dialog.transient(self)
-        dialog.grab_set()
-        dialog.lift()
-        self._center_dialog(dialog, 420, 170)
-
-        ctk.CTkLabel(dialog, text=message).pack(padx=20, pady=(25, 10))
-
-        result = {"value": False}
-
-        def on_yes():
-            result["value"] = True
-            dialog.destroy()
-
-        def on_no():
-            dialog.destroy()
-
-        dialog.protocol("WM_DELETE_WINDOW", on_no)
-
-        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        btn_frame.pack(pady=15)
-        ctk.CTkButton(btn_frame, text="Cancel", fg_color="transparent", command=on_no).pack(side="left", padx=6)
-        ctk.CTkButton(btn_frame, text="Delete", fg_color="#8b0000", hover_color="#5a0000", command=on_yes).pack(side="left", padx=6)
-
-        dialog.wait_window()
-        return result["value"]
-
-    def _info_dialog(self, title, message):
-        dialog = ctk.CTkToplevel(self)
-        dialog.title(title)
-        dialog.resizable(False, False)
-        dialog.transient(self)
-        dialog.grab_set()
-        dialog.lift()
-        self._center_dialog(dialog, 420, 160)
-
-        ctk.CTkLabel(dialog, text=message).pack(padx=20, pady=(25, 10))
-
-        def on_ok():
-            dialog.destroy()
-
-        dialog.protocol("WM_DELETE_WINDOW", on_ok)
-
-        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        btn_frame.pack(pady=15)
-        ctk.CTkButton(btn_frame, text="OK", command=on_ok).pack(side="left", padx=6)
-
-        dialog.wait_window()
+        # Security Challenge at Bottom (Anchored within margin)
+        sec_f = ctk.CTkFrame(self.current_screen, fg_color="transparent")
+        sec_f.pack(fill="x", padx=30, pady=(5, 15))
+        sec = self.config_data["groups"][group_name].get("security", {})
+        ctk.CTkLabel(sec_f, text="Challenge Length:", font=ctk.CTkFont(size=12)).pack(side="left", padx=(10, 5))
+        self.length_var = ctk.StringVar(value=str(sec.get("challenge_length", 32)))
+        length_cb = ctk.CTkComboBox(sec_f, values=["32", "64", "128", "256"], variable=self.length_var, command=self.save_security, width=80)
+        length_cb.pack(side="left", padx=(0, 15))
+        self.sec_enabled = ctk.CTkSwitch(sec_f, text="Enable Security Challenge", command=self.save_security)
+        if sec.get("enabled"): self.sec_enabled.select()
+        self.sec_enabled.pack(side="left")
 
     def save_security(self, *args):
         self.config_data["groups"][self.group_name]["security"] = {
@@ -563,543 +301,315 @@ class ProductivityApp(ctk.CTk):
         }
         self.trigger_save()
 
-    def create_group_card(self, name, data):
-        card = ctk.CTkFrame(self.groups_scroll)
-        card.pack(fill="x", pady=5)
-        
-        header = ctk.CTkFrame(card, fg_color="transparent")
-        header.pack(fill="x", padx=10, pady=5)
-        
-        ctk.CTkLabel(header, text=name, font=ctk.CTkFont(size=16, weight="bold")).pack(side="left")
-        
-        btn_frame = ctk.CTkFrame(header, fg_color="transparent")
-        btn_frame.pack(side="right")
-
-        ctk.CTkButton(btn_frame, text="Delete", width=60, fg_color="#8b0000", hover_color="#5a0000",
-                  command=lambda n=name: self.delete_group(n)).pack(side="left", padx=5)
-        ctk.CTkButton(btn_frame, text="Rename", width=60, fg_color="#4a4a4a", hover_color="#3a3a3a",
-                  command=lambda n=name: self.rename_group(n)).pack(side="left", padx=5)
-        ctk.CTkButton(btn_frame, text="Edit", width=60, command=lambda n=name: self.on_edit_click(n)).pack(side="left", padx=5)
-        
-        stats = f"Websites: {len(data.get('websites', []))} | Apps: {len(data.get('apps', []))} | Files: {len(data.get('files', []))} | Content Filter: {'On' if data.get('adblocker', {}).get('enabled') else 'Off'}"
-        ctk.CTkLabel(card, text=stats, text_color="gray").pack(anchor="w", padx=10, pady=(0, 5))
-
-    def add_new_group(self):
-        name = self._prompt_text_dialog("New Group", "Enter new group name:")
-        if name and name not in self.config_data["groups"]:
-            import copy
-            self.config_data["groups"][name] = copy.deepcopy(DEFAULT_GROUP_CONFIG)
-            self.trigger_save()
-            self.show_dashboard()
-
-    def rename_group(self, old_name):
-        new_name = self._prompt_text_dialog("Rename Group", f"Enter new name for '{old_name}':", initial=old_name)
-        if new_name and new_name != old_name and new_name not in self.config_data["groups"]:
-            self.config_data["groups"][new_name] = self.config_data["groups"].pop(old_name)
-            self.trigger_save()
-            self.show_dashboard()
-
-    def delete_group(self, group_name):
-        if len(self.config_data["groups"]) <= 1:
-            self._info_dialog("Cannot Delete", "At least one group must remain.")
-            return
-        if not self._confirm_dialog("Delete Group", f"Delete '{group_name}'? This cannot be undone."):
-            return
-        if group_name in self.config_data["groups"]:
-            del self.config_data["groups"][group_name]
-            self.trigger_save()
-            self.show_dashboard()
-
-    def _run_schtasks(self, args):
-        kwargs = {"capture_output": True, "text": True}
-        if os.name == 'nt':
-            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-        return subprocess.run(args, **kwargs)
-
-    def _startup_task_exists(self):
-        if os.name != 'nt':
-            return False
-        result = self._run_schtasks(["schtasks", "/query", "/tn", "SPB_Daemon"])
-        return result.returncode == 0
-
-    def _startup_task_command(self):
-        if getattr(sys, 'frozen', False):
-            daemon_path = os.path.join(os.path.dirname(sys.executable), "daemon.exe" if os.name == 'nt' else "daemon")
-            return f'"{daemon_path}"'
-        daemon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daemon.py")
-        return f'"{sys.executable}" "{daemon_path}"'
-
-    def _on_startup_toggle(self):
-        if os.name != 'nt':
-            return
-        enabled = self.startup_var.get()
-        if enabled:
-            cmd = self._startup_task_command()
-            result = self._run_schtasks(["schtasks", "/create", "/tn", "SPB_Daemon", "/tr", cmd,
-                                         "/sc", "onlogon", "/rl", "highest", "/f"])
-            if result.returncode == 0:
-                if hasattr(self, 'status_lbl') and self.status_lbl.winfo_exists():
-                    self.status_lbl.configure(text="Startup enabled", text_color="green")
-            else:
-                if hasattr(self, 'status_lbl') and self.status_lbl.winfo_exists():
-                    self.status_lbl.configure(text="Failed to enable startup", text_color="red")
-        else:
-            result = self._run_schtasks(["schtasks", "/delete", "/tn", "SPB_Daemon", "/f"])
-            if result.returncode == 0:
-                if hasattr(self, 'status_lbl') and self.status_lbl.winfo_exists():
-                    self.status_lbl.configure(text="Startup disabled", text_color="gray")
-            else:
-                if hasattr(self, 'status_lbl') and self.status_lbl.winfo_exists():
-                    self.status_lbl.configure(text="Failed to disable startup", text_color="red")
-
-        self.startup_var.set(self._startup_task_exists())
-
-    def on_edit_click(self, group_name):
-        self.group_name = group_name
-        sec_cfg = self.config_data["groups"][group_name].get("security", {})
-        if sec_cfg.get("enabled", False):
-            self.show_challenge_screen(lambda: self.show_group_editor(group_name))
-        else:
-            self.show_group_editor(group_name)
-
-    def show_group_editor(self, group_name):
-        self.group_name = group_name
-        self.clear_screen()
-        self.current_screen = ctk.CTkFrame(self)
-        self.current_screen.pack(fill="both", expand=True)
-        
-        top_bar = ctk.CTkFrame(self.current_screen, fg_color="transparent", height=45)
-        top_bar.pack(fill="x", padx=20, pady=10)
-        top_bar.pack_propagate(False)
-        ctk.CTkButton(top_bar, text="Back to Dashboard", command=self.show_dashboard, fg_color="transparent", width=120, height=32).pack(side="left", anchor="center")
-        ctk.CTkLabel(top_bar, text=f"Editing: {group_name}", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=20, anchor="center")
-        
-        self.tabview = ctk.CTkTabview(self.current_screen)
-        self.tabview.pack(fill="both", expand=True, padx=20, pady=(5, 0))
-        
-        self.tab_websites = self.tabview.add("Websites")
-        self.tab_apps = self.tabview.add("Apps")
-        self.tab_files = self.tabview.add("Files")
-        self.tab_folders = self.tabview.add("Folders")
-        self.tab_content = self.tabview.add("Content Filter")
-        self.tab_schedule = self.tabview.add("Schedule")
-        
-        self.status_frame = ctk.CTkFrame(self.current_screen, height=60, fg_color="transparent")
-        self.status_frame.pack(fill="x", padx=20, pady=10)
-        self.status_frame.pack_propagate(False)
-        
-        self.status_lbl = ctk.CTkLabel(self.status_frame, text="Ready", text_color="gray", font=ctk.CTkFont(size=14))
-        self.status_lbl.pack(side="left", anchor="center")
-        
-        self.timer_lbl = ctk.CTkLabel(self.status_frame, text="", text_color="green", font=ctk.CTkFont(size=12))
-        self.timer_lbl.pack(side="left", padx=10, anchor="center")
-        
-        # Security controls: right-aligned, vertically centered within the bar
-        sec_wrapper = ctk.CTkFrame(self.status_frame, fg_color="transparent")
-        sec_wrapper.pack(side="right", anchor="center", padx=(0, 10))
-        
-        sec = self.config_data["groups"][self.group_name].get("security", {})
-        
-        controls_frame = ctk.CTkFrame(sec_wrapper, fg_color="transparent")
-        controls_frame.pack(anchor="e")
-        
-        ctk.CTkLabel(controls_frame, text="Challenge Length:").pack(side="left", padx=(0, 5))
-        
-        self.length_var = ctk.StringVar(value=str(sec.get("challenge_length", 32)))
-        length_combo = ctk.CTkComboBox(controls_frame, values=["32", "64", "128", "256"], 
-                                      variable=self.length_var, command=self.save_security, width=75)
-        length_combo.pack(side="left", padx=(0, 15))
-        
-        self.sec_enabled = ctk.CTkSwitch(controls_frame, text="Enable Security Challenge", command=self.save_security)
-        if sec.get("enabled", False):
-            self.sec_enabled.select()
-        self.sec_enabled.pack(side="left")
-        
-        ctk.CTkLabel(sec_wrapper, text="(Longer lengths are more secure but harder to type.)",
-                     text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="e", pady=(2, 0))
-
-        
-        def validate_website(val):
-            if "http" in val: return False, "Do not include http:// or https://"
-            return True, ""
-            
-        def validate_app(val):
-            if not val.lower().endswith(".exe"): return False, "App must end with .exe"
-            return True, ""
-            
-        def check_proxy_installed():
-            # In the future, this could check for mitmproxy or a similar local proxy service.
-            return False
-            
-        proxy_msg = "Blocking specific subdirectories requires an Advanced Web Proxy (Installed ✅)" if check_proxy_installed() else "Note: Blocking specific subdirectories requires an Advanced Web Proxy (Not Installed ❌)."
-            
-        self.tab_websites.app = self
-        self.tab_websites.group_name = group_name
-        self.list_web = InputListFrame(self.tab_websites, "websites", "Enter URL (e.g. facebook.com)", 
-                                       validation_fn=validate_website,
-                                       info_tooltip=proxy_msg)
-        self.list_web.pack(fill="both", expand=True, padx=20, pady=10)
-
-        self.tab_apps.app = self
-        self.tab_apps.group_name = group_name
-        self.list_apps = InputListFrame(self.tab_apps, "apps", "Enter App Name (e.g. notepad.exe)", validation_fn=validate_app, browse_mode="app")
-        self.list_apps.pack(fill="both", expand=True, padx=20, pady=10)
-
-        self.tab_files.app = self
-        self.tab_files.group_name = group_name
-        self.list_files = InputListFrame(self.tab_files, "files", "Enter absolute file path (e.g. C:\\Docs\\secret.txt)", browse_mode="file")
-        self.list_files.pack(fill="both", expand=True, padx=20, pady=10)
-        
-        self.tab_folders.app = self
-        self.tab_folders.group_name = group_name
-        self.list_folders = InputListFrame(self.tab_folders, "folders", "Enter absolute folder path (e.g. C:\\Games)", browse_mode="folder")
-        self.list_folders.pack(fill="both", expand=True, padx=20, pady=10)
-
-        
-        self.content_ui = ContentFilterTab(self.tab_content, self, group_name)
-        self.content_ui.pack(fill="both", expand=True)
-
-        self.build_schedule_ui()
-
-    def _is_valid_time(self, value):
-        try:
-            datetime.datetime.strptime(value, "%H:%M")
-            return True
-        except ValueError:
-            return False
-        
-    def build_schedule_ui(self):
+    def build_schedule_ui(self, parent):
         schedule = self.config_data["groups"][self.group_name].get("schedule", {})
-
-        # Match Content Filter: scrollable container with same style
-        container = ctk.CTkScrollableFrame(self.tab_schedule, fg_color="#2b2b2b", corner_radius=10)
-        container.pack(fill="both", expand=True, padx=10, pady=10)
-
-        def toggle_schedule():
-            if self.sch_enabled.get():
-                self.sch_persist.deselect()
-            self.save_schedule()
-
-        def toggle_persist():
-            if self.sch_persist.get():
-                self.sch_enabled.deselect()
-            self.save_schedule()
-
-        # Switches — vertical stack matching Content Filter switch layout
-        self.sch_enabled = ctk.CTkSwitch(container, text="Enable Schedule",
-                                          command=toggle_schedule,
-                                          font=ctk.CTkFont(weight="bold"))
-        if schedule.get("enabled", False):
-            self.sch_enabled.select()
-        self.sch_enabled.pack(pady=10, anchor="w", padx=20)
-
-        self.sch_persist = ctk.CTkSwitch(container, text="Enforce All Day",
-                                          command=toggle_persist)
-        if schedule.get("persist_all_day", False):
-            self.sch_persist.select()
-        self.sch_persist.pack(pady=5, anchor="w", padx=20)
-
-        # Time window section header
-        ctk.CTkLabel(container, text="Time Window:", font=ctk.CTkFont(weight="bold")).pack(
-            anchor="w", padx=20, pady=(15, 0))
-
-        start_frame = ctk.CTkFrame(container, fg_color="transparent")
-        start_frame.pack(pady=5, anchor="w", padx=30)
-        ctk.CTkLabel(start_frame, text="Start Time (HH:MM):", width=160, anchor="w").pack(side="left")
-        self.start_entry = ctk.CTkEntry(start_frame, width=100)
+        container = ctk.CTkScrollableFrame(parent, fg_color="#2b2b2b", corner_radius=12)
+        container.pack(fill="both", expand=True, padx=20, pady=15)
+        self.sch_enabled = ctk.CTkSwitch(container, text="Enable Schedule", command=self.save_schedule, font=ctk.CTkFont(size=15, weight="bold"))
+        if schedule.get("enabled"): self.sch_enabled.select()
+        self.sch_enabled.pack(pady=(20, 8), anchor="w", padx=25)
+        self.sch_persist = ctk.CTkSwitch(container, text="Enforce All Day (Bypass start/end times)", command=self.save_schedule)
+        if schedule.get("persist_all_day"): self.sch_persist.select()
+        self.sch_persist.pack(pady=6, anchor="w", padx=25)
+        ctk.CTkLabel(container, text="Time Window (HH:MM):", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=25, pady=(20, 5))
+        f_time = ctk.CTkFrame(container, fg_color="transparent")
+        f_time.pack(pady=5, anchor="w", padx=35)
+        self.start_entry = ctk.CTkEntry(f_time, width=100, height=35)
         self.start_entry.insert(0, schedule.get("start_time", "09:00"))
         self.start_entry.pack(side="left")
-        self.start_entry.bind("<KeyRelease>", lambda e: self.save_schedule())
-
-        end_frame = ctk.CTkFrame(container, fg_color="transparent")
-        end_frame.pack(pady=5, anchor="w", padx=30)
-        ctk.CTkLabel(end_frame, text="End Time (HH:MM):", width=160, anchor="w").pack(side="left")
-        self.end_entry = ctk.CTkEntry(end_frame, width=100)
+        ctk.CTkLabel(f_time, text="to", font=ctk.CTkFont(size=14)).pack(side="left", padx=15)
+        self.end_entry = ctk.CTkEntry(f_time, width=100, height=35)
         self.end_entry.insert(0, schedule.get("end_time", "17:00"))
         self.end_entry.pack(side="left")
+        self.start_entry.bind("<KeyRelease>", lambda e: self.save_schedule())
         self.end_entry.bind("<KeyRelease>", lambda e: self.save_schedule())
-
-        # Active days — matching Content Filter checkbox indentation (padx=30)
-        ctk.CTkLabel(container, text="Active Days:", font=ctk.CTkFont(weight="bold")).pack(
-            anchor="w", padx=20, pady=(15, 0))
-
+        ctk.CTkLabel(container, text="Active Days:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=25, pady=(20, 5))
         self.days_vars = {}
         for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]:
             var = ctk.BooleanVar(value=(day in schedule.get("days", [])))
-            cb = ctk.CTkCheckBox(container, text=day, variable=var, command=self.save_schedule)
-            cb.pack(anchor="w", pady=2, padx=30)
+            ctk.CTkCheckBox(container, text=day, variable=var, command=self.save_schedule).pack(anchor="w", pady=4, padx=40)
             self.days_vars[day] = var
 
-    def save_schedule(self, *args):
-        start_val = self.start_entry.get().strip()
-        end_val = self.end_entry.get().strip()
-        if not self._is_valid_time(start_val) or not self._is_valid_time(end_val):
-            if hasattr(self, 'status_lbl') and self.status_lbl.winfo_exists():
-                self.status_lbl.configure(text="Invalid time format. Use HH:MM", text_color="red")
-            return
-
+    def save_schedule(self):
         self.config_data["groups"][self.group_name]["schedule"] = {
             "enabled": self.sch_enabled.get() == 1,
             "persist_all_day": self.sch_persist.get() == 1,
-            "start_time": start_val,
-            "end_time": end_val,
+            "start_time": self.start_entry.get().strip(),
+            "end_time": self.end_entry.get().strip(),
             "days": [day for day, var in self.days_vars.items() if var.get()]
         }
         self.trigger_save()
-
-    # -----------------------------------------------------------------------
-    # Settings Screen
-    # -----------------------------------------------------------------------
 
     def show_settings(self):
         self.clear_screen()
         self.current_screen = ctk.CTkFrame(self)
         self.current_screen.pack(fill="both", expand=True)
+        top = ctk.CTkFrame(self.current_screen, fg_color="transparent", height=60)
+        top.pack(fill="x", padx=30, pady=10)
+        top.pack_propagate(False)
+        ctk.CTkButton(top, text="⇚ Dashboard", command=self.show_dashboard, fg_color="transparent", width=120, height=35, font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
+        ctk.CTkLabel(top, text="Global Settings", font=ctk.CTkFont(size=24, weight="bold")).pack(side="left", padx=30)
+        tabs = ctk.CTkTabview(self.current_screen, corner_radius=12)
+        tabs.pack(fill="both", expand=True, padx=30, pady=(5, 30))
+        t_perf = tabs.add("Performance")
+        t_cloud = tabs.add("Cloud Allowlist")
+        t_notif = tabs.add("Notifications")
+        t_about = tabs.add("About")
+        self._build_performance_tab(t_perf)
+        self._build_cloud_tab(t_cloud)
+        self._build_notifications_tab(t_notif)
+        self._build_about_tab(t_about)
 
-        top_bar = ctk.CTkFrame(self.current_screen, fg_color="transparent", height=45)
-        top_bar.pack(fill="x", padx=20, pady=10)
-        top_bar.pack_propagate(False)
-        ctk.CTkButton(top_bar, text="Back to Dashboard", command=self.show_dashboard,
-                      fg_color="transparent", width=120, height=32).pack(side="left", anchor="center")
-        ctk.CTkLabel(top_bar, text="Settings", font=ctk.CTkFont(size=24, weight="bold")).pack(side="left", padx=20, anchor="center")
-
-        tabview = ctk.CTkTabview(self.current_screen)
-        tabview.pack(fill="both", expand=True, padx=20, pady=(5, 0))
-
-        tab_perf    = tabview.add("Performance")
-        tab_cloud   = tabview.add("Cloud Allowlist")
-        tab_notif   = tabview.add("Notifications")
-        tab_about   = tabview.add("About")
-
-        self._build_performance_tab(tab_perf)
-        self._build_cloud_tab(tab_cloud)
-        self._build_notifications_tab(tab_notif)
-        self._build_about_tab(tab_about)
-
-        # Status bar
-        self.status_frame = ctk.CTkFrame(self.current_screen, height=30, fg_color="transparent")
-        self.status_frame.pack(fill="x", padx=20, pady=10)
-        self.status_lbl = ctk.CTkLabel(self.status_frame, text="Ready", text_color="gray", font=ctk.CTkFont(size=14))
-        self.status_lbl.pack(side="left")
-        self.timer_lbl = ctk.CTkLabel(self.status_frame, text="", text_color="green", font=ctk.CTkFont(size=12))
-        self.timer_lbl.pack(side="left", padx=10)
-
-    def _settings_container(self, parent):
-        """Shared scrollable container matching Content Filter / Schedule style."""
-        c = ctk.CTkScrollableFrame(parent, fg_color="#2b2b2b", corner_radius=10)
-        c.pack(fill="both", expand=True, padx=10, pady=10)
-        return c
-
-    # --- Performance tab ---
     def _build_performance_tab(self, parent):
         c = self._settings_container(parent)
         s = self.config_data.get("settings", {})
-
-        ctk.CTkLabel(c, text="Daemon Poll Rate", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=20, pady=(15, 0))
-
-        desc_map = {
-            "Passive":  "Checks every 5 seconds. Lightest on CPU — ideal for laptops on battery.",
-            "Balanced": "Checks every 2 seconds. Recommended for most users.",
-            "Strict":   "Checks every second. Near-instant enforcement — slightly higher CPU usage.",
-        }
-        self._perf_desc = ctk.CTkLabel(c, text=desc_map.get(s.get("performance_mode", "Balanced"), ""),
-                                       text_color="gray", wraplength=480, justify="left")
-
+        ctk.CTkLabel(c, text="Daemon Enforcement Rate", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(20, 4))
+        desc_map = {"Passive": "Checks rules every 5s. Lowest CPU usage.", "Balanced": "Checks rules every 2s. Recommended for most.", "Strict": "Checks rules every 1s. Maximum enforcement."}
+        self._perf_desc = ctk.CTkLabel(c, text=desc_map.get(s.get("performance_mode", "Balanced"), ""), text_color="gray")
+        self._perf_desc.pack(anchor="w", padx=25, pady=(0, 10))
         def on_perf(val):
             self.config_data["settings"]["performance_mode"] = val
             self._perf_desc.configure(text=desc_map.get(val, ""))
             self.trigger_save()
-
-        seg = ctk.CTkSegmentedButton(c, values=["Passive", "Balanced", "Strict"], command=on_perf)
+        seg = ctk.CTkSegmentedButton(c, values=["Passive", "Balanced", "Strict"], command=on_perf, height=38)
         seg.set(s.get("performance_mode", "Balanced"))
-        seg.pack(padx=20, pady=(8, 4))
-        self._perf_desc.pack(anchor="w", padx=20, pady=(0, 15))
+        seg.pack(fill="x", padx=25, pady=10)
+        ctk.CTkLabel(c, text="Persistence", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
+        self.startup_var = ctk.BooleanVar(value=is_startup_enabled())
+        ctk.CTkSwitch(c, text="Run Daemon on System Startup", variable=self.startup_var, command=self._on_startup_toggle).pack(anchor="w", padx=30, pady=10)
 
-        # Startup on boot
-        ctk.CTkLabel(c, text="System", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=20, pady=(10, 0))
-        self.startup_var = ctk.BooleanVar(value=self._startup_task_exists())
-        startup_sw = ctk.CTkSwitch(c, text="Start daemon on PC boot (Windows only)",
-                                   variable=self.startup_var, command=self._on_startup_toggle)
-        if os.name != 'nt':
-            startup_sw.configure(state="disabled")
-        startup_sw.pack(anchor="w", padx=20, pady=8)
+    def _on_startup_toggle(self):
+        e = self.startup_var.get()
+        if set_startup(e):
+            self.config_data["settings"]["startup_enabled"] = e
+            self.trigger_save()
 
-    # --- Cloud Allowlist tab ---
-    def _build_cloud_tab(self, parent):
+    def _build_about_tab(self, parent):
         c = self._settings_container(parent)
-        s = self.config_data.get("settings", {})
+        ctk.CTkLabel(c, text="Simple Productivity Blocker", font=ctk.CTkFont(size=22, weight="bold")).pack(pady=(30, 8))
+        ctk.CTkLabel(c, text=f"Release Version {VERSION}", text_color="gray", font=ctk.CTkFont(size=14)).pack(pady=(0, 30))
+        f = ctk.CTkFrame(c, fg_color="transparent")
+        f.pack(pady=10)
+        ctk.CTkButton(f, text="GitHub Repository", width=180, height=40, command=lambda: webbrowser.open("https://github.com/nvusdev/simple-productivity-blocker")).pack(side="left", padx=10)
+        ctk.CTkButton(f, text="Open Config Folder", width=180, height=40, command=self._open_config_folder).pack(side="left", padx=10)
+        ctk.CTkLabel(c, text="Maintenance & Recovery", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(40, 10))
+        f_b = ctk.CTkFrame(c, fg_color="transparent")
+        f_b.pack(pady=10)
+        ctk.CTkButton(f_b, text="Backup Configuration", width=180, height=38, command=self._backup_settings).pack(side="left", padx=10)
+        ctk.CTkButton(f_b, text="Restore Configuration", width=180, height=38, command=self._restore_settings).pack(side="left", padx=10)
 
-        self._cloud_enabled = ctk.BooleanVar(value=s.get("cloud_allowlist_enabled", True))
-        ctk.CTkSwitch(c, text="Protect Cloud Sync Processes",
-                      variable=self._cloud_enabled,
-                      font=ctk.CTkFont(weight="bold"),
-                      command=self._save_settings).pack(anchor="w", padx=20, pady=(15, 4))
-        ctk.CTkLabel(c, text="Listed processes and paths are never terminated by the App Blocker,\neven if they match a blocked entry.",
-                     text_color="gray", justify="left").pack(anchor="w", padx=20, pady=(0, 10))
+    def _backup_settings(self):
+        p = ctk.filedialog.asksaveasfilename(defaultextension=".spb", filetypes=[("SPB Backup", "*.spb")])
+        if p and export_config(self.config_data, p):
+            self.status_lbl.configure(text="Backup saved", text_color="green")
 
-        # --- Process names ---
-        ctk.CTkLabel(c, text="Protected Process Names (.exe):", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=20, pady=(8, 0))
-        self._cloud_exe_list = self._inline_list(c, s.get("cloud_allowlist", []), self._save_settings,
-                                                  placeholder="e.g. OneDrive.exe")
+    def _restore_settings(self):
+        p = ctk.filedialog.askopenfilename(filetypes=[("SPB Backup", "*.spb")])
+        if p:
+            n = import_config(p, self.config_data)
+            if n:
+                self.config_data = n
+                save_config(n)
+                self.show_dashboard()
+                self.status_lbl.configure(text="Restored", text_color="green")
 
-        # --- Path keywords ---
-        ctk.CTkLabel(c, text="Protected Path Keywords:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=20, pady=(12, 0))
-        self._cloud_kw_list = self._inline_list(c, s.get("cloud_path_keywords", []), self._save_settings,
-                                                 placeholder="e.g. onedrive")
+    def _settings_container(self, parent):
+        c = ctk.CTkScrollableFrame(parent, fg_color="#2b2b2b", corner_radius=12)
+        c.pack(fill="both", expand=True, padx=20, pady=15)
+        return c
 
     def _inline_list(self, parent, items, on_change, placeholder=""):
-        """Simple add/remove list widget for use inside settings tabs."""
         state = {"items": list(items)}
         frame = ctk.CTkFrame(parent, fg_color="transparent")
-        frame.pack(fill="x", padx=20, pady=4)
-
+        frame.pack(fill="x", padx=25, pady=5)
         row = ctk.CTkFrame(frame, fg_color="transparent")
         row.pack(fill="x")
-        entry = ctk.CTkEntry(row, placeholder_text=placeholder, height=32, corner_radius=8)
+        entry = ctk.CTkEntry(row, placeholder_text=placeholder, height=36, corner_radius=8)
         entry.pack(side="left", fill="x", expand=True)
-
-        list_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        list_frame.pack(fill="x", pady=(4, 0))
-        item_widgets = {}
-
-        def render_item(val):
-            r = ctk.CTkFrame(list_frame)
+        list_f = ctk.CTkFrame(frame, fg_color="transparent")
+        list_f.pack(fill="x", pady=(8, 0))
+        ws = {}
+        def render(v):
+            r = ctk.CTkFrame(list_f, fg_color="#333333", corner_radius=6)
             r.pack(fill="x", pady=2)
-            ctk.CTkLabel(r, text=val, anchor="w").pack(side="left", fill="x", expand=True, padx=5)
-            ctk.CTkButton(r, text="Remove", width=60, height=26,
-                          fg_color="#8b0000", hover_color="#5a0000",
-                          command=lambda v=val: remove_item(v)).pack(side="right", padx=4)
-            item_widgets[val] = r
-
-        def remove_item(val):
-            if val in state["items"]:
-                state["items"].remove(val)
-                item_widgets.pop(val).destroy()
+            ctk.CTkLabel(r, text=v, anchor="w", font=ctk.CTkFont(size=13)).pack(side="left", fill="x", expand=True, padx=12, pady=6)
+            ctk.CTkButton(r, text="Remove", width=65, height=28, fg_color="#8b0000", hover_color="#5a0000", command=lambda x=v: remove(x)).pack(side="right", padx=8)
+            ws[v] = r
+        def remove(v):
+            if v in state["items"]:
+                state["items"].remove(v)
+                ws.pop(v).destroy()
                 on_change()
-
-        def add_item():
+        def add():
             val = entry.get().strip()
             if val and val not in state["items"]:
                 state["items"].append(val)
-                render_item(val)
+                render(val)
                 entry.delete(0, "end")
                 on_change()
-
-        ctk.CTkButton(row, text="+", width=36, height=32, corner_radius=8,
-                      command=add_item).pack(side="left", padx=(6, 0))
-        entry.bind("<Return>", lambda e: add_item())
-
+        ctk.CTkButton(row, text="+", width=40, height=36, command=add).pack(side="left", padx=(10, 0))
+        entry.bind("<Return>", lambda e: add())
         for v in state["items"]:
-            render_item(v)
-
+            render(v)
         return state
+
+    def _open_config_folder(self):
+        p = get_config_dir()
+        if os.name == 'nt': os.startfile(p)
+        else: subprocess.Popen(["xdg-open", p])
+
+    def _build_cloud_tab(self, parent):
+        c = self._settings_container(parent)
+        s = self.config_data.get("settings", {})
+        v = ctk.BooleanVar(value=s.get("cloud_allowlist_enabled", True))
+        ctk.CTkSwitch(c, text="Protect Cloud Sync & System Processes", variable=v, command=self._save_settings, font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=25, pady=(20, 8))
+        self._cloud_enabled = v
+        ctk.CTkLabel(c, text="Allowed Executables:", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=25, pady=(15, 0))
+        ctk.CTkLabel(c, text="Processes matching these exact names will never be blocked.", text_color="gray", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=25, pady=(0, 5))
+        self._cloud_exe_list = self._inline_list(c, s.get("cloud_allowlist", []), self._save_settings, "e.g. OneDrive.exe")
+        ctk.CTkLabel(c, text="Allowed Path Keywords:", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=25, pady=(25, 0))
+        ctk.CTkLabel(c, text="Processes running from paths containing these words will be exempted.", text_color="gray", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=25, pady=(0, 5))
+        self._cloud_kw_list = self._inline_list(c, s.get("cloud_path_keywords", []), self._save_settings, "e.g. onedrive")
 
     def _save_settings(self, *args):
         s = self.config_data.setdefault("settings", {})
-        if hasattr(self, '_cloud_enabled'):
-            s["cloud_allowlist_enabled"] = self._cloud_enabled.get()
-        if hasattr(self, '_cloud_exe_list'):
-            s["cloud_allowlist"] = self._cloud_exe_list["items"]
-        if hasattr(self, '_cloud_kw_list'):
-            s["cloud_path_keywords"] = self._cloud_kw_list["items"]
-        if hasattr(self, '_notif_vars'):
-            s["notifications"] = {k: var.get() for k, var in self._notif_vars.items()}
+        if hasattr(self, '_cloud_enabled'): s["cloud_allowlist_enabled"] = self._cloud_enabled.get()
+        if hasattr(self, '_cloud_exe_list'): s["cloud_allowlist"] = self._cloud_exe_list["items"]
+        if hasattr(self, '_cloud_kw_list'): s["cloud_path_keywords"] = self._cloud_kw_list["items"]
+        if hasattr(self, '_notif_vars'): s["notifications"] = {k: var.get() for k, var in self._notif_vars.items()}
         self.trigger_save()
 
-    # --- Notifications tab ---
     def _build_notifications_tab(self, parent):
         c = self._settings_container(parent)
         s = self.config_data.get("settings", {})
-        notif = s.get("notifications", {})
-
+        n = s.get("notifications", {})
         self._notif_vars = {}
+        def sec(t, d, opts):
+            ctk.CTkLabel(c, text=t, font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", padx=25, pady=(20, 2))
+            ctk.CTkLabel(c, text=d, text_color="gray", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=25, pady=(0, 8))
+            for k, l, dft in opts:
+                v = ctk.BooleanVar(value=n.get(k, dft))
+                ctk.CTkSwitch(c, text=l, variable=v, command=self._save_settings).pack(anchor="w", padx=40, pady=5)
+                self._notif_vars[k] = v
+        sec("Block Events", "Fired when the daemon actively enforces a blocking rule.", [("on_block", "Notify on block rule applied", True), ("on_block_attempt", "Notify on blocked app kill", True), ("on_exception_bypass", "Notify on allowlist bypass", False)])
+        sec("Schedule Events", "Notifications for profile schedule activation.", [("on_schedule_start", "Notify on profile start", True), ("on_schedule_end", "Notify on profile end", True), ("on_day_change", "Notify on day recalculation", False)])
+        sec("Daemon Events", "General protection engine activity.", [("on_daemon_start", "Notify on engine start", True), ("on_config_reload", "Notify on sync/reload", False), ("on_hosts_write", "Notify on DNS/hosts update", False)])
+        sec("Update Events", "Version maintenance notifications.", [("on_update_available", "Notify on new version", True)])
 
-        def section(title, desc, options):
-            ctk.CTkLabel(c, text=title, font=ctk.CTkFont(weight="bold")).pack(
-                anchor="w", padx=20, pady=(15, 2))
-            if desc:
-                ctk.CTkLabel(c, text=desc, text_color="gray", justify="left").pack(
-                    anchor="w", padx=20, pady=(0, 6))
-            for key, label, default in options:
-                var = ctk.BooleanVar(value=notif.get(key, default))
-                ctk.CTkSwitch(c, text=label, variable=var, command=self._save_settings).pack(
-                    anchor="w", padx=30, pady=4)
-                self._notif_vars[key] = var
-
-        section(
-            "Block Events",
-            "Fired when the daemon actively enforces a blocking rule.",
-            [
-                ("on_block",           "Notify when a block rule is applied",          True),
-                ("on_block_attempt",   "Notify when a blocked app is detected and killed", True),
-                ("on_exception_bypass","Notify when an exception allowlist bypasses a block", False),
-            ]
-        )
-
-        section(
-            "Schedule Events",
-            "Fired when scheduled rules change state.",
-            [
-                ("on_schedule",              "Notify when a schedule activates or deactivates", True),
-                ("on_schedule_window_miss",  "Notify if a schedule's time window is invalid",   True),
-            ]
-        )
-
-        section(
-            "Daemon Events",
-            "Low-level daemon lifecycle and config events.",
-            [
-                ("on_daemon_start",  "Notify on daemon startup",                     True),
-                ("on_config_reload", "Notify whenever the config is reloaded from disk", False),
-                ("on_hosts_write",   "Notify whenever the hosts file is written or cleared", False),
-            ]
-        )
-
-        section(
-            "Security Events",
-            "Fired when a security challenge is attempted.",
-            [
-                ("on_challenge_fail", "Notify on failed security challenge attempt", True),
-                ("on_challenge_pass", "Notify on successful challenge completion",   False),
-            ]
-        )
-
-    # --- About tab ---
-    def _build_about_tab(self, parent):
-        c = self._settings_container(parent)
-
-        ctk.CTkLabel(c, text="Simple Productivity Blocker",
-                     font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(20, 4))
-        ctk.CTkLabel(c, text=f"Version {VERSION}", text_color="gray").pack(pady=(0, 20))
-
-        btn_frame = ctk.CTkFrame(c, fg_color="transparent")
-        btn_frame.pack(pady=4)
-
-        ctk.CTkButton(btn_frame, text="View on GitHub", width=160,
-                      command=lambda: webbrowser.open("https://github.com/nvusdev/simple-productivity-blocker")
-                      ).pack(side="left", padx=6)
-
-        ctk.CTkButton(btn_frame, text="Open Config Folder", width=160,
-                      command=self._open_config_folder).pack(side="left", padx=6)
-
-        ctk.CTkButton(c, text="Reset All Settings to Defaults",
-                      fg_color="#8b0000", hover_color="#5a0000", width=200,
-                      command=self._reset_settings).pack(pady=(20, 4))
-
-    def _open_config_folder(self):
-        path = get_config_dir()
-        if os.name == 'nt':
-            os.startfile(path)
-        else:
-            subprocess.Popen(["xdg-open", path])
-
-    def _reset_settings(self):
-        from core.config_manager import DEFAULT_SETTINGS
-        import copy
-        if self._confirm_dialog("Reset Settings", "Reset all Settings to defaults? This cannot be undone."):
-            self.config_data["settings"] = copy.deepcopy(DEFAULT_SETTINGS)
+    def add_new_group(self):
+        name = self._prompt_text_dialog("New Profile", "Enter name for the new profile:")
+        if name:
+            if name in self.config_data["groups"]:
+                self._info_dialog("Error", "Profile name exists.")
+                return
+            self.config_data["groups"][name] = copy.deepcopy(DEFAULT_GROUP_CONFIG)
             self.trigger_save()
-            self.show_settings()
+            self.show_dashboard()
+
+    def delete_group(self, name):
+        if len(self.config_data["groups"]) <= 1: return
+        if self._confirm_dialog("Delete Profile", f"Delete '{name}'?"):
+            del self.config_data["groups"][name]
+            self.trigger_save()
+            self.show_dashboard()
+
+    def rename_group(self, old):
+        new = self._prompt_text_dialog("Rename Profile", f"New name for '{old}':", initial=old)
+        if new and new != old and new not in self.config_data["groups"]:
+            self.config_data["groups"][new] = self.config_data["groups"].pop(old)
+            self.trigger_save()
+            self.show_dashboard()
+
+    def _center_dialog(self, d, w, h):
+        self.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width()-w)//2
+        y = self.winfo_y() + (self.winfo_height()-h)//2
+        d.geometry(f"{w}x{h}+{x}+{y}")
+
+    def _prompt_text_dialog(self, t, m, initial=""):
+        d = ctk.CTkToplevel(self)
+        d.title(t)
+        d.resizable(False, False)
+        d.transient(self)
+        d.grab_set()
+        self._center_dialog(d, 450, 240)
+        ctk.CTkLabel(d, text=m, font=ctk.CTkFont(size=15)).pack(pady=(35, 12))
+        e = ctk.CTkEntry(d, width=380, height=40)
+        e.pack(padx=30)
+        e.insert(0, initial)
+        e.focus_set()
+        res = {"v": None}
+        def ok():
+            res["v"] = e.get().strip()
+            d.destroy()
+        ctk.CTkButton(d, text="Save", width=140, height=40, command=ok).pack(pady=30)
+        d.wait_window()
+        return res["v"]
+
+    def _confirm_dialog(self, t, m):
+        d = ctk.CTkToplevel(self)
+        d.title(t)
+        d.resizable(False, False)
+        d.transient(self)
+        d.grab_set()
+        self._center_dialog(d, 460, 220)
+        ctk.CTkLabel(d, text=m, font=ctk.CTkFont(size=15)).pack(pady=40)
+        res = {"v": False}
+        def yes():
+            res["v"] = True
+            d.destroy()
+        f = ctk.CTkFrame(d, fg_color="transparent")
+        f.pack()
+        ctk.CTkButton(f, text="Yes, Delete", width=140, height=40, fg_color="#8b0000", hover_color="#5a0000", command=yes).pack(side="left", padx=15)
+        ctk.CTkButton(f, text="Cancel", width=140, height=40, fg_color="#4a4a4a", command=d.destroy).pack(side="left", padx=15)
+        d.wait_window()
+        return res["v"]
+
+    def _info_dialog(self, t, m):
+        d = ctk.CTkToplevel(self)
+        d.title(t)
+        d.resizable(False, False)
+        d.transient(self)
+        d.grab_set()
+        self._center_dialog(d, 420, 180)
+        ctk.CTkLabel(d, text=m, font=ctk.CTkFont(size=15)).pack(pady=40)
+        ctk.CTkButton(d, text="OK", width=120, height=38, command=d.destroy).pack()
+        d.wait_window()
+
+    def show_challenge_screen(self, n):
+        self.clear_screen()
+        f = ctk.CTkFrame(self)
+        f.pack(fill="both", expand=True)
+        # Use a diverse set of common keyboard characters (excluding alt-code combinations)
+        chars = string.ascii_letters + string.digits + "|+[{;':\",.<>?/!@#$%^&*()-_="
+        self.challenge_string = "".join(random.choices(chars, k=self.config_data["groups"][self.group_name]["security"]["challenge_length"]))
+        ctk.CTkLabel(f, text="Enter security challenge to edit this profile:", font=ctk.CTkFont(size=17, weight="bold")).pack(pady=(70, 15))
+        l = ctk.CTkLabel(f, text=self.challenge_string, font=ctk.CTkFont(family="Consolas", size=26, weight="bold"), text_color="#bbbbbb")
+        l.pack(pady=25)
+        
+        # Lighter Grey Input Container
+        t_container = ctk.CTkFrame(f, fg_color="#3d3d3d", width=540, height=56, corner_radius=10)
+        t_container.pack(pady=12)
+        t_container.pack_propagate(False)
+        
+        # Shadow/Guide Label (Visible Guide)
+        shadow_guide = ctk.CTkLabel(t_container, text=self.challenge_string, font=ctk.CTkFont(family="Consolas", size=20), text_color="#666666")
+        shadow_guide.place(relx=0.5, rely=0.5, anchor="center")
+        
+        # Typing Entry (Transparent to reveal the guide underneath)
+        t = ctk.CTkEntry(t_container, font=ctk.CTkFont(family="Consolas", size=20), justify="center", fg_color="transparent", border_width=0)
+        t.pack(fill="both", expand=True, padx=10, pady=5)
+        t.focus_set()
+        
+        def v(e=None):
+            if t.get().strip() == self.challenge_string:
+                n()
+            else:
+                t_container.configure(border_color="red", border_width=2)
+        
+        t.bind("<Return>", v)
+        ctk.CTkButton(f, text="Unlock Settings", width=220, height=45, command=v).pack(pady=30)
+        ctk.CTkButton(f, text="Cancel", fg_color="transparent", command=self.show_dashboard).pack()
 
 if __name__ == "__main__":
     app = ProductivityApp()
