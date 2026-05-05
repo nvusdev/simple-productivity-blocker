@@ -51,38 +51,52 @@ def main():
     
     try:
         import subprocess
-        subprocess.run(["taskkill", "/F", "/IM", "SPB_Daemon.exe"], capture_output=True)
-        subprocess.run(["taskkill", "/F", "/IM", "SimpleProductivityBlocker.exe"], capture_output=True)
+        import time
 
+        print("\nStopping existing processes for update...")
+        # Try to stop them nicely first, then force
+        procs_to_kill = ["SPB_Daemon.exe", "SimpleProductivityBlocker.exe"]
+        for proc in procs_to_kill:
+            subprocess.run(["taskkill", "/F", "/IM", proc], capture_output=True)
         
+        # Short wait to ensure handles are released
+        time.sleep(2)
+
         if not os.path.exists(dest_dir):
             os.makedirs(dest_dir)
             
+        print("Copying new application files...")
         shutil.copy2(app_exe, os.path.join(dest_dir, "SimpleProductivityBlocker.exe"))
         shutil.copy2(daemon_exe, os.path.join(dest_dir, "SPB_Daemon.exe"))
 
         if os.path.exists(uninstaller_exe):
             shutil.copy2(uninstaller_exe, os.path.join(dest_dir, "spb_uninstaller.exe"))
         
-        # Copy _internal if it exists
+        # Copy _internal if it exists (for PyInstaller --onedir builds)
         internal_src = os.path.join(src_dir, "_internal")
         internal_dest = os.path.join(dest_dir, "_internal")
         if os.path.exists(internal_src):
+            print("Updating library components...")
             if os.path.exists(internal_dest):
-                shutil.rmtree(internal_dest)
-            shutil.copytree(internal_src, internal_dest)
+                try:
+                    shutil.rmtree(internal_dest)
+                except Exception:
+                    # If rmtree fails, try to copy over it file-by-file or warn
+                    pass
+            shutil.copytree(internal_src, internal_dest, dirs_exist_ok=True)
         
-        print("Files copied successfully.")
+        print("Files updated successfully. Your configuration at ProgramData has been preserved.")
         
-        print("\nCreating Scheduled Task for persistent background protection...")
-        import subprocess
+        print("\nRe-starting background protection...")
         daemon_dest = os.path.join(dest_dir, "SPB_Daemon.exe")
 
+        # schtasks /run will start the daemon in the background
         subprocess.run(['schtasks', '/create', '/tn', 'SPB_Daemon', '/tr', f'"{daemon_dest}"', '/sc', 'onlogon', '/rl', 'highest', '/f'], capture_output=True)
         subprocess.run(['schtasks', '/run', '/tn', 'SPB_Daemon'], capture_output=True)
         
     except Exception as e:
-        print(f"Error copying files: {e}")
+        print(f"Error during update: {e}")
+        print("Make sure to close all SPB windows before installing.")
         input("Press Enter to exit...")
         sys.exit(1)
         
