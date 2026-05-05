@@ -1,5 +1,26 @@
 # Simple Productivity Blocker - Version History
 
+## [1.3.1] - 2026-05-05
+### Added
+- **Linux Readiness**: Created `PlatformHandler` and `Makefile` to support the v1.3.1 Linux development roadmap.
+- **Enter-to-Save UX**: The "Rename Profile" dialog now supports the `Enter` key for faster submission.
+
+### Fixed
+- **DNS Allowlist Priority**: The DNS Proxy Server now correctly prioritizes the Allowlist (Exceptions) over the Content Filter blocklist.
+- **Wildcard Subdomain Matching**: Refined Regex patterns so that `domain.com` and `*.domain.com` both effectively cover the base domain and all subdomains.
+- **Anti-Flash Startup**: Implemented the `withdraw/deiconify` pattern to eliminate UI flickering on application launch.
+
+## [1.3.0] - 2026-05-05
+### Added
+- **Micro DNS Proxy Server**: Integrated a local DNS interceptor on port 53 to support advanced pattern matching and bypass third-party DNS limitations.
+- **Advanced Pattern Matching**: Support for wildcards (`*.site.com`), keywords (`~*word*`), prefixes, and suffixes.
+- **Gaming & Game Stores Category**: Comprehensive filter for Steam, Epic Games, Riot, and more.
+- **XOR-Encrypted Payloads**: High-risk blocklists (Adult, Piracy, Gambling) are now encrypted and compressed within the binary.
+
+### Changed
+- **Massive Blocklist Expansion**: Added 300+ new domains across Piracy, Adult, and Anime categories.
+- **Native Windows Hardening**: Switched to `msvcrt` for file locking and bundled `pywin32` system DLLs for more robust folder monitoring.
+
 ## [1.2.3] - 2026-05-05
 ### Added
 - **Protected Path Keywords**: The Cloud Allowlist now supports path-based keywords. Any process running from a directory containing a protected keyword (e.g., `OneDrive`, `AppData`, `antigravity`) is automatically exempted from all blocking logic.
