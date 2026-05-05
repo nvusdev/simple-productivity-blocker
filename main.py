@@ -182,17 +182,27 @@ class ProductivityApp(ctk.CTk):
         y = (hs - h) // 2
         self.geometry(f"{w}x{h}+{x}+{y}")
         
-        try:
-            from PIL import Image
-            import tkinter as tk
-            logo_path = resource_path("newlogo.png")
-            if os.name == 'nt' and os.path.exists(logo_path):
-                self.iconphoto(False, tk.PhotoImage(file=logo_path))
-        except: pass
+        # Robust Icon Loading
+        self.after(200, self._apply_app_icon)
 
         self.config_data = load_config()
         self._save_timer = None
         self.show_dashboard()
+
+    def _apply_app_icon(self):
+        try:
+            import tkinter as tk
+            from PIL import Image
+            logo_path = resource_path("newlogo.png")
+            if os.path.exists(logo_path):
+                # Apply as window icon
+                self.iconphoto(False, tk.PhotoImage(file=logo_path))
+                # For Windows taskbar/titlebar specifically
+                if os.name == 'nt':
+                    ico_path = resource_path("newlogo.ico")
+                    if os.path.exists(ico_path):
+                        self.wm_iconbitmap(ico_path)
+        except: pass
 
     def trigger_save(self):
         if self._save_timer: self.after_cancel(self._save_timer)
@@ -363,20 +373,42 @@ class ProductivityApp(ctk.CTk):
     def _build_performance_tab(self, parent):
         c = self._settings_container(parent)
         s = self.config_data.get("settings", {})
-        ctk.CTkLabel(c, text="Daemon Enforcement Rate", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(20, 4))
-        desc_map = {"Passive": "Checks rules every 5s. Lowest CPU usage.", "Balanced": "Checks rules every 2s. Recommended for most.", "Strict": "Checks rules every 1s. Maximum enforcement."}
+        
+        # System Shield Intensity (Renamed from Daemon for modern context)
+        ctk.CTkLabel(c, text="System Shield Intensity", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(20, 4))
+        desc_map = {
+            "Passive": "Checks rules every 5s. Minimum resource usage.",
+            "Balanced": "Checks rules every 2s. Optimized for standard PCs.",
+            "Strict": "Checks rules every 0.5s. Maximum security enforcement."
+        }
         self._perf_desc = ctk.CTkLabel(c, text=desc_map.get(s.get("performance_mode", "Balanced"), ""), text_color="gray")
         self._perf_desc.pack(anchor="w", padx=25, pady=(0, 10))
+        
         def on_perf(val):
             self.config_data["settings"]["performance_mode"] = val
             self._perf_desc.configure(text=desc_map.get(val, ""))
             self.trigger_save()
+            
         seg = ctk.CTkSegmentedButton(c, values=["Passive", "Balanced", "Strict"], command=on_perf, height=38)
         seg.set(s.get("performance_mode", "Balanced"))
         seg.pack(fill="x", padx=25, pady=10)
+
+        # Interface Responsiveness
+        ctk.CTkLabel(c, text="Interface Responsiveness", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
+        ctk.CTkLabel(c, text="Adjust UI refresh rates and animation quality.", text_color="gray").pack(anchor="w", padx=25, pady=(0, 10))
+        
+        def on_ui(val):
+            self.config_data["settings"]["ui_mode"] = val
+            self.trigger_save()
+            
+        ui_seg = ctk.CTkSegmentedButton(c, values=["Fast", "Smooth", "Ultra"], command=on_ui, height=38)
+        ui_seg.set(s.get("ui_mode", "Smooth"))
+        ui_seg.pack(fill="x", padx=25, pady=10)
+
+        # Persistence
         ctk.CTkLabel(c, text="Persistence", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
         self.startup_var = ctk.BooleanVar(value=is_startup_enabled())
-        ctk.CTkSwitch(c, text="Run Daemon on System Startup", variable=self.startup_var, command=self._on_startup_toggle).pack(anchor="w", padx=30, pady=10)
+        ctk.CTkSwitch(c, text="Run Protection Engine on System Startup", variable=self.startup_var, command=self._on_startup_toggle).pack(anchor="w", padx=30, pady=10)
 
     def _on_startup_toggle(self):
         e = self.startup_var.get()
