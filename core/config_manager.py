@@ -32,6 +32,7 @@ DEFAULT_GROUP_CONFIG = {
         "entertainment": False,
         "shopping": False,
         "ai_tech": False,
+        "gaming": False,
         "exceptions": [],
         "custom_lists": []
     },

@@ -148,7 +148,18 @@ class ContentFilterTab(ctk.CTkFrame):
         
         ctk.CTkLabel(self.container, text="Filter Categories:", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=25, pady=(20, 8))
         self.cat_vars = {}
-        cats = [("Ads & Trackers", "ads_trackers"), ("Malware & Annoyances", "malware_annoyances"), ("Social Media", "social_media"), ("Entertainment & Video", "entertainment"), ("Shopping & E-commerce", "shopping"), ("AI & Tech News", "ai_tech"), ("Adult Content", "adult_content"), ("Gambling", "gambling"), ("Piracy & Illegal", "piracy_illegal")]
+        cats = [
+            ("Ads & Trackers", "ads_trackers"), 
+            ("Malware & Annoyances", "malware_annoyances"), 
+            ("Social Media", "social_media"), 
+            ("Gaming & Game Stores", "gaming"),
+            ("Entertainment & Video", "entertainment"), 
+            ("Shopping & E-commerce", "shopping"), 
+            ("AI & Tech News", "ai_tech"), 
+            ("Adult Content", "adult_content"), 
+            ("Gambling", "gambling"), 
+            ("Piracy & Illegal", "piracy_illegal")
+        ]
         for label, key in cats:
             var = ctk.BooleanVar(value=self.ad.get(key, False))
             ctk.CTkCheckBox(self.container, text=label, variable=var, command=self.save).pack(anchor="w", padx=35, pady=4)
