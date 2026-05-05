@@ -23,6 +23,7 @@ class ProcessMonitor:
         self._base_interval = 1.0
         self._shell_interval = 2.0
         self._allowlisted_processes = set()
+        self._allowlisted_keywords = set()
         self._allowlist_enabled = True
 
     def configure_performance(self, mode):
@@ -44,6 +45,11 @@ class ProcessMonitor:
         self._allowlist_enabled = bool(enabled)
         self._allowlisted_processes = {
             str(p).strip().lower() for p in (processes or []) if str(p).strip()
+        }
+
+    def set_allowlisted_keywords(self, keywords):
+        self._allowlisted_keywords = {
+            str(k).strip().lower() for k in (keywords or []) if str(k).strip()
         }
 
     def _normalize_path(self, path):
@@ -197,23 +203,41 @@ class ProcessMonitor:
                         exe = proc.info.get('exe')
                         cmdline = proc.info.get('cmdline')
                         name_lower = (name or "").lower()
-                        skip_file_folder = self._allowlist_enabled and name_lower in self._allowlisted_processes
                         
+                        # --- ROBUST ALLOWLIST CHECK ---
+                        is_allowlisted = False
+                        if self._allowlist_enabled:
+                            # 1. Check direct process name
+                            if name_lower in self._allowlisted_processes:
+                                is_allowlisted = True
+                            
+                            # 2. Check keywords in EXE path or cmdline
+                            if not is_allowlisted and self._allowlisted_keywords:
+                                search_text = ""
+                                if exe: search_text += exe.lower() + " "
+                                if cmdline: search_text += " ".join(str(a).lower() for a in cmdline)
+                                
+                                if any(kw in search_text for kw in self._allowlisted_keywords):
+                                    is_allowlisted = True
+                        
+                        if is_allowlisted:
+                            continue
+                            
                         should_kill = False
                         
                         # 1. Check App Names
-                        if name and not skip_file_folder:
+                        if name:
                             if name_lower in self.blocked_app_names:
                                 should_kill = True
                         
-                        if exe and not should_kill and not skip_file_folder:
+                        if exe and not should_kill:
                             exe_norm = self._normalize_path(exe)
                             exe_base = os.path.basename(exe_norm).lower()
                             if exe_base in self.blocked_app_names or exe_norm in self.blocked_app_paths:
                                 should_kill = True
 
                         # 2. Check Folders in Exe Path or CWD
-                        if not should_kill and self.blocked_folder_roots and not skip_file_folder:
+                        if not should_kill and self.blocked_folder_roots:
                             if exe:
                                 exe_norm = self._normalize_path(exe)
                                 if self._is_in_blocked_folder(exe_norm):
@@ -238,30 +262,29 @@ class ProcessMonitor:
                                     continue
 
                                 arg_lower = arg_str.lower()
-                                for name in self.blocked_app_names:
-                                    if self._arg_mentions_filename(arg_lower, name):
+                                for name_to_check in self.blocked_app_names:
+                                    if self._arg_mentions_filename(arg_lower, name_to_check):
                                         should_kill = True
                                         break
                                 if should_kill:
                                     break
 
-                                if not skip_file_folder:
-                                    for name in self.blocked_file_names:
-                                        if self._arg_mentions_filename(arg_lower, name):
-                                            should_kill = True
-                                            break
-                                    if should_kill:
+                                for name_to_check in self.blocked_file_names:
+                                    if self._arg_mentions_filename(arg_lower, name_to_check):
+                                        should_kill = True
                                         break
+                                if should_kill:
+                                    break
 
                                 for candidate in self._extract_path_candidates(arg_str):
                                     arg_norm = self._normalize_path(candidate)
                                     if arg_norm in self.blocked_app_paths:
                                         should_kill = True
                                         break
-                                    if not skip_file_folder and arg_norm in self.blocked_file_paths:
+                                    if arg_norm in self.blocked_file_paths:
                                         should_kill = True
                                         break
-                                    if not skip_file_folder and self.blocked_folder_roots and self._is_in_blocked_folder(arg_norm):
+                                    if self.blocked_folder_roots and self._is_in_blocked_folder(arg_norm):
                                         should_kill = True
                                         break
                                 if should_kill:
