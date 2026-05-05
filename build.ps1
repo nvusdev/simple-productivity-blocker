@@ -102,3 +102,9 @@ if (Test-Path "CHANGELOG.md") {
 
 Write-Host "Build complete! Your deployable package is in dist\SimpleProductivityBlocker"
 Write-Host "Zip the 'dist\SimpleProductivityBlocker' folder to distribute it to users."
+
+# Post-build Cleanup
+Write-Host "Cleaning up build artifacts..."
+Remove-Item -Recurse -Force "build" -ErrorAction SilentlyContinue
+Get-ChildItem -Path $PSScriptRoot -Filter "*.spec" | Remove-Item -Force
+Write-Host "Cleanup complete."
