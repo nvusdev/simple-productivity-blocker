@@ -6,11 +6,12 @@ Simple Productivity Blocker is a free, open-source application that helps you ma
 
 ## Features
 
-* **Website Blocking:** Block domains at the system level via the hosts file. Both base domains and `www.` variants are blocked automatically. Blocks survive browser restarts and incognito mode.
+* **Website Blocking:** Block domains at the system level via the hosts file and a local DNS interceptor. Supports absolute domains, wildcards (`*.site.com`), and advanced pattern matching (prefixes `~pre*`, suffixes `~*suf`, and keywords `~key`). Blocks survive browser restarts and incognito mode.
+* **Micro DNS Server:** Includes a built-in, lightweight DNS proxy that transparently intercepts requests on port 53. It is cross-compatible with external firewalls (like Portmaster), third-party DNS services (like 1.1.1.1 or NextDNS), and corporate network settings.
 * **App Blocking:** Instantly terminates any running process that matches a blocked application name upon detection.
 * **File Blocking:** Prevents applications from opening a blocked file by monitoring process command-line arguments and terminating violators.
 * **Folder Blocking:** Block entire directories. Actively intercepts and closes File Explorer tabs navigating to the directory, and terminates any application that attempts to execute files within the path.
-* **Content Filters:** Enable curated blocklists across **10 categories**: Ads & Trackers, Malware, Social Media, Adult Content (encrypted), Gambling (encrypted), Piracy (encrypted), Entertainment, Shopping, AI/Tech, and **Gaming & Game Stores**.
+* **Content Filters:** Enable curated blocklists across 10 categories*: Ads & Trackers, Malware, Social Media, Adult Content (encrypted), Gambling (encrypted), Piracy (encrypted), Entertainment, Shopping, AI/Tech, and Gaming & Game Stores.
 * **Exceptions (Allowlist):** Whitelist specific domains within Content Filters. Whitelisted domains are never blocked by content filters, but explicit Website blocks always take priority.
 * **Scheduling:** Set start and end times and active days per profile. The "Enforce All Day" option runs the Content Filter continuously.
 * **Multiple Profiles:** Create separate blocking profiles like Work, Study, or Personal that run simultaneously.
@@ -30,7 +31,7 @@ Simple Productivity Blocker is a free, open-source application that helps you ma
 3. Run `spb_installer.exe`. It will prompt for Administrator privileges.
 4. A desktop shortcut is created automatically. Launch **Simple Productivity Blocker** from your desktop.
 
-> **Administrator privileges are required.** The application modifies the system `hosts` file and manages processes, requiring elevated access on Windows.
+> **Administrator privileges are required.** The application modifies the system `hosts` file, redirects DNS to a local proxy, and manages processes, requiring elevated access on Windows.
 
 ### Linux
 1. Download the latest release `.zip` from the [Releases](https://github.com/nvusdev/simple-productivity-blocker/releases) page.
@@ -50,8 +51,8 @@ Run `sudo /opt/SimpleProductivityBlocker/spb_uninstaller` (or the equivalent pat
 
 The uninstaller will:
 * Terminate all background SPB processes
-* Restore your original `hosts` file
-* Flush DNS
+* Restore your original `hosts` file and system DNS settings
+* Flush DNS cache
 * Remove all application files and configuration data
 * Remove the desktop shortcut
 
@@ -100,16 +101,16 @@ Output is placed in `dist/SimpleProductivityBlocker/`. Zip that folder to distri
 Simple Productivity Blocker utilizes a decoupled, two-part architecture to ensure stability, performance, and tamper resistance:
 
 1. **User Interface (spb):** Built with CustomTkinter, this application acts purely as a configuration editor. It reads and writes to a central `config.json` file. It does not enforce blocks directly.
-2. **Background Daemon (daemon):** A headless background process that constantly monitors the `config.json` file for changes using a 3-second debounce mechanism. When changes are detected, it recomputes the active blocking rules and applies them to the system. It handles writing to the system hosts file for website blocks and utilizes `psutil` and OS Shell integrations to actively terminate restricted applications, files, and folders.
+2. **Background Daemon (daemon):** A headless background process that constantly monitors the `config.json` file for changes using a 3-second debounce mechanism. When changes are detected, it recomputes active blocking rules. It manages a **local DNS proxy server** to intercept advanced patterns (wildcards/keywords) and writes to the system hosts file for baseline blocking. It utilizes `psutil` and OS Shell integrations to actively terminate restricted applications, files, and folders.
 
-The daemon installs itself as a persistent background task (e.g., Windows Scheduled Task) that launches silently at system boot with elevated privileges. Sensitive content blocklists are XOR-encrypted within the compiled binaries to prevent trivial circumvention via source code inspection.
+The daemon installs itself as a persistent background task (e.g., Windows Scheduled Task) that launches silently at system boot with elevated privileges. Sensitive content blocklists are **XOR-encrypted** within the compiled binaries to prevent trivial circumvention via source code inspection.
 
 ## Security Notes
 
-* Sensitive blocklist categories (Adult Content, Gambling, Piracy) are stored encrypted in the compiled binary. They cannot be read from plaintext source.
-* The application requires Administrator/Root privileges to function. This is the only reliable way to modify the `hosts` file and terminate system processes.
-* Non-admin users on a machine cannot open the settings UI or change the configuration without the Administrator password, making this effective for parental controls and managed environments.
+* **Encrypted Payloads:** Sensitive blocklist categories (Adult Content, Gambling, Piracy) are stored encrypted in the compiled binary. They cannot be read from plaintext source.
+* **Privilege Requirement:** The application requires Administrator/Root privileges to function. This is the only reliable way to modify the `hosts` file, bind to DNS port 53, and terminate system processes.
+* **Managed Environments:** Non-admin users on a machine cannot open the settings UI or change the configuration without the Administrator password, making this effective for parental controls and managed environments.
 
 ## Disclaimer
 
-This application modifies the system `hosts` file (`C:\Windows\System32\drivers\etc\hosts` or `/etc/hosts`). A backup is automatically created at `hosts.backup` before any modifications. The uninstaller restores this backup. Use responsibly.
+This application modifies the system `hosts` file (`C:\Windows\System32\drivers\etc\hosts` or `/etc/hosts`) and redirects system DNS to a local proxy. A backup is automatically created at `hosts.backup` before any modifications. The uninstaller restores this backup and resets DNS to automatic. Use responsibly.
