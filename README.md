@@ -6,7 +6,7 @@ Simple Productivity Blocker is a free, open-source application that helps you ma
 
 ## Features
 
-* **Website Blocking:** Block domains at the system level via the hosts file and a local DNS interceptor. Supports **absolute domains**, **wildcards** (`*.site.com`), and **advanced pattern matching** (prefixes `~pre*`, suffixes `~*suf`, and keywords `~*key*`). Blocks survive browser restarts and incognito mode.
+* **Website Blocking:** Block domains at the system level via the hosts file and a local DNS interceptor. Supports **absolute domains**, **wildcards** (`*.site.com`), and **advanced pattern matching** (prefixes `~pre*`, suffixes `~*suf`, and keywords `~key`). Blocks survive browser restarts and incognito mode.
 * **Micro DNS Server:** Includes a built-in, lightweight DNS proxy that transparently intercepts requests on port 53. It is cross-compatible with external firewalls (like **Portmaster**), third-party DNS services (like **1.1.1.1** or **NextDNS**), and corporate network settings.
 * **App Blocking:** Instantly terminates any running process that matches a blocked application name upon detection.
 * **File Blocking:** Prevents applications from opening a blocked file by monitoring process command-line arguments and terminating violators.
@@ -114,4 +114,3 @@ The daemon installs itself as a persistent background task (e.g., Windows Schedu
 ## Disclaimer
 
 This application modifies the system `hosts` file (`C:\Windows\System32\drivers\etc\hosts` or `/etc/hosts`) and redirects system DNS to a local proxy. A backup is automatically created at `hosts.backup` before any modifications. The uninstaller restores this backup and resets DNS to automatic. Use responsibly.
-```
