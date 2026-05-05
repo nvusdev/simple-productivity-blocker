@@ -66,3 +66,52 @@ Requires Python 3.10 or newer.
 git clone https://github.com/nvusdev/simple-productivity-blocker.git
 cd simple-productivity-blocker
 pip install -r requirements.txt
+```
+
+### Windows
+Run the application as Administrator:
+```powershell
+python main.py
+```
+
+### Linux
+Run the application with sudo:
+```bash
+sudo python3 main.py
+```
+
+## Building Executables
+
+### Windows
+```powershell
+# Run as Administrator
+.\build.ps1
+```
+
+### Linux
+```bash
+# Run with necessary permissions
+./build.sh
+```
+
+Output is placed in `dist/SimpleProductivityBlocker/`. Zip that folder to distribute.
+
+## Architecture
+
+Simple Productivity Blocker utilizes a decoupled, two-part architecture to ensure stability, performance, and tamper resistance:
+
+1. **User Interface (spb):** Built with CustomTkinter, this application acts purely as a configuration editor. It reads and writes to a central `config.json` file. It does not enforce blocks directly.
+2. **Background Daemon (daemon):** A headless background process that constantly monitors the `config.json` file for changes using a 3-second debounce mechanism. When changes are detected, it recomputes active blocking rules. It manages a **local DNS proxy server** to intercept advanced patterns (wildcards/keywords) and writes to the system hosts file for baseline blocking. It utilizes `psutil` and OS Shell integrations to actively terminate restricted applications, files, and folders.
+
+The daemon installs itself as a persistent background task (e.g., Windows Scheduled Task) that launches silently at system boot with elevated privileges. Sensitive content blocklists are **XOR-encrypted** within the compiled binaries to prevent trivial circumvention via source code inspection.
+
+## Security Notes
+
+* **Encrypted Payloads:** Sensitive blocklist categories (Adult Content, Gambling, Piracy) are stored encrypted in the compiled binary. They cannot be read from plaintext source.
+* **Privilege Requirement:** The application requires Administrator/Root privileges to function. This is the only reliable way to modify the `hosts` file, bind to DNS port 53, and terminate system processes.
+* **Managed Environments:** Non-admin users on a machine cannot open the settings UI or change the configuration without the Administrator password, making this effective for parental controls and managed environments.
+
+## Disclaimer
+
+This application modifies the system `hosts` file (`C:\Windows\System32\drivers\etc\hosts` or `/etc/hosts`) and redirects system DNS to a local proxy. A backup is automatically created at `hosts.backup` before any modifications. The uninstaller restores this backup and resets DNS to automatic. Use responsibly.
+```
