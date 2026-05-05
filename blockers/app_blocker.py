@@ -2,19 +2,16 @@ import psutil
 import threading
 import time
 import os
-import pythoncom
-import win32com.client
-import urllib.parse
 try:
-    import portalocker
-    HAS_PORTALOCKER = True
+    import pythoncom
+    import win32com.client
 except ImportError:
-    HAS_PORTALOCKER = False
-    print("Warning: 'portalocker' module not found. File locking will be disabled.")
-import sys
-
+    pythoncom = None
+    win32com = None
+import urllib.parse
 if os.name == 'nt':
     import winreg
+    import msvcrt
 
 class ProcessMonitor:
     def __init__(self):
@@ -234,11 +231,13 @@ class ProcessMonitor:
 
     def _apply_file_locks(self):
         self._clear_file_locks()
+        if os.name != 'nt': return
         for path in self.blocked_file_paths:
             try:
                 if os.path.exists(path):
                     f = open(path, "rb+")
-                    portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
+                    # Lock the first byte exclusively (non-blocking)
+                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
                     self._locked_files.append(f)
             except Exception:
                 continue
@@ -246,7 +245,9 @@ class ProcessMonitor:
     def _clear_file_locks(self):
         for f in self._locked_files:
             try:
-                portalocker.unlock(f)
+                if os.name == 'nt':
+                    f.seek(0)
+                    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
                 f.close()
             except Exception:
                 pass
@@ -254,11 +255,12 @@ class ProcessMonitor:
 
     def _watch_processes(self):
         shell = None
-        try:
-            pythoncom.CoInitialize()
-            shell = win32com.client.Dispatch("Shell.Application")
-        except:
-            pass
+        if pythoncom and win32com:
+            try:
+                pythoncom.CoInitialize()
+                shell = win32com.client.Dispatch("Shell.Application")
+            except:
+                pass
             
         while not self._stop_event.is_set():
             now = time.time()

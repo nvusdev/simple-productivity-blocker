@@ -3,4 +3,4 @@ psutil>=5.9.0
 pywin32>=306 ; sys_platform == 'win32'
 dnslib>=0.9.23
 watchdog>=3.0.0
-portalocker>=2.8.2
+# portalocker removed for stability (using native msvcrt)
