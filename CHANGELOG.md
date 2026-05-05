@@ -1,5 +1,13 @@
 # Simple Productivity Blocker - Version History
 
+## [1.2.2] - 2026-05-04
+### Added
+- **Protected Environment Support**: Added `antigravity.exe`, `gemini.exe`, `node.exe`, `git.exe`, and common shells to the default Cloud Allowlist to ensure AI agents and developer tools are never accidentally blocked.
+- **Improved Process Protection**: Renamed internal process names in the allowlist to match the latest build artifacts (`SimpleProductivityBlocker.exe` and `SPB_Daemon.exe`).
+
+### Fixed
+- **Allowlist Priority Bug**: Fixed a logic error in `app_blocker.py` where processes in the Cloud Allowlist could still be terminated if their executable name matched a blocked app. The allowlist now strictly overrides all blocking mechanisms.
+
 ## [1.2.1] - 2026-05-04
 ### Added
 - **New Branding**: Replaced the default CustomTkinter logo with a custom application icon (`newlogo.png`).

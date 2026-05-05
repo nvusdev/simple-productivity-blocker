@@ -202,11 +202,11 @@ class ProcessMonitor:
                         should_kill = False
                         
                         # 1. Check App Names
-                        if name:
+                        if name and not skip_file_folder:
                             if name_lower in self.blocked_app_names:
                                 should_kill = True
-
-                        if exe and not should_kill:
+                        
+                        if exe and not should_kill and not skip_file_folder:
                             exe_norm = self._normalize_path(exe)
                             exe_base = os.path.basename(exe_norm).lower()
                             if exe_base in self.blocked_app_names or exe_norm in self.blocked_app_paths:

@@ -1,0 +1,351 @@
+:root {
+    --primary: #3b82f6;
+    --primary-dark: #2563eb;
+    --bg: #ffffff;
+    --text: #0f172a;
+    --text-muted: #64748b;
+    --card-bg: #ffffff;
+    --nav-bg: rgba(255, 255, 255, 0.8);
+    --border: #e2e8f0;
+    --footer-bg: #f8fafc;
+    --accent: #3b82f6;
+    --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="dark"] {
+    --bg: #020617;
+    --text: #f8fafc;
+    --text-muted: #94a3b8;
+    --card-bg: #0f172a;
+    --nav-bg: rgba(2, 6, 23, 0.8);
+    --border: #1e293b;
+    --footer-bg: #000000;
+    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+h1, h2, h3, .logo {
+    font-family: 'Outfit', sans-serif;
+}
+
+.container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 24px;
+}
+
+/* Navbar */
+.navbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 72px;
+    background-color: var(--nav-bg);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    z-index: 1000;
+}
+
+.nav-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    height: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 24px;
+}
+
+.logo {
+    font-size: 1.2rem;
+    font-weight: 900;
+    color: var(--primary);
+    letter-spacing: -0.02em;
+}
+
+.nav-links {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+}
+
+.nav-item {
+    text-decoration: none;
+    color: var(--text);
+    font-weight: 500;
+    font-size: 0.9rem;
+    transition: color 0.2s;
+}
+
+.nav-item:hover {
+    color: var(--primary);
+}
+
+.btn-nav {
+    background-color: var(--primary);
+    color: #fff !important;
+    padding: 10px 20px;
+    border-radius: 8px;
+}
+
+.theme-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.theme-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+.theme-btn:hover {
+    background-color: var(--border);
+}
+
+/* Hero Section */
+.hero-section {
+    padding: 180px 0 100px;
+    text-align: center;
+}
+
+.hero-content h1 {
+    font-size: 4rem;
+    font-weight: 900;
+    letter-spacing: -0.05em;
+    margin-bottom: 24px;
+    line-height: 1;
+}
+
+#dynamic-tagline {
+    color: var(--primary);
+    border-right: 3px solid var(--primary);
+    padding-right: 5px;
+    animation: blink 0.7s infinite;
+}
+
+@keyframes blink {
+    50% { border-color: transparent; }
+}
+
+.hero-subtitle {
+    font-size: 1.25rem;
+    color: var(--text-muted);
+    max-width: 600px;
+    margin: 0 auto 48px;
+}
+
+.hero-cta {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+}
+
+/* Buttons */
+.btn {
+    display: inline-block;
+    padding: 16px 32px;
+    border-radius: 10px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+    font-size: 1rem;
+    border: none;
+}
+
+.btn.primary {
+    background-color: var(--primary);
+    color: #fff;
+}
+
+.btn.primary:hover {
+    background-color: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px -10px rgba(59, 130, 246, 0.5);
+}
+
+.btn.secondary {
+    background-color: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.btn.secondary:hover {
+    background-color: var(--border);
+}
+
+/* Features */
+.features-section {
+    padding: 60px 0;
+}
+
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+}
+
+.feature-card {
+    padding: 40px;
+    background-color: var(--card-bg);
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+}
+
+.feature-card h3 {
+    margin-bottom: 16px;
+    font-size: 1.4rem;
+    font-weight: 800;
+}
+
+.feature-card p {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    flex-grow: 1;
+    margin-bottom: 20px;
+}
+
+.feature-link {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.feature-link a {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+/* Download Section */
+.download-section {
+    padding: 120px 0;
+}
+
+.download-card {
+    background-color: var(--card-bg);
+    padding: 80px 40px;
+    border-radius: 32px;
+    box-shadow: var(--shadow-lg);
+    text-align: center;
+    border: 1px solid var(--border);
+}
+
+.download-card h2 {
+    font-size: 3rem;
+    margin-bottom: 16px;
+    letter-spacing: -0.04em;
+}
+
+.download-card p {
+    color: var(--text-muted);
+    margin-bottom: 48px;
+    font-size: 1.1rem;
+}
+
+.download-actions {
+    display: flex;
+    justify-content: center;
+    gap: 80px;
+    margin-bottom: 60px;
+}
+
+.platform h3 {
+    margin-bottom: 24px;
+    font-size: 1.5rem;
+    font-weight: 800;
+}
+
+.os-version {
+    margin-top: 12px !important;
+    font-size: 0.85rem;
+}
+
+.install-guide {
+    text-align: left;
+    max-width: 650px;
+    margin: 0 auto;
+    padding-top: 48px;
+    border-top: 1px solid var(--border);
+}
+
+.install-guide h3 {
+    margin-bottom: 24px;
+    font-size: 1.2rem;
+}
+
+.install-guide ol {
+    padding-left: 20px;
+}
+
+.install-guide li {
+    margin-bottom: 20px;
+    color: var(--text-muted);
+}
+
+.install-guide li strong {
+    color: var(--text);
+}
+
+/* Footer */
+footer {
+    padding: 60px 0;
+    text-align: center;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+code {
+    font-family: SFMono-Regular, Consolas, monospace;
+    background-color: var(--border);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--primary);
+    font-size: 0.9em;
+}
+
+@media (max-width: 900px) {
+    .features-grid {
+        grid-template-columns: 1fr;
+    }
+    .hero-content h1 {
+        font-size: 3rem;
+    }
+}
+
+@media (max-width: 600px) {
+    .download-actions {
+        flex-direction: column;
+        gap: 40px;
+    }
+    .nav-item {
+        display: none;
+    }
+}
