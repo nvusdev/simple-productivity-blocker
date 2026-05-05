@@ -29,7 +29,8 @@ config.json
 *.swp
 *.swo
 
-# Scratch scripts
-test_close.py
-test_shell.py
+# Scratch and Diagnostics
+scratch/
+test_*.py
+scratch_*.py
 
