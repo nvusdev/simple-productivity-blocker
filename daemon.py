@@ -205,6 +205,7 @@ def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, se
     tier1: list[str] = []
     tier2: list[str] = []
     all_apps:  list[str] = []
+    all_files: list[str] = []
     all_folders: list[str] = []
     all_exceptions: set[str] = set()
     schedule_anywhere = False
