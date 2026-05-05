@@ -53,8 +53,9 @@ class DomainMatcher:
         return False
 
 class DNSProxyServer:
-    def __init__(self, blocklist, allowlist=None, upstream_dns=None):
-        self.block_matcher = DomainMatcher(blocklist)
+    def __init__(self, manual_list, filter_list, allowlist=None, upstream_dns=None):
+        self.manual_matcher = DomainMatcher(manual_list)
+        self.filter_matcher = DomainMatcher(filter_list)
         self.allow_matcher = DomainMatcher(allowlist if allowlist else [])
         # Fallback to standard if no upstreams detected
         self.upstream_dnss = upstream_dns if upstream_dns else ["8.8.8.8", "1.1.1.1"]
@@ -62,6 +63,11 @@ class DNSProxyServer:
         self.host = '127.0.0.1'
         self.running = False
         self._sock = None
+
+    def update_rules(self, manual_list, filter_list, exception_list):
+        self.manual_matcher = DomainMatcher(manual_list)
+        self.filter_matcher = DomainMatcher(filter_list)
+        self.allow_matcher = DomainMatcher(exception_list)
 
     def start(self):
         try:
@@ -108,28 +114,39 @@ class DNSProxyServer:
                 qname = str(request.q.qname).lower().rstrip(".")
                 qtype = request.q.qtype
                 
-                # Priority: Allowlist bypasses Blocklist
+                # --- TIERED PRIORITY CHECK ---
+                # 1. Manual Blocks (Tier 1) - HIGH PRIORITY (Overrides Exceptions)
+                if self.manual_matcher.matches(qname):
+                    self._send_block(request, addr)
+                    continue
+
+                # 2. Allowlist Exceptions - MEDIUM PRIORITY (Overrides Content Filters)
                 if self.allow_matcher.matches(qname):
                     forwarded_data = self._forward_query(data)
                     if forwarded_data:
                         self._sock.sendto(forwarded_data, addr)
                     continue
 
-                if self.block_matcher.matches(qname):
-                    # Blocked!
-                    reply = request.reply()
-                    if qtype == QTYPE.A:
-                        reply.add_answer(RR(request.q.qname, QTYPE.A, rdata=A("127.0.0.1"), ttl=60))
-                    elif qtype == QTYPE.AAAA:
-                        reply.add_answer(RR(request.q.qname, QTYPE.AAAA, rdata=AAAA("::1"), ttl=60))
-                    self._sock.sendto(reply.pack(), addr)
-                else:
-                    # Forward to upstream
-                    forwarded_data = self._forward_query(data)
-                    if forwarded_data:
-                        self._sock.sendto(forwarded_data, addr)
+                # 3. Content Filters (Tier 2) - LOW PRIORITY
+                if self.filter_matcher.matches(qname):
+                    self._send_block(request, addr)
+                    continue
+
+                # Default: Forward to upstream
+                forwarded_data = self._forward_query(data)
+                if forwarded_data:
+                    self._sock.sendto(forwarded_data, addr)
             except Exception:
                 continue
+
+    def _send_block(self, request, addr):
+        reply = request.reply()
+        qtype = request.q.qtype
+        if qtype == QTYPE.A:
+            reply.add_answer(RR(request.q.qname, QTYPE.A, rdata=A("127.0.0.1"), ttl=60))
+        elif qtype == QTYPE.AAAA:
+            reply.add_answer(RR(request.q.qname, QTYPE.AAAA, rdata=AAAA("::1"), ttl=60))
+        self._sock.sendto(reply.pack(), addr)
 
     def _forward_query(self, data):
         # Try each upstream until one works

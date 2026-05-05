@@ -257,7 +257,7 @@ def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, se
     for d in tier2:
         if _base(d) not in t1_bases: merged.append(d)
 
-    return set(merged), set(all_apps), set(all_files), set(all_folders), all_exceptions, schedule_anywhere
+    return set(tier1), set(tier2), set(all_apps), set(all_files), set(all_folders), all_exceptions, schedule_anywhere
 
 def is_admin() -> bool:
     if os.name == "nt":
@@ -310,7 +310,8 @@ def main() -> None:
                 cfg_cache = load_config()
                 if _notif("on_config_reload", False): print("Config reloaded.")
 
-            want_domains, want_apps, want_files, want_folders, want_exceptions, sched_anywhere = _compute_targets(cfg_cache, clm)
+            want_manual, want_filters, want_apps, want_files, want_folders, want_exceptions, sched_anywhere = _compute_targets(cfg_cache, clm)
+            want_domains = want_manual.union(want_filters)
 
             # --- DNS/Web Blocking ---
             if want_domains != cur_domains or want_exceptions != getattr(dns_server, "cur_exc", None):
@@ -318,7 +319,7 @@ def main() -> None:
                     # Try DNS Proxy first
                     if not dns_server:
                         upstream = detect_system_dns()
-                        dns_server = DNSProxyServer(list(want_domains), allowlist=list(want_exceptions), upstream_dns=upstream)
+                        dns_server = DNSProxyServer(list(want_manual), list(want_filters), allowlist=list(want_exceptions), upstream_dns=upstream)
                         dns_server.cur_exc = want_exceptions
                         if dns_server.start():
                             using_dns_proxy = True
@@ -329,8 +330,7 @@ def main() -> None:
                     
                     if using_dns_proxy:
                         # Update existing DNS server matcher
-                        dns_server.block_matcher = DomainMatcher(list(want_domains))
-                        dns_server.allow_matcher = DomainMatcher(list(want_exceptions))
+                        dns_server.update_rules(list(want_manual), list(want_filters), list(want_exceptions))
                         dns_server.cur_exc = want_exceptions
                     else:
                         apply_blocks(list(want_domains), block_doh=sched_anywhere)
