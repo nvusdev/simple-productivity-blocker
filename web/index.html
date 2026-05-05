@@ -17,7 +17,10 @@
 <body data-theme="light"> <!-- Light mode by default -->
     <nav class="navbar">
         <div class="nav-container">
-            <div class="logo">Simple Productivity Blocker</div>
+            <div class="logo-wrapper">
+                <img src="logo.svg" alt="SPB Logo" class="nav-logo">
+                <div class="logo-text">Simple Productivity Blocker</div>
+            </div>
             <div class="nav-links">
                 <a href="#about" class="nav-item">About</a>
                 <a href="#download" class="nav-item btn-nav">Download</a>
@@ -41,12 +44,22 @@
     <main>
         <section id="about" class="hero-section">
             <div class="container">
-                <div class="hero-content">
-                    <h1>A distraction blocker for <br><span id="dynamic-tagline"></span></h1>
-                    <p class="hero-subtitle">The simplest, most powerful productivity tool for Windows and Linux. Built for people who need to get things done.</p>
-                    <div class="hero-cta">
-                        <a href="#download" class="btn primary">Get Started Free</a>
-                        <a href="https://github.com/nvusdev/simple-productivity-blocker" class="btn secondary">View Source Code</a>
+                <div class="hero-grid">
+                    <div class="hero-text">
+                        <h1>A distraction blocker for <br><span id="dynamic-tagline"></span></h1>
+                        <p class="hero-subtitle">The simplest, most powerful productivity tool for Windows and Linux. Built for people who need to get things done.</p>
+                        <div class="hero-cta">
+                            <a href="#download" class="btn primary">Get Started Free</a>
+                            <a href="https://github.com/nvusdev/simple-productivity-blocker" class="btn secondary">View Source Code</a>
+                        </div>
+                    </div>
+                    <div class="hero-preview">
+                        <div class="preview-wrapper">
+                            <video autoplay loop muted playsinline class="app-video">
+                                <source src="app_preview.mp4" type="video/mp4">
+                                Your browser does not support the video tag.
+                            </video>
+                        </div>
                     </div>
                 </div>
             </div>
