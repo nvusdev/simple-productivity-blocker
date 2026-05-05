@@ -15,9 +15,10 @@ def _set_startup_windows(enabled: bool, name: str):
     if getattr(sys, 'frozen', False):
         app_path = f'"{sys.executable}"'
     else:
-        # Development mode
+        # Development mode: use pythonw.exe to suppress console window
         main_py = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "main.py")
-        app_path = f'"{sys.executable}" "{main_py}"'
+        pythonw = sys.executable.replace("python.exe", "pythonw.exe")
+        app_path = f'"{pythonw}" "{main_py}"'
 
     try:
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
