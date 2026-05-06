@@ -2,13 +2,24 @@
 
 ## [1.3.3] - 2026-05-06
 ### Added
-- **UI Stability Patch**: Fixed a high-priority `KeyError` in the configuration loader.
-- **Project Sanitization**: Deprecated legacy scripts into `/legacy` and updated build dependencies (Pillow).
-- **Final Hardening**: Synchronized versioning across all entry points (Installer/Uninstaller/Makefile).
+- **High-Precision Rolling Countdown**: Upgraded the 3s sync timer to a 100ms rolling countdown with decimal display in Consolas for a smoother, high-tech UX.
+- **Enhanced Engine Diagnostics**: Added comprehensive file-based logging at `C:\ProgramData\SimpleProductivityBlocker\daemon.log` for the background engine.
+- **Global Crash Reporting**: Implemented a global exception handler in the daemon to prevent silent failures and provide debuggable crash dumps.
+
+### Fixed
+- **Installer Critical Path**: Resolved the "Daemon binary not found" error by restoring the `--add-data` bundling flag in the build pipeline.
+- **COM Release Exceptions**: Eliminated `Win32 exception occurred releasing IUnknown` errors by explicitly managing COM object lifecycles during shortcut creation.
+- **Tooltip Text Bleeding**: Resolved text clipping in the Website tab by adding `wraplength` to long instruction labels.
+- **Daemon Dependency Conflict**: Switched `SPB_Daemon` to a standalone `--onefile` build to eliminate shared `_internal` DLL collisions with the main GUI.
+
+### Changed
+- **Symmetric Dashboard Layout**: Moved the sync countdown and status text to the right side of the status bar for better visual balance.
+- **Locked Navigation**: The `+ Create New Profile` button is now anchored to the center of the backdrop, making it independent of changing status labels.
+- **Path Resolution Hardening**: Updated `resource_path` logic to correctly handle PyInstaller onefile extraction across all binaries.
 
 ## [1.3.2] - 2026-05-06
 ### Added
-- **Antigravity Protocol (Security Hardening)**: Replaced insecure `%ProgramFiles%` environment resolution with the native Win32 `SHGetKnownFolderPath` API.
+- **Enhanced Security Hardening**: Replaced insecure `%ProgramFiles%` environment resolution with the native Win32 `SHGetKnownFolderPath` API.
 - **Cross-Profile Persistence Cleanup**: The installer and uninstaller now iterate through `HKEY_USERS` SIDs to ensure "ghost" startup stubs are cleared for all users, regardless of UAC context.
 - **Atomic Configuration Management**: Implemented an atomic `os.replace` strategy with a 10-attempt retry loop to eliminate file-locking race conditions between the GUI and Daemon.
 - **Invisible Startup Protocol**: Implemented `attributes('-alpha', 0.0)` stealth phase to eliminate UI flashing during window hydration.
