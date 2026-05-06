@@ -1,5 +1,13 @@
 # Simple Productivity Blocker - Version History
 
+## [1.4.1] - 2026-05-06
+### fixed
+- **Allowlist unlock logic**: fixed a critical bug where allowlisted processes were not explicitly unlocked, potentially causing access issues for critical apps.
+- **termination sequence**: resolved an `AttributeError` in the `ProcessMonitor.stop()` sequence caused by a typo in the lock-clearing method.
+- **daemon persistence**: integrated global exception handling to ensure the `SPB` daemon main loop persists through unexpected runtime errors.
+- **stress test reliability**: updated the verification suite to handle `PermissionError` as a success state during `NTFS` `ACL` validation.
+
+
 ## [1.4.0] - 2026-05-06
 ### Added
 - **Kernel-Level NTFS Enforcement**: Transitioned from process polling to OS-level ACL 'Deny' ACEs for files and folders, providing absolute protection even against advanced bypass attempts.
