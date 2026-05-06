@@ -44,24 +44,20 @@ class ProcessMonitor:
         self._path_cache = {}
         self.logger = logging.getLogger("SPB_AppBlocker")
         
-        # Start background ACL worker
-        self._acl_worker = threading.Thread(target=self._process_acl_queue, daemon=True)
-        self._acl_worker.start()
+        self._acl_worker = None
 
-    def configure_performance(self, mode):
-        mode = (mode or "").strip().lower()
-        if mode == "aggressive":
-            self._fast_interval = 0.25
-            self._base_interval = 0.5
-            self._shell_interval = 1.0
-        elif mode == "eco":
-            self._fast_interval = 1.0
-            self._base_interval = 2.0
-            self._shell_interval = 3.0
-        else:
-            self._fast_interval = 0.5
-            self._base_interval = 1.0
-            self._shell_interval = 2.0
+    def configure_performance(self, mode: str):
+        """Standardized performance profiles:
+        Passive:  5.0s (Battery Saver)
+        Balanced: 2.0s (Recommended)
+        Strict:   0.5s (High Security)
+        """
+        mode = str(mode or "balanced").strip().lower()
+        if mode == "passive":   self._base_interval = 5.0
+        elif mode == "balanced": self._base_interval = 2.0
+        elif mode == "strict":   self._base_interval = 0.5
+        else:                   self._base_interval = 2.0
+        self.logger.info(f"Performance profile set to: {mode.capitalize()} ({self._base_interval}s)")
 
     def set_allowlisted_processes(self, processes, enabled=True):
         self._allowlist_enabled = bool(enabled)
@@ -121,67 +117,62 @@ class ProcessMonitor:
         return False
 
     def set_blocked_apps(self, apps):
-        self._fast_until = time.time() + 10
         self.blocked_app_names.clear()
         self.blocked_app_paths.clear()
-        for app in apps:
-            app = app.strip()
+        for app in (apps or []):
             if not app: continue
-            app_lower = app.lower()
-            base = os.path.basename(app_lower)
+            base = os.path.basename(app)
             if base:
-                self.blocked_app_names.add(base)
+                self.blocked_app_names.add(base.lower())
                 stem = os.path.splitext(base)[0]
                 if stem and stem != base:
                     self.blocked_app_names.add(stem)
             if self._looks_like_path(app):
-                path_norm = os.path.normpath(app)
-                self.blocked_app_paths.add(path_norm.lower())
-                if self.is_active:
-                    self._set_acl_lock(path_norm, True)
+                path_norm = self._normalize_path(app)
+                self.blocked_app_paths.add(path_norm)
         
         if self.is_active:
-            self._apply_disallow_run()
+            self._apply_disallow_run() # Vector 1: Registry
+            self._apply_file_locks()   # Vector 2: Handles
+            for path in self.blocked_app_paths:
+                self._set_acl_lock(path, True) # Vector 3: ACLs
 
     def set_blocked_files(self, files):
         self._fast_until = time.time() + 10
-        new_paths = {self._normalize_path(f) for f in files if f.strip()}
-        removed_paths = self.blocked_file_paths - new_paths
-        for path in removed_paths:
-            self._set_acl_lock(path, False)
-            
+        new_paths = {self._normalize_path(f) for f in (files or []) if f.strip()}
+        removed = self.blocked_file_paths - new_paths
         self.blocked_file_paths = new_paths
+        
         self.blocked_file_names.clear()
         for path in self.blocked_file_paths:
             base = os.path.basename(path)
-            if base:
-                self.blocked_file_names.add(base.lower())
+            if base: self.blocked_file_names.add(base.lower())
             
         if self.is_active:
-            self._apply_file_locks()
-            for path in self.blocked_file_paths:
-                self._set_acl_lock(path, True)
+            self._apply_disallow_run() # Vector 1: Registry
+            self._apply_file_locks()   # Vector 2: Handles
+            for path in removed: self._set_acl_lock(path, False)
+            for path in self.blocked_file_paths: self._set_acl_lock(path, True) # Vector 3: ACLs
 
     def set_blocked_folders(self, folders):
         self._fast_until = time.time() + 10
-        new_roots = {self._normalize_path(f) for f in folders if f.strip()}
-        old_roots = set(self.blocked_folder_roots)
-        removed = old_roots - new_roots
-        for path in removed:
-            self._set_acl_lock(path, False)
-            
+        new_roots = {self._normalize_path(f) for f in (folders or []) if f.strip()}
+        removed = set(self.blocked_folder_roots) - new_roots
         self.blocked_folder_roots = list(new_roots)
-        self.blocked_folder_prefixes = [
-            (r if r.endswith(os.path.sep) else r + os.path.sep) for r in self.blocked_folder_roots
-        ]
+        self.blocked_folder_prefixes = [(r if r.endswith(os.path.sep) else r + os.path.sep) for r in self.blocked_folder_roots]
         
         if self.is_active:
-            for root in self.blocked_folder_roots:
-                self._set_acl_lock(root, True)
+            # Note: Registry/Handles don't apply to folders directly, but we sync ACLs
+            for path in removed: self._set_acl_lock(path, False)
+            for root in self.blocked_folder_roots: self._set_acl_lock(root, True)
 
     def start(self):
         if self.is_active: return
-        self.logger.info(f"ProcessMonitor STARTING: apps={len(self.blocked_app_names)}, files={len(self.blocked_file_paths)}, folders={len(self.blocked_folder_roots)}")
+        
+        # Stop existing threads if they are still running
+        if self._watcher_thread or self._acl_worker:
+            self.stop()
+            
         self.is_active = True
         self._stop_event.clear()
         
@@ -195,19 +186,32 @@ class ProcessMonitor:
         for path in self.blocked_folder_roots:
             self._set_acl_lock(path, True)
 
+        # Restart background workers
         self._watcher_thread = threading.Thread(target=self._watch_processes, daemon=True)
         self._watcher_thread.start()
+        
+        self._acl_worker = threading.Thread(target=self._process_acl_queue, daemon=True)
+        self._acl_worker.start()
+        
+        self.logger.info("ProcessMonitor started.")
 
     def stop(self):
-        if not self.is_active: return
-        self.logger.info("ProcessMonitor STOPPING (cleaning locks...)")
         self.is_active = False
         self._stop_event.set()
-        self._clear_disallow_run()
+        
+        # Wait for threads to terminate
+        if self._watcher_thread and self._watcher_thread.is_alive():
+            self._watcher_thread.join(timeout=1.0)
+        if self._acl_worker and self._acl_worker.is_alive():
+            self._acl_worker.join(timeout=1.0)
+            
+        self._watcher_thread = None
+        self._acl_worker = None
+        
+        self._apply_disallow_run() # Clears Registry
         self._clear_file_locks()
         self._clear_all_acls()
-        if self._watcher_thread:
-            self._watcher_thread.join(timeout=2)
+        self.logger.info("ProcessMonitor stopped.")
 
     def _process_acl_queue(self):
         while not self._stop_event.is_set():
@@ -223,16 +227,16 @@ class ProcessMonitor:
 
     def _is_critical_path(self, path):
         path = path.lower()
-        system_root = os.environ.get("SystemRoot", "C:\\Windows").lower()
-        program_data = os.environ.get("ProgramData", "C:\\ProgramData").lower()
-        user_profile = os.environ.get("USERPROFILE", "").lower()
-        
-        critical_zones = [
-            system_root,
-            os.path.join(system_root, "system32"),
-            program_data,
-            os.path.join(user_profile, "appdata")
-        ]
+        if os.name == 'nt':
+            system_root = os.environ.get("SystemRoot", "C:\\Windows").lower()
+            program_data = os.environ.get("ProgramData", "C:\\ProgramData").lower()
+            user_profile = os.environ.get("USERPROFILE", "").lower()
+            critical_zones = [
+                system_root, os.path.join(system_root, "system32"),
+                program_data, os.path.join(user_profile, "appdata")
+            ]
+        else:
+            critical_zones = ["/etc", "/bin", "/sbin", "/usr/bin", "/usr/sbin", "/boot", "/dev"]
         
         for zone in critical_zones:
             if path == zone or path.startswith(zone + os.sep):
@@ -247,14 +251,19 @@ class ProcessMonitor:
 
         # Hierarchy Check: Allowlist (Exceptions) overrides everything
         if lock and self._allowlist_enabled:
+            is_exempt = False
             # Check by filename
             if os.path.basename(path_lower) in self._allowlisted_processes:
-                self.logger.info(f"Allowlist Override: Skipping lock for {path} (Process Exempted)")
-                return False
+                is_exempt = True
+                reason = "Process Exempted"
             # Check by path keywords
-            if any(kw in path_lower for kw in self._allowlisted_keywords):
-                self.logger.info(f"Allowlist Override: Skipping lock for {path} (Path Keyword Exempted)")
-                return False
+            elif any(kw in path_lower for kw in self._allowlisted_keywords):
+                is_exempt = True
+                reason = "Path Keyword Exempted"
+            
+            if is_exempt:
+                self.logger.info(f"Allowlist Override: Unlocking {path} ({reason})")
+                lock = False # Force unlock if allowlisted
 
         if lock and self._is_critical_path(path):
             self.logger.error(f"CRITICAL PATH VIOLATION: Refusing to lock system-critical path: {path}")
@@ -285,14 +294,10 @@ class ProcessMonitor:
         except Exception as e:
             self.logger.error(f"ACL Exception for {path}: {e}")
 
-    def _set_acl_lock(self, path, lock=True):
-        if os.name != 'nt' or not self._username: return
-        # Force Windows backslashes for icacls compatibility
-        path = os.path.normpath(path)
-        if os.path.isdir(path):
-            self._acl_queue.put((path, lock))
-        else:
-            self._apply_acl_internal(path, lock)
+    def _set_acl_lock(self, path, should_lock):
+        """Asynchronous ACL locking via background queue."""
+        if not path: return
+        self._acl_queue.put((path, should_lock))
 
     def _clear_all_acls(self):
         with self._acl_sync_lock:
@@ -418,7 +423,7 @@ class ProcessMonitor:
                                 self.logger.info(f"TERMINATING: {name_lower} (Blocked File in Cmdline: {bp})")
                                 return True
 
-            if self.blocked_file_paths and (now - last_handle_check) >= 3.0:
+            if self.blocked_file_paths and (now - last_handle_check) >= 10.0:
                 if name_lower not in ("svchost.exe", "system", "idle", "searchindexer.exe"):
                     try:
                         for f in proc.open_files():
@@ -451,8 +456,30 @@ class ProcessMonitor:
                         try: proc.kill()
                         except: pass
                 
-                if (now - last_handle_check) >= 3.0:
+                if (now - last_handle_check) >= 10.0:
                     last_handle_check = now
 
             interval = self._fast_interval if now < self._fast_until else self._base_interval
             time.sleep(interval)
+
+    def synchronize_lock(self, path: str, should_be_locked: bool):
+        """Public interface for the daemon's safe-boot engine to reconcile historical locks.
+        Invokes the full multi-vector protection suite (ACLs + Registry + Handles).
+        This method is SURGICAL and ADDITIVE to support recovery loops.
+        """
+        if not should_be_locked:
+            if os.path.isfile(path):
+                new_list = [p for p in self.blocked_file_paths if p != path]
+                self.set_blocked_files(new_list)
+            elif os.path.isdir(path):
+                new_list = [p for p in self.blocked_folder_roots if p != path]
+                self.set_blocked_folders(new_list)
+            return
+
+        # Additive blocking
+        if os.path.isfile(path):
+            new_list = list(set(self.blocked_file_paths).union({path}))
+            self.set_blocked_files(new_list)
+        elif os.path.isdir(path):
+            new_list = list(set(self.blocked_folder_roots).union({path}))
+            self.set_blocked_folders(new_list)
