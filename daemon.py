@@ -29,7 +29,7 @@ if os.name == 'nt':
 else:
     base_data = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "SimpleProductivityBlocker")
 
-RECOVERY_FILE = os.path.join(base_data, "recovery.json")
+RECOVERY_FILE = os.path.join(base_data, "recovery_history.json")
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -360,10 +360,12 @@ def main() -> None:
     dns_server = None
     using_dns_proxy = False
 
-    cur_domains: set = set()
-    cur_apps:    set = set()
-    cur_files:   set = set()
-    cur_folders: set = set()
+    cur_domains: set = None
+    cur_apps:    set = None
+    cur_files:   set = None
+    cur_folders: set = None
+    cur_exceptions: set = None
+
 
     cfg_cache:      dict = {}
     pending_mtime:  float = 0.0
@@ -471,26 +473,33 @@ def main() -> None:
                 # logger.debug("Daemon heartbeat: Monitoring active.")
 
             # --- DNS/Web Blocking ---
-            if want_domains != cur_domains or want_exceptions != getattr(dns_server, "cur_exc", None):
+            if want_domains != cur_domains or want_exceptions != cur_exceptions:
                 if want_domains:
                     # Try DNS Proxy first
                     if not dns_server:
                         upstream = detect_system_dns()
                         dns_server = DNSProxyServer(list(want_manual), list(want_filters), allowlist=list(want_exceptions), upstream_dns=upstream)
-                        dns_server.cur_exc = want_exceptions
                         if dns_server.start():
                             using_dns_proxy = True
+                            remove_blocks() # Sanitize hosts file when moving to proxy
                             logger.info("DNS Proxy Server active on port 53.")
                         else:
+                            dns_server = None # Reset to allow retry on next config change
                             using_dns_proxy = False
                             logger.warning("Port 53 taken. Falling back to hosts-file redirection.")
                     
                     if using_dns_proxy:
-                        # Update existing DNS server matcher
                         dns_server.update_rules(list(want_manual), list(want_filters), list(want_exceptions))
-                        dns_server.cur_exc = want_exceptions
                     else:
-                        apply_blocks(list(want_domains), block_doh=sched_anywhere)
+                        # Robust normalization for exceptions: subtract base domains and www versions
+                        exc_list = {e.lower().removeprefix("www.") for e in want_exceptions}
+                        actual_blocks = set()
+                        for d in want_domains:
+                            base = d.lower().removeprefix("www.")
+                            if base not in exc_list:
+                                actual_blocks.add(d)
+
+                        apply_blocks(list(actual_blocks), block_doh=sched_anywhere)
                     
                     if _notif("on_hosts_write", False):
                         logger.info(f"Blocking {len(want_domains)} domain(s) with {len(want_exceptions)} exceptions.")
@@ -501,37 +510,43 @@ def main() -> None:
                         logger.info("DNS Proxy Server stopped.")
                     remove_blocks()
                     if _notif("on_hosts_write", False): logger.info("All domains unblocked.")
+                
                 cur_domains = want_domains
+                cur_exceptions = want_exceptions
 
             # --- App/File/Folder Blocking ---
-            if config_changed or want_apps != cur_apps or want_files != cur_files or want_folders != cur_folders or debounce == 3:
-                cur_apps = want_apps
-                cur_files = want_files
-                cur_folders = want_folders
+            if config_changed or want_apps != cur_apps or want_files != cur_files or want_folders != cur_folders:
+                if want_apps != cur_apps:
+                    pm.update_app_targets(list(want_apps))
+                    cur_apps = want_apps
+                
+                if want_files != cur_files:
+                    pm.update_file_targets(list(want_files))
+                    cur_files = want_files
+
+                if want_folders != cur_folders:
+                    pm.update_folder_targets(list(want_folders))
+                    cur_folders = want_folders
+            
+                # Authoritative Recovery Persistence (Sync WAL with actual active targets)
+                app_paths = {a for a in cur_apps if os.path.sep in a or (os.name == 'nt' and '/' in a)}
+                current_path_history = cur_files.union(cur_folders).union(app_paths)
+                _save_history(current_path_history)
                 
                 settings = cfg_cache.get("settings", {})
                 perf_mode = settings.get("performance_mode", "Balanced")
                 pm.configure_performance(perf_mode)
-                
                 pm.set_allowlisted_processes(settings.get("cloud_allowlist", []), enabled=settings.get("cloud_allowlist_enabled", True))
                 pm.set_allowlisted_keywords(settings.get("cloud_path_keywords", []))
                 
                 if cur_apps or cur_files or cur_folders:
-                    
-                    # Update history (Write-Ahead Logging for recovery)
-                    # Include anything that looks like a path from apps too
-                    app_paths = {a for a in cur_apps if os.path.sep in a or (os.name == 'nt' and '/' in a)}
-                    new_history = history.union(cur_folders).union(cur_files).union(app_paths)
-                    if new_history != history:
-                        history = new_history
-                        _save_history(history)
-                        
                     pm.set_blocked_apps(list(cur_apps))
                     pm.set_blocked_files(list(cur_files))
                     pm.set_blocked_folders(list(cur_folders))
                     pm.start()
                 else:
                     pm.stop()
+
 
             time.sleep(poll_sleep)
 
