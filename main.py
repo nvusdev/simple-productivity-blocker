@@ -12,7 +12,7 @@ import copy
 from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, get_config_dir, export_config, import_config
 from core.persistence import set_startup, is_startup_enabled
 
-VERSION = "1.3.3"
+VERSION = "1.4.0"
 
 def resource_path(relative_path):
     try:
@@ -210,6 +210,9 @@ class ProductivityApp(ctk.CTk):
         
         # Anti-Flash: Show window once UI is ready
         self.after(250, lambda: [self.attributes('-alpha', 1.0), self.deiconify()])
+        
+        # Protocol handler for graceful/forced exit persistence
+        self.protocol("WM_DELETE_WINDOW", self.on_exit)
 
     def _apply_app_icon(self):
         try:
@@ -252,6 +255,13 @@ class ProductivityApp(ctk.CTk):
         save_config(self.config_data)
         self.status_lbl.configure(text="Changes Saved & Applied", text_color="green")
         self._debounce_timer = None
+
+    def on_exit(self):
+        """Force a save if a sync is pending before closing."""
+        if self._debounce_timer:
+            self.after_cancel(self._debounce_timer)
+            self._finalize_save()
+        self.destroy()
 
     def clear_screen(self):
         for widget in self.winfo_children():
