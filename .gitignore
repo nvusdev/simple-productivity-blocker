@@ -20,6 +20,7 @@ tools/encode_sensitive_lists.py
 
 # Local configuration and state
 config.json
+recovery_history.json
 *.local
 .env
 

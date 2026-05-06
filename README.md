@@ -8,9 +8,9 @@ Simple Productivity Blocker is a free, open-source application that helps you ma
 
 * **Website Blocking:** Block domains at the system level via the hosts file and a local DNS interceptor. Supports absolute domains, wildcards (`*.site.com`), and advanced pattern matching (prefixes `~pre*`, suffixes `~*suf`, and keywords `~key`). Blocks survive browser restarts and incognito mode.
 * **Micro DNS Server:** Includes a built-in, lightweight DNS proxy that transparently intercepts requests on port 53. It is cross-compatible with external firewalls (like Portmaster), third-party DNS services (like 1.1.1.1 or NextDNS), and corporate network settings.
-* **App Blocking:** Instantly terminates any running process that matches a blocked application name upon detection.
-* **File Blocking:** Prevents applications from opening a blocked file by monitoring process command-line arguments and terminating violators.
-* **Folder Blocking:** Block entire directories. Actively intercepts and closes File Explorer tabs navigating to the directory, and terminates any application that attempts to execute files within the path.
+* **App Blocking:** Instantly terminates any running process that matches a blocked application name upon detection. Uses Kernel-Level NTFS Enforcement on Windows to prevent execution attempts.
+* **File Blocking:** Prevents applications from opening a blocked file by monitoring process command-line arguments and enforcing OS-level NTFS ACL 'Deny' permissions.
+* **Folder Blocking:** Block entire directories with recursive NTFS ACL enforcement. Actively intercepts and closes File Explorer tabs navigating to the directory, and prevents any application from accessing or executing files within the path.
 * **Content Filters:** Enable curated blocklists across 10 categories*: Ads & Trackers, Malware, Social Media, Adult Content (encrypted), Gambling (encrypted), Piracy (encrypted), Entertainment, Shopping, AI/Tech, and Gaming & Game Stores.
 * **Exceptions (Allowlist):** Whitelist specific domains within Content Filters. Whitelisted domains are never blocked by content filters, but explicit Website blocks always take priority.
 * **Scheduling:** Set start and end times and active days per profile. The "Enforce All Day" option runs the Content Filter continuously.
@@ -101,7 +101,7 @@ Output is placed in `dist/SimpleProductivityBlocker/`. Zip that folder to distri
 Simple Productivity Blocker utilizes a decoupled, two-part architecture to ensure stability, performance, and tamper resistance:
 
 1. **User Interface (spb):** Built with CustomTkinter, this application acts purely as a configuration editor. It reads and writes to a central `config.json` file. It does not enforce blocks directly.
-2. **Background Daemon (daemon):** A headless background process that constantly monitors the `config.json` file for changes using a 3-second debounce mechanism. When changes are detected, it recomputes active blocking rules. It manages a **local DNS proxy server** to intercept advanced patterns (wildcards/keywords) and writes to the system hosts file for baseline blocking. It utilizes `psutil` and OS Shell integrations to actively terminate restricted applications, files, and folders.
+2. **Background Daemon (daemon):** A hardened background process that constantly monitors the `config.json` file for changes using a 3-second debounce mechanism. When changes are detected, it recomputes active blocking rules. It manages a **local DNS proxy server** to intercept advanced patterns (wildcards/keywords) and writes to the system hosts file for baseline blocking. It utilizes **Kernel-Level NTFS ACL Enforcement** to prevent access to files and folders, and implements **Write-Ahead Logging (WAL)** to ensure system stability and automated block recovery after crashes or forced reboots.
 
 The daemon installs itself as a persistent background task (e.g., Windows Scheduled Task) that launches silently at system boot with elevated privileges. Sensitive content blocklists are **XOR-encrypted** within the compiled binaries to prevent trivial circumvention via source code inspection.
 
