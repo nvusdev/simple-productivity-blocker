@@ -181,14 +181,26 @@ class ProcessMonitor:
 
     def start(self):
         if self.is_active: return
+        self.logger.info(f"ProcessMonitor STARTING: apps={len(self.blocked_app_names)}, files={len(self.blocked_file_paths)}, folders={len(self.blocked_folder_roots)}")
         self.is_active = True
         self._stop_event.clear()
+        
         self._apply_disallow_run()
         self._apply_file_locks()
+        
+        for path in self.blocked_app_paths:
+            self._set_acl_lock(path, True)
+        for path in self.blocked_file_paths:
+            self._set_acl_lock(path, True)
+        for path in self.blocked_folder_roots:
+            self._set_acl_lock(path, True)
+
         self._watcher_thread = threading.Thread(target=self._watch_processes, daemon=True)
         self._watcher_thread.start()
 
     def stop(self):
+        if not self.is_active: return
+        self.logger.info("ProcessMonitor STOPPING (cleaning locks...)")
         self.is_active = False
         self._stop_event.set()
         self._clear_disallow_run()
@@ -229,6 +241,21 @@ class ProcessMonitor:
 
     def _apply_acl_internal(self, path, lock=True):
         if os.name != 'nt': return
+        
+        path = os.path.normpath(os.path.abspath(path))
+        path_lower = path.lower()
+
+        # Hierarchy Check: Allowlist (Exceptions) overrides everything
+        if lock and self._allowlist_enabled:
+            # Check by filename
+            if os.path.basename(path_lower) in self._allowlisted_processes:
+                self.logger.info(f"Allowlist Override: Skipping lock for {path} (Process Exempted)")
+                return False
+            # Check by path keywords
+            if any(kw in path_lower for kw in self._allowlisted_keywords):
+                self.logger.info(f"Allowlist Override: Skipping lock for {path} (Path Keyword Exempted)")
+                return False
+
         if lock and self._is_critical_path(path):
             self.logger.error(f"CRITICAL PATH VIOLATION: Refusing to lock system-critical path: {path}")
             return False
@@ -260,7 +287,8 @@ class ProcessMonitor:
 
     def _set_acl_lock(self, path, lock=True):
         if os.name != 'nt' or not self._username: return
-        path = self._normalize_path(path)
+        # Force Windows backslashes for icacls compatibility
+        path = os.path.normpath(path)
         if os.path.isdir(path):
             self._acl_queue.put((path, lock))
         else:
@@ -346,22 +374,39 @@ class ProcessMonitor:
         try:
             info = proc.info
             name_lower = (info.get('name') or "").lower()
-            exe = info.get('exe')
-            cmdline = info.get('cmdline')
+            exe = (info.get('exe') or "").lower()
+            cmdline = info.get('cmdline') or []
             
+            if "target_app" in name_lower or "target_app" in exe:
+                pass
+
             if self._allowlist_enabled:
                 if name_lower in self._allowlisted_processes: return False
                 if self._allowlisted_keywords:
-                    search = (exe or "").lower() + " " + " ".join(str(a).lower() for a in (cmdline or []))
+                    search = exe + " " + " ".join(str(a).lower() for a in cmdline)
                     if any(kw in search for kw in self._allowlisted_keywords): return False
+
+            # App Name Check
+            if name_lower in self.blocked_app_names:
+                self.logger.info(f"TERMINATING: {name_lower} (App Name Blocked)")
+                return True
 
             if exe:
                 exe_norm = self._normalize_path(exe)
-                if exe_norm in self.blocked_app_paths or self._is_in_blocked_folder(exe_norm): return True
+                if exe_norm in self.blocked_app_paths:
+                    self.logger.info(f"TERMINATING: {name_lower} (App Path Blocked: {exe_norm})")
+                    return True
+                if self._is_in_blocked_folder(exe_norm):
+                    self.logger.info(f"TERMINATING: {name_lower} (App in Blocked Folder: {exe_norm})")
+                    return True
 
             try:
                 cwd = proc.cwd()
-                if cwd and self._is_in_blocked_folder(self._normalize_path(cwd)): return True
+                if cwd:
+                    cwd_norm = self._normalize_path(cwd)
+                    if self._is_in_blocked_folder(cwd_norm):
+                        self.logger.info(f"TERMINATING: {name_lower} (CWD in Blocked Folder: {cwd_norm})")
+                        return True
             except: pass
 
             if cmdline:
@@ -369,14 +414,18 @@ class ProcessMonitor:
                 for bp in self.blocked_file_paths:
                     if bp.lower() in cmdline_str:
                         for arg in cmdline:
-                            if bp.lower() in str(arg).lower(): return True
+                            if bp.lower() in str(arg).lower():
+                                self.logger.info(f"TERMINATING: {name_lower} (Blocked File in Cmdline: {bp})")
+                                return True
 
             if self.blocked_file_paths and (now - last_handle_check) >= 3.0:
                 if name_lower not in ("svchost.exe", "system", "idle", "searchindexer.exe"):
                     try:
                         for f in proc.open_files():
                             f_norm = self._normalize_path(f.path)
-                            if f_norm in self.blocked_file_paths or self._is_in_blocked_folder(f_norm): return True
+                            if f_norm in self.blocked_file_paths or self._is_in_blocked_folder(f_norm):
+                                self.logger.info(f"TERMINATING: {name_lower} (Accessing Blocked File/Folder: {f_norm})")
+                                return True
                     except: pass
             return False
         except: return False
@@ -396,7 +445,7 @@ class ProcessMonitor:
                 self._last_shell_check = now
                 self._check_shell_windows(shell)
 
-            if self.blocked_app_paths or self.blocked_file_paths or self.blocked_folder_roots:
+            if self.blocked_app_names or self.blocked_app_paths or self.blocked_file_paths or self.blocked_folder_roots:
                 for proc in psutil.process_iter(['name', 'exe', 'cmdline']):
                     if self._should_terminate_proc(proc, now, last_handle_check):
                         try: proc.kill()
