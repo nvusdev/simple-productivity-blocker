@@ -1,7 +1,9 @@
 import psutil
+import logging
 import threading
 import time
 import os
+import queue
 try:
     import pythoncom
     import win32com.client
@@ -12,6 +14,8 @@ import urllib.parse
 if os.name == 'nt':
     import winreg
     import msvcrt
+    import subprocess
+    import getpass
 
 class ProcessMonitor:
     def __init__(self):
@@ -33,6 +37,17 @@ class ProcessMonitor:
         self._allowlisted_keywords = set()
         self._allowlist_enabled = True
         self._locked_files = []
+        self._current_acl_paths = set()
+        self._acl_sync_lock = threading.RLock()
+        self._acl_queue = queue.Queue()
+        self._stop_event = threading.Event()
+        self._username = getpass.getuser() if os.name == 'nt' else None
+        self._path_cache = {}
+        self.logger = logging.getLogger("SPB_AppBlocker")
+        
+        # Start background ACL worker
+        self._acl_worker = threading.Thread(target=self._process_acl_queue, daemon=True)
+        self._acl_worker.start()
 
     def configure_performance(self, mode):
         mode = (mode or "").strip().lower()
@@ -61,7 +76,19 @@ class ProcessMonitor:
         }
 
     def _normalize_path(self, path):
-        return os.path.normcase(os.path.abspath(path))
+        if not path: return ""
+        if path in self._path_cache:
+            return self._path_cache[path]
+        
+        try:
+            norm = os.path.normcase(os.path.abspath(path))
+            self._path_cache[path] = norm
+            # Limit cache size
+            if len(self._path_cache) > 2000:
+                self._path_cache.clear()
+            return norm
+        except Exception:
+            return path.lower()
 
     def _looks_like_path(self, value):
         if not value:
@@ -143,6 +170,8 @@ class ProcessMonitor:
         
         if self.is_active:
             self._apply_file_locks()
+            for path in self.blocked_file_paths:
+                self._set_acl_lock(path, True)
 
     def set_blocked_folders(self, folders):
         self._fast_until = time.time() + 10
@@ -156,6 +185,8 @@ class ProcessMonitor:
             prefix = root if root.endswith(os.path.sep) else root + os.path.sep
             self.blocked_folder_roots.append(root)
             self.blocked_folder_prefixes.append(prefix)
+            if self.is_active:
+                self._set_acl_lock(root, True)
 
     def start(self):
         if self.is_active:
@@ -172,8 +203,78 @@ class ProcessMonitor:
         self._stop_event.set()
         self._clear_disallow_run()
         self._clear_file_locks()
+        self._clear_all_acls()
         if self._watcher_thread:
             self._watcher_thread.join(timeout=2)
+
+    def _process_acl_queue(self):
+        """Background worker to process slow recursive ACL operations."""
+        while not self._stop_event.is_set():
+            try:
+                task = self._acl_queue.get(timeout=1)
+                path, lock = task
+                self._apply_acl_internal(path, lock)
+                self._acl_queue.task_done()
+            except queue.Empty:
+                continue
+            except Exception as e:
+                self.logger.error(f"Background ACL worker error: {e}")
+                time.sleep(1)
+
+    def _apply_acl_internal(self, path, lock=True):
+        """Executes the actual icacls command securely."""
+        if os.name != 'nt': return
+        
+        # Use *S-1-1-0 (Everyone) for physical blocking
+        target = "*S-1-1-0"
+        is_dir = os.path.isdir(path)
+        
+        try:
+            if lock:
+                if is_dir:
+                    # Recursive deny: /deny *S-1-1-0:(OI)(CI)(F) /t /c /q
+                    args = ["icacls", path, "/deny", f"{target}:(OI)(CI)(F)", "/t", "/c", "/q"]
+                else:
+                    # Single file deny: /deny *S-1-1-0:(F) /c /q
+                    args = ["icacls", path, "/deny", f"{target}:(F)", "/c", "/q"]
+                
+                res = subprocess.run(args, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                if res.returncode == 0:
+                    with self._acl_sync_lock:
+                        self._current_acl_paths.add(path)
+            else:
+                if is_dir:
+                    # Remove recursive deny
+                    args = ["icacls", path, "/remove:d", target, "/t", "/c", "/q"]
+                else:
+                    args = ["icacls", path, "/remove:d", target, "/c", "/q"]
+                
+                subprocess.run(args, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                with self._acl_sync_lock:
+                    if path in self._current_acl_paths:
+                        self._current_acl_paths.remove(path)
+        except Exception:
+            pass
+
+    def _set_acl_lock(self, path, lock=True):
+        if os.name != 'nt' or not self._username: return
+        path = self._normalize_path(path)
+        
+        if os.path.isdir(path):
+            # Slow operation: queue for background worker
+            self._acl_queue.put((path, lock))
+        else:
+            # Critical file: block synchronously to prevent race condition
+            self._apply_acl_internal(path, lock)
+
+    def _clear_all_acls(self):
+        with self._acl_sync_lock:
+            paths = list(self._current_acl_paths)
+        
+        for path in paths:
+            # Clearing should be synchronous on shutdown to ensure cleanup
+            self._apply_acl_internal(path, False)
+        self._current_acl_paths.clear()
 
     def _apply_disallow_run(self):
         if os.name != 'nt': return
@@ -235,7 +336,7 @@ class ProcessMonitor:
         for path in self.blocked_file_paths:
             try:
                 if os.path.exists(path):
-                    f = open(path, "rb+")
+                    f = open(path, "rb")
                     # Lock the first byte exclusively (non-blocking)
                     msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
                     self._locked_files.append(f)
@@ -332,15 +433,29 @@ class ProcessMonitor:
                                 pass
 
                         if not should_kill and cmdline:
-                            for arg in cmdline:
-                                arg_str = str(arg).strip("\"'")
-                                if not arg_str: continue
-                                for candidate in self._extract_path_candidates(arg_str):
-                                    arg_norm = self._normalize_path(candidate)
-                                    if arg_norm in self.blocked_file_paths or self._is_in_blocked_folder(arg_norm):
-                                        should_kill = True
-                                        break
-                                if should_kill: break
+                            # Optimization: single-pass check for fragments before expensive normalization
+                            cmdline_str = " ".join(str(a).lower() for a in cmdline)
+                            
+                            # Check if ANY blocked path fragment is in the cmdline
+                            has_candidate = False
+                            for bp in self.blocked_file_paths:
+                                if bp.lower() in cmdline_str:
+                                    has_candidate = True; break
+                            if not has_candidate:
+                                for br in self.blocked_folder_roots:
+                                    if br.lower() in cmdline_str:
+                                        has_candidate = True; break
+                            
+                            if has_candidate:
+                                for arg in cmdline:
+                                    arg_str = str(arg).strip("\"'")
+                                    if not arg_str: continue
+                                    for candidate in self._extract_path_candidates(arg_str):
+                                        arg_norm = self._normalize_path(candidate)
+                                        if arg_norm in self.blocked_file_paths or self._is_in_blocked_folder(arg_norm):
+                                            should_kill = True
+                                            break
+                                    if should_kill: break
 
                         if should_kill:
                             try:
