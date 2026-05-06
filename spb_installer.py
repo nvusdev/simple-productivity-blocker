@@ -152,16 +152,29 @@ def install_files(dest_dir):
             print("Deploying system assets...")
             shutil.copytree(internal_src, internal_dest)
 
-def register_daemon_task(daemon_path):
-    """Registers the background daemon as a high-integrity scheduled task."""
-    print("\nRegistering Productivity Daemon...")
-    # Using 'highest' is necessary to allow the daemon to manage DNS and system processes
+def harden_install_dir(dest_dir):
+    """Locks the installation directory so only System/Admins can write to it."""
+    print("Hardening directory permissions...")
+    # SIDs: System (S-1-5-18), Admins (S-1-5-32-544), Users (S-1-5-32-545)
+    # /inheritance:r = remove inheritance, /grant = give specific perms
+    # OI/CI/F = Object/Container Inherit, Full Control
+    # OI/CI/RX = Read/Execute
     subprocess.run([
-        'schtasks', '/create', '/tn', 'SPB_Daemon', 
-        '/tr', f'"{daemon_path}"', 
-        '/sc', 'onlogon', '/rl', 'highest', '/f'
+        'icacls', dest_dir, 
+        '/inheritance:r', 
+        '/grant:r', '*S-1-5-18:(OI)(CI)(F)', 
+        '/grant:r', '*S-1-5-32-544:(OI)(CI)(F)', 
+        '/grant:r', '*S-1-5-32-545:(OI)(CI)(RX)'
     ], capture_output=True)
-    subprocess.run(['schtasks', '/run', '/tn', 'SPB_Daemon'], capture_output=True)
+
+def register_daemon_task(daemon_path, args=""):
+    """Registers the background daemon as a high-integrity scheduled task."""
+    from core.persistence import register_task
+    try:
+        register_task("SPB_Daemon", daemon_path, args)
+    except Exception as e:
+        print(f"  [ERROR] Task registration failed: {e}")
+        raise
 
 def create_shortcut(target, shortcut_path, icon=None):
     """Creates a Windows shortcut (.lnk) using native COM via win32com."""
@@ -218,19 +231,19 @@ def main():
         base_prog_files = get_program_files_path()
         dest_dir = os.path.join(base_prog_files, "Simple Productivity Blocker")
         
-        # 2. Deploy Binaries
+        # 3. Deploy Binaries
         install_files(dest_dir)
         
-        # 3. Harden permissions: Only System/Admins can write
-        print("Hardening directory permissions...")
-        subprocess.run(['icacls', dest_dir, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)(F)', '/grant:r', '*S-1-5-32-544:(OI)(CI)(F)', '/grant:r', '*S-1-5-32-545:(OI)(CI)(RX)'], capture_output=True)
-
-        # 3. Register Background Task
-        daemon_path = os.path.join(dest_dir, "SPB_Daemon.exe")
-        if os.path.exists(daemon_path):
-            register_daemon_task(daemon_path)
-        else:
-            print(f"Warning: Daemon binary not found at {daemon_path}. Protection engine may not start automatically.")
+        # 4. Harden Installation Directory (Admin-only write access)
+        harden_install_dir(dest_dir)
+        
+        # 5. Register Background Daemon (Do this AFTER hardening)
+        daemon_exe = os.path.normpath(os.path.join(dest_dir, "SPB_Daemon.exe"))
+        register_daemon_task(daemon_exe)
+        
+        print("\n" + "="*50)
+        print("INSTALLATION COMPLETE!")
+        print("="*50)
 
         # 4. Create Desktop Shortcut
         desktop = get_desktop_path()
@@ -245,6 +258,17 @@ def main():
 
         print("\nInstallation Complete!")
         print("v1.4.0 Hardened Engine is now active.")
+        
+        print("\n" + "="*50)
+        print("☢️  NUCLEAR PROTECTION NOTICE  ☢️")
+        print("="*50)
+        print("For the most robust 'Nuclear' file protection:")
+        print("1. A SYSTEM REBOOT is highly recommended now.")
+        print("2. REBOOT AGAIN if you restore a backup configuration.")
+        print("\nThis ensures all active file handles are released and")
+        print("fully locked by the kernel-level protection engine.")
+        print("="*50)
+        
         time.sleep(2)
 
     except Exception as e:
