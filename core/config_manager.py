@@ -145,11 +145,28 @@ def load_config():
         except Exception:
             return copy.deepcopy(DEFAULT_CONFIG)
 
+import time
+
 def save_config(config):
     with _lock:
         os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
-        with open(CONFIG_FILE, 'w') as f:
-            json.dump(config, f, indent=4)
+        temp_file = CONFIG_FILE + ".tmp"
+        
+        # Retry loop to handle file-locking conflicts with the daemon
+        max_retries = 10
+        for i in range(max_retries):
+            try:
+                with open(temp_file, 'w') as f:
+                    json.dump(config, f, indent=4)
+                # Atomic replace (robust on Windows)
+                os.replace(temp_file, CONFIG_FILE)
+                return
+            except (PermissionError, OSError) as e:
+                # WinError 5 or [Errno 13] Permission denied
+                if i == max_retries - 1:
+                    print(f"Failed to save config after {max_retries} attempts: {e}")
+                    raise
+                time.sleep(0.3) # Wait slightly longer for lock release
 
 def export_config(config, path):
     try:

@@ -183,7 +183,9 @@ class ContentFilterTab(ctk.CTkFrame):
 class ProductivityApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.withdraw() # Anti-Flash: Hide window during construction
+        self.withdraw() # Anti-Flash: Hide window
+        self.attributes('-alpha', 0.0) # Absolute stealth during construction
+        
         self.title(f"Simple Productivity Blocker v{VERSION}")
         
         self.update_idletasks()
@@ -207,7 +209,7 @@ class ProductivityApp(ctk.CTk):
         self.show_dashboard()
         
         # Anti-Flash: Show window once UI is ready
-        self.after(250, self.deiconify)
+        self.after(250, lambda: [self.attributes('-alpha', 1.0), self.deiconify()])
 
     def _apply_app_icon(self):
         try:
