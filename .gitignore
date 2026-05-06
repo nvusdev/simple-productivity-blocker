@@ -35,3 +35,9 @@ scratch/
 test_*.py
 scratch_*.py
 
+# Platform Clutter & Legacy
+build.sh
+install.sh
+install.bat
+legacy/
+
