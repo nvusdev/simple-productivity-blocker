@@ -63,7 +63,7 @@ class InputListFrame(ctk.CTkFrame):
         self.add_btn.pack(side="left", padx=(10, 0))
         
         if info_tooltip:
-            self.info_desc = ctk.CTkLabel(self, text=info_tooltip, text_color="gray", font=ctk.CTkFont(size=11), justify="left")
+            self.info_desc = ctk.CTkLabel(self, text=info_tooltip, text_color="gray", font=ctk.CTkFont(size=11), justify="left", wraplength=550)
             self.info_desc.pack(fill="x", padx=20, pady=(8, 2))
         
         self.scroll_frame = ctk.CTkScrollableFrame(self, fg_color="transparent")
@@ -233,7 +233,7 @@ class ProductivityApp(ctk.CTk):
         if self._countdown_timer:
             self.after_cancel(self._countdown_timer)
         
-        self._countdown_val = 3
+        self._countdown_val = 3.0
         self._update_cooldown_ui()
         
         # Debounce for 3 seconds of inactivity
@@ -241,11 +241,11 @@ class ProductivityApp(ctk.CTk):
 
     def _update_cooldown_ui(self):
         if self._countdown_val > 0:
-            self.cooldown_label.configure(text=f"SYNCING IN {self._countdown_val}.0s...", text_color="#888888")
-            self._countdown_val -= 1
-            self._countdown_timer = self.after(1000, self._update_cooldown_ui)
+            self.cooldown_label.configure(text=f"SYNCING IN {self._countdown_val:.1f}s...", text_color="#888888")
+            self._countdown_val -= 0.1
+            self._countdown_timer = self.after(100, self._update_cooldown_ui)
         else:
-            self.cooldown_label.configure(text="SHIELD SYNCHRONIZED", text_color="#aaaaaa")
+            self.cooldown_label.configure(text="SHIELD SYNCHRONIZED", text_color="#4CAF50")
             self._countdown_timer = self.after(2000, lambda: self.cooldown_label.configure(text=""))
 
     def _finalize_save(self):
@@ -277,13 +277,12 @@ class ProductivityApp(ctk.CTk):
         self.status_lbl = ctk.CTkLabel(self.status_frame, text="Ready", text_color="gray", font=ctk.CTkFont(size=14))
         self.status_lbl.pack(side="left")
         
-        # Cooldown/Countdown Label in margin
+        # Cooldown/Countdown Label (Locked to right margin)
         self.cooldown_label = ctk.CTkLabel(self.status_frame, text="", font=ctk.CTkFont(family="Consolas", size=13, weight="bold"))
-        self.cooldown_label.pack(side="left", padx=20)
+        self.cooldown_label.pack(side="right", padx=20)
 
-        center_f = ctk.CTkFrame(self.status_frame, fg_color="transparent")
-        center_f.pack(side="left", fill="both", expand=True)
-        ctk.CTkButton(center_f, text="+ Create New Profile", font=ctk.CTkFont(weight="bold"), width=200, height=40, command=self.add_new_group).place(relx=0.5, rely=0.5, anchor="center")
+        # Create New Profile button - Locked to center of backdrop
+        ctk.CTkButton(self.status_frame, text="+ Create New Profile", font=ctk.CTkFont(weight="bold"), width=200, height=40, command=self.add_new_group).place(relx=0.5, rely=0.5, anchor="center")
 
     def create_group_card(self, name, data):
         card = ctk.CTkFrame(self.groups_scroll, fg_color="#2b2b2b", corner_radius=12)
