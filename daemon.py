@@ -164,18 +164,25 @@ class CustomListManager:
         return list(set(out))
 
 def is_day_active(schedule):
+    if not schedule.get("enabled", False): return True
     if schedule.get("always", False): return True
     day_name = datetime.now().strftime("%A")
+    days = schedule.get("days", [])
+    if isinstance(days, list) and day_name in days:
+        return True
     return schedule.get(day_name, False)
 
 def is_active(group):
     if not group.get("enabled", True): return False
     schedule = group.get("schedule", {})
+    if not schedule.get("enabled", False): return True
     if not is_day_active(schedule): return False
     
+    if schedule.get("persist_all_day", False): return True
+    
     now = datetime.now().time()
-    start_str = schedule.get("start", "00:00")
-    end_str = schedule.get("end", "23:59")
+    start_str = schedule.get("start_time", schedule.get("start", "00:00"))
+    end_str = schedule.get("end_time", schedule.get("end", "23:59"))
     try:
         start = datetime.strptime(start_str, "%H:%M").time()
         end = datetime.strptime(end_str, "%H:%M").time()
@@ -207,10 +214,8 @@ def _compute_targets(config, clm, cfg_path):
         ad_persist = ad.get("persist_all_day", False)
         day_on = is_day_active(gdata.get("schedule", {}))
         
-        # Adblocker is active if enabled AND (it's persist-all-day OR the current time is active)
-        ad_active = ad_on and (ad_persist if day_on else active)
-        if ad_on and ad_persist and day_on: ad_active = True # Ensure persistence wins
-        if ad_on and active: ad_active = True # Ensure schedule wins
+        # Adblocker is active if enabled AND (it's the active day AND (persist-all-day OR current time is active))
+        ad_active = ad_on and day_on and (ad_persist or active)
 
         if active or ad_active:
             all_exceptions.update({_base(e) for e in gdata.get("exceptions", []) if e.strip()})
