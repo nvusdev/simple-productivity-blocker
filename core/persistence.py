@@ -8,10 +8,47 @@ def set_startup(enabled: bool, name="SimpleProductivityBlocker"):
     else:
         return _set_startup_linux(enabled, name)
 
+def register_task(task_name, exe_path, args="", working_dir=None):
+    """Public helper to register a high-integrity task via PowerShell."""
+    if not working_dir:
+        working_dir = os.path.dirname(exe_path)
+    
+    # Normalize paths
+    exe_path = os.path.normpath(exe_path)
+    working_dir = os.path.normpath(working_dir)
+    
+    # Variable-based assignment with escaped single quotes is the ONLY way to reliably avoid quote hell
+    # We escape ' as '' for PowerShell's single-quoted strings
+    e_esc = exe_path.replace("'", "''")
+    a_esc = args.replace("'", "''")
+    w_esc = working_dir.replace("'", "''")
+    
+    arg_part = "-Argument $a" if args else ""
+    ps_cmd = (
+        f"$e = '{e_esc}'; "
+        f"$a = '{a_esc}'; "
+        f"$w = '{w_esc}'; "
+        f"$action = New-ScheduledTaskAction -Execute $e {arg_part} -WorkingDirectory $w; "
+        f"$trigger = New-ScheduledTaskTrigger -AtLogOn; "
+        f"$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit 0; "
+        f"Register-ScheduledTask -TaskName '{task_name}' -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force"
+    )
+
+    try:
+        # Pass as a single command string to powershell
+        subprocess.run(['powershell', '-Command', ps_cmd], check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        print(f"PowerShell Error: {e.stderr}")
+        raise RuntimeError(f"Failed to register task via PowerShell: {e.stderr}")
+
+    # Run now and verify
+    result = subprocess.run(['schtasks', '/run', '/tn', task_name], capture_output=True, creationflags=0x08000000)
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to start task {task_name}: {result.stderr.decode()}")
+
 def _set_startup_windows(enabled: bool, name: str):
     """
     Upgrades persistence to Scheduled Tasks (Highest Integrity).
-    Registry keys are insufficient for NTFS ACL management.
     """
     # 1. Clear legacy Registry Run keys (Cleanup)
     try:
@@ -27,25 +64,21 @@ def _set_startup_windows(enabled: bool, name: str):
     
     if getattr(sys, 'frozen', False):
         exe_dir = os.path.dirname(sys.executable)
-        daemon_path = os.path.join(exe_dir, "SPB_Daemon.exe")
-        if not os.path.exists(daemon_path):
-            daemon_path = sys.executable # Fallback
+        daemon_exe = os.path.join(exe_dir, "SPB_Daemon.exe")
+        if not os.path.exists(daemon_exe):
+            daemon_exe = sys.executable
+        args = ""
+        working_dir = exe_dir
     else:
         # Development mode
-        daemon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "daemon.py")
-        python_exe = sys.executable
-        daemon_path = f'"{python_exe}" "{daemon_path}"'
+        daemon_exe = sys.executable
+        daemon_script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "daemon.py")
+        args = f'"{daemon_script}"'
+        working_dir = os.path.dirname(daemon_script)
 
     try:
         if enabled:
-            # Create elevated task
-            subprocess.run([
-                'schtasks', '/create', '/tn', task_name,
-                '/tr', f'{daemon_path}',
-                '/sc', 'onlogon', '/rl', 'highest', '/f'
-            ], capture_output=True, creationflags=0x08000000)
-            # Run now
-            subprocess.run(['schtasks', '/run', '/tn', task_name], capture_output=True, creationflags=0x08000000)
+            register_task(task_name, daemon_exe, args, working_dir)
         else:
             # Remove task
             subprocess.run(['schtasks', '/delete', '/tn', task_name, '/f'], capture_output=True, creationflags=0x08000000)
