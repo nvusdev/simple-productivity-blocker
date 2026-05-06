@@ -61,9 +61,10 @@ python -m PyInstaller --noconfirm --onedir --windowed --uac-admin `
 
 # Build the daemon
 Write-Host "Building SPB_Daemon.exe..."
-python -m PyInstaller --noconfirm --onedir --windowed `
+python -m PyInstaller --noconfirm --onefile --windowed `
     --icon="$tempIco" `
     --collect-all pywin32 `
+    --collect-all dnslib `
     --hidden-import=pywintypes `
     --hidden-import=pythoncom `
     --hidden-import=win32com `
@@ -74,15 +75,31 @@ python -m PyInstaller --noconfirm --onedir --windowed `
 # Assemble the package
 Write-Host "Assembling package..."
 $pkgDir = "dist\SimpleProductivityBlocker"
-Copy-Item "dist\SPB_Daemon\SPB_Daemon.exe" -Destination "$pkgDir\"
+# Copy SPB_Daemon (onefile - just the exe)
+Copy-Item "dist\SPB_Daemon.exe" -Destination "$pkgDir\"
 
-# Build and copy installer/uninstaller
+# Build installer (Bundles the app as payload)
 Write-Host "Building spb_installer.exe..."
-python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempIco" --name "spb_installer" spb_installer.py
-Copy-Item "dist\spb_installer.exe" -Destination "$pkgDir\"
+python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
+    --collect-all pywin32 `
+    --add-data "dist/SimpleProductivityBlocker/*;." `
+    --hidden-import=pywintypes `
+    --hidden-import=pythoncom `
+    --hidden-import=win32com `
+    --name "spb_installer" spb_installer.py
 
+# Build uninstaller (Logic only, NO payload)
 Write-Host "Building spb_uninstaller.exe..."
-python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempIco" --name "spb_uninstaller" spb_uninstaller.py
+python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
+    --collect-all pywin32 `
+    --hidden-import=pywintypes `
+    --hidden-import=pythoncom `
+    --hidden-import=win32com `
+    --name "spb_uninstaller" spb_uninstaller.py
+
+# Final Assembly: Copy installer and uninstaller into the package directory
+Write-Host "Finalizing distribution package..."
+Copy-Item "dist\spb_installer.exe" -Destination "$pkgDir\"
 Copy-Item "dist\spb_uninstaller.exe" -Destination "$pkgDir\"
 
 # Explicitly bundle pywin32 system DLLs to ensure Folder Monitoring works
