@@ -34,6 +34,9 @@ recovery_history.json
 scratch/
 test_*.py
 scratch_*.py
+Stress_Test_*/
+QA_Sandbox/
+*.log
 
 # Platform Clutter & Legacy
 build.sh
