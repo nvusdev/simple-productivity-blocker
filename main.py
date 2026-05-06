@@ -624,11 +624,13 @@ class ProductivityApp(ctk.CTk):
 
     def _prompt_text_dialog(self, t, m, initial=""):
         d = ctk.CTkToplevel(self)
+        d.attributes("-alpha", 0.0) # Stealth initialization
         d.title(t)
         d.resizable(False, False)
         d.transient(self)
         d.grab_set()
         self._center_dialog(d, 450, 240)
+        d.attributes("-alpha", 1.0) # Reveal when centered
         ctk.CTkLabel(d, text=m, font=ctk.CTkFont(size=15)).pack(pady=(35, 12))
         e = ctk.CTkEntry(d, width=380, height=40)
         e.pack(padx=30)
@@ -646,11 +648,13 @@ class ProductivityApp(ctk.CTk):
 
     def _confirm_dialog(self, t, m):
         d = ctk.CTkToplevel(self)
+        d.attributes("-alpha", 0.0) # Stealth initialization
         d.title(t)
         d.resizable(False, False)
         d.transient(self)
         d.grab_set()
         self._center_dialog(d, 460, 220)
+        d.attributes("-alpha", 1.0) # Reveal when centered
         ctk.CTkLabel(d, text=m, font=ctk.CTkFont(size=15)).pack(pady=40)
         res = {"v": False}
         def yes():
@@ -665,11 +669,13 @@ class ProductivityApp(ctk.CTk):
 
     def _info_dialog(self, t, m):
         d = ctk.CTkToplevel(self)
+        d.attributes("-alpha", 0.0) # Stealth initialization
         d.title(t)
         d.resizable(False, False)
         d.transient(self)
         d.grab_set()
         self._center_dialog(d, 420, 180)
+        d.attributes("-alpha", 1.0) # Reveal when centered
         ctk.CTkLabel(d, text=m, font=ctk.CTkFont(size=15)).pack(pady=40)
         ctk.CTkButton(d, text="OK", width=120, height=38, command=d.destroy).pack()
         d.wait_window()
