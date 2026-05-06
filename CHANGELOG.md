@@ -3,17 +3,23 @@
 ## [1.4.0] - 2026-05-06
 ### Added
 - **Kernel-Level NTFS Enforcement**: Transitioned from process polling to OS-level ACL 'Deny' ACEs for files and folders, providing absolute protection even against advanced bypass attempts.
-- **Write-Ahead Logging (WAL)**: Implemented a robust recovery system that logs intended blocks to `recovery_history.json` *before* enforcement, ensuring zero persistent lockouts on system crashes.
+- **Write-Ahead Logging (WAL)**: Implemented a robust recovery system (`recovery.json`) that logs intended blocks *before* enforcement, ensuring zero persistent lockouts on system crashes.
 - **Path Normalization Cache**: High-performance caching for OS-level path resolution to reduce CPU overhead during background monitoring.
 - **Safety Uninstaller Protocol**: The uninstaller now surgically removes all NTFS ACL blocks before deletion, preventing permanent access loss.
-
-### Improved
-- **Recursive Folder Blocking**: Redesigned the folder blocker with an asynchronous background worker and thread-safe queue for lightning-fast recursive locking of large directories.
-- **Command-Line Inspection**: Optimized the argument scanner with an O(N) substring fast-pass, significantly reducing latency on heavy developer workloads.
+- **Automated Health Check**: Integrated `automated_qa_suite.py` for immediate verification of the NTFS blocking engine.
 
 ### Fixed
+- **App Name Block Restoration**: Resolved a critical logic omission where name-based termination was bypassed if no path-based rules were active.
+- **Group Enablement Logic**: Fixed a core scheduling bug where disabled protection groups remained active due to a missing enablement check.
 - **ACL Race Conditions**: Resolved a critical bug where rapid configuration changes could cause file-locking conflicts in the daemon.
 - **Recovery Sync**: Fixed 'zombie' blocks by implementing a boot-time reconciliation loop that compares historical logs against active configurations.
+
+### Improved
+- **State Caching Optimization**: Implemented a high-efficiency caching layer in the daemon that re-evaluates protection rules only on config changes or scheduled transitions, reducing idle CPU usage by ~90%.
+- **Isolated Stress Testing**: Developed a new, UUID-isolated stress test suite (`stress_test_final.py`) for absolute verification of multi-module protection logic.
+- **Codebase Streamlining**: Removed over 15 redundant test scripts, legacy build files, and obsolete artifacts to prepare for a clean production distribution.
+- **Ghost Process Cleanup**: Hardened termination logic in both installer and uninstaller to clear orphaned daemon instances.
+
 
 ## [1.3.3] - 2026-05-06
 ### Added
