@@ -25,11 +25,10 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
 def is_admin():
-    if os.name == 'nt':
-        try: return ctypes.windll.shell32.IsUserAnAdmin()
-        except: return False
-    else:
-        return os.geteuid() == 0
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except:
+        return False
 
 class InputListFrame(ctk.CTkFrame):
     def __init__(self, master, app, config_key, placeholder, validation_fn=None, info_tooltip=None, browse_mode=None, config_section=None, **kwargs):

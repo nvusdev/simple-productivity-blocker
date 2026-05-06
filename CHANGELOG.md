@@ -46,7 +46,6 @@
 
 ## [1.3.1] - 2026-05-05
 ### Added
-- **Linux Readiness**: Created `PlatformHandler` and `Makefile` to support the v1.3.1 Linux development roadmap.
 - **Enter-to-Save UX**: The "Rename Profile" dialog now supports the `Enter` key for faster submission.
 
 ### Fixed

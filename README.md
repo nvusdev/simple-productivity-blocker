@@ -33,21 +33,10 @@ Simple Productivity Blocker is a free, open-source application that helps you ma
 
 > **Administrator privileges are required.** The application modifies the system `hosts` file, redirects DNS to a local proxy, and manages processes, requiring elevated access on Windows.
 
-### Linux
-1. Download the latest release `.zip` from the [Releases](https://github.com/nvusdev/simple-productivity-blocker/releases) page.
-2. Extract the archive.
-3. Open a terminal in the extracted directory and run `sudo ./install.sh` (or manually configure the daemon to run as a systemd service).
-4. Launch the application from your desktop environment or terminal.
-
-> **Root privileges are required.** The application modifies `/etc/hosts` and terminates system processes, requiring root access on Linux.
-
 ## Uninstallation
 
 ### Windows
 Run `spb_uninstaller.exe` located in `C:\Program Files\Simple Productivity Blocker\`.
-
-### Linux
-Run `sudo /opt/SimpleProductivityBlocker/spb_uninstaller` (or the equivalent path depending on your installation method) to remove the application.
 
 The uninstaller will:
 * Terminate all background SPB processes
@@ -60,24 +49,10 @@ All blocks are fully lifted upon uninstallation.
 
 ## Running from Source (Developers)
 
-Requires Python 3.10 or newer.
+Requires Python 3.10 or newer. Run the application as Administrator:
 
-```bash
-git clone https://github.com/nvusdev/simple-productivity-blocker.git
-cd simple-productivity-blocker
-pip install -r requirements.txt
-```
-
-### Windows
-Run the application as Administrator:
 ```powershell
 python main.py
-```
-
-### Linux
-Run the application with sudo:
-```bash
-sudo python3 main.py
 ```
 
 ## Building Executables
@@ -86,12 +61,6 @@ sudo python3 main.py
 ```powershell
 # Run as Administrator
 .\build.ps1
-```
-
-### Linux
-```bash
-# Run with necessary permissions
-./build.sh
 ```
 
 Output is placed in `dist/SimpleProductivityBlocker/`. Zip that folder to distribute.
@@ -108,9 +77,9 @@ The daemon installs itself as a persistent background task (e.g., Windows Schedu
 ## Security Notes
 
 * **Encrypted Payloads:** Sensitive blocklist categories (Adult Content, Gambling, Piracy) are stored encrypted in the compiled binary. They cannot be read from plaintext source.
-* **Privilege Requirement:** The application requires Administrator/Root privileges to function. This is the only reliable way to modify the `hosts` file, bind to DNS port 53, and terminate system processes.
+* **Privilege Requirement:** The application requires Administrator privileges to function. This is the only reliable way to modify the `hosts` file, bind to DNS port 53, and enforce NTFS ACL blocks.
 * **Managed Environments:** Non-admin users on a machine cannot open the settings UI or change the configuration without the Administrator password, making this effective for parental controls and managed environments.
 
 ## Disclaimer
 
-This application modifies the system `hosts` file (`C:\Windows\System32\drivers\etc\hosts` or `/etc/hosts`) and redirects system DNS to a local proxy. A backup is automatically created at `hosts.backup` before any modifications. The uninstaller restores this backup and resets DNS to automatic. Use responsibly.
+This application modifies the system `hosts` file (`C:\Windows\System32\drivers\etc\hosts`) and redirects system DNS to a local proxy. A backup is automatically created at `hosts.backup` before any modifications. The uninstaller restores this backup and resets DNS to automatic. Use responsibly.
