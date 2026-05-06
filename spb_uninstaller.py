@@ -38,19 +38,34 @@ def is_admin():
         return False
 
 def kill_processes():
-    print("Terminating background processes...")
+    print("Terminating background processes and ghost instances...")
+    procs_to_kill = ["SimpleProductivityBlocker.exe", "SPB_Daemon.exe", "python.exe", "pythonw.exe"]
     try:
-        subprocess.run(["taskkill", "/F", "/IM", "SimpleProductivityBlocker.exe"], capture_output=True)
-        subprocess.run(["taskkill", "/F", "/IM", "SPB_Daemon.exe"], capture_output=True)
-
+        import psutil
+        for proc in psutil.process_iter(['name', 'cmdline']):
+            try:
+                name = proc.info['name']
+                cmd = proc.info['cmdline'] or []
+                if name in ["python.exe", "pythonw.exe"]:
+                    if any("SimpleProductivityBlocker" in s or "main.py" in s or "daemon.py" in s for s in cmd):
+                        proc.kill()
+                elif name in ["SimpleProductivityBlocker.exe", "SPB_Daemon.exe"]:
+                    proc.kill()
+            except:
+                continue
     except:
         pass
     time.sleep(2)
 
 def remove_scheduled_task():
-    print("Removing Scheduled Task...")
+    print("Removing Scheduled Tasks and Registry entries...")
     try:
         subprocess.run(['schtasks', '/delete', '/tn', 'SPB_Daemon', '/f'], capture_output=True)
+        # Clear legacy registry entry
+        import winreg
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+        winreg.DeleteValue(key, "SimpleProductivityBlocker")
     except:
         pass
 

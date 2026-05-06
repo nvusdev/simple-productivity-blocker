@@ -53,12 +53,35 @@ def main():
         import subprocess
         import time
 
-        print("\nStopping existing processes for update...")
-        # Try to stop them nicely first, then force
-        procs_to_kill = ["SPB_Daemon.exe", "SimpleProductivityBlocker.exe"]
-        for proc in procs_to_kill:
-            subprocess.run(["taskkill", "/F", "/IM", proc], capture_output=True)
+        print("\nStopping existing processes and legacy ghost instances...")
+        # Kill frozen binaries and any python/pythonw scripts running the app
+        procs_to_kill = ["SPB_Daemon.exe", "SimpleProductivityBlocker.exe", "python.exe", "pythonw.exe"]
+        import psutil
+        for proc in psutil.process_iter(['name', 'cmdline']):
+            try:
+                name = proc.info['name']
+                cmd = proc.info['cmdline'] or []
+                # Only kill python instances that are running our scripts
+                if name in ["python.exe", "pythonw.exe"]:
+                    if any("SimpleProductivityBlocker" in s or "main.py" in s or "daemon.py" in s for s in cmd):
+                        proc.kill()
+                elif name in ["SPB_Daemon.exe", "SimpleProductivityBlocker.exe"]:
+                    proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
         
+        # Explicitly clear old registry stubs to prevent 'ghost' startups
+        try:
+            import winreg
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+            winreg.DeleteValue(key, "SimpleProductivityBlocker")
+            print("Legacy startup registry cleared.")
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            print(f"Note: Could not clear old registry entry: {e}")
+
         # Short wait to ensure handles are released
         time.sleep(2)
 
