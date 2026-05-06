@@ -4,6 +4,42 @@ import shutil
 import ctypes
 import subprocess
 import time
+import uuid
+from ctypes import wintypes
+
+# --- Win32 API Helpers ---
+class GUID(ctypes.Structure):
+    _fields_ = [
+        ("Data1", wintypes.DWORD),
+        ("Data2", wintypes.WORD),
+        ("Data3", wintypes.WORD),
+        ("Data4", ctypes.c_byte * 8)
+    ]
+    def __init__(self, uuid_str):
+        u = uuid.UUID(uuid_str)
+        ctypes.Structure.__init__(self)
+        self.Data1 = u.time_low
+        self.Data2 = u.time_mid
+        self.Data3 = u.time_hi_version
+        for i in range(8):
+            self.Data4[i] = u.bytes[8 + i]
+
+def get_program_files_path():
+    try:
+        SHGetKnownFolderPath = ctypes.windll.shell32.SHGetKnownFolderPath
+        SHGetKnownFolderPath.argtypes = [ctypes.POINTER(GUID), wintypes.DWORD, wintypes.HANDLE, ctypes.POINTER(ctypes.c_wchar_p)]
+        SHGetKnownFolderPath.restype = wintypes.HRESULT
+        PROGRAM_FILES_GUID = "{905e63b6-c1bf-494e-b29c-65b732d3d21a}"
+        folder_id = GUID(PROGRAM_FILES_GUID)
+        path_ptr = ctypes.c_wchar_p()
+        result = SHGetKnownFolderPath(ctypes.byref(folder_id), 0, None, ctypes.byref(path_ptr))
+        if result == 0:
+            path = path_ptr.value
+            ctypes.windll.ole32.CoTaskMemFree(path_ptr)
+            return path
+    except Exception:
+        pass
+    return os.environ.get("ProgramFiles", "C:\\Program Files")
 
 SPB_BEGIN = "# SPB BEGIN"
 SPB_END = "# SPB END"
@@ -57,17 +93,31 @@ def kill_processes():
         pass
     time.sleep(2)
 
-def remove_scheduled_task():
+def cleanup_persistence():
     print("Removing Scheduled Tasks and Registry entries...")
     try:
+        # 1. Remove Task
         subprocess.run(['schtasks', '/delete', '/tn', 'SPB_Daemon', '/f'], capture_output=True)
-        # Clear legacy registry entry
+        
+        # 2. Clear registry for ALL user profiles
         import winreg
-        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
-        winreg.DeleteValue(key, "SimpleProductivityBlocker")
-    except:
-        pass
+        with winreg.ConnectRegistry(None, winreg.HKEY_USERS) as hkey_users:
+            idx = 0
+            while True:
+                try:
+                    sid = winreg.EnumKey(hkey_users, idx)
+                    if sid.startswith("S-1-5-21") and not sid.endswith("_Classes"):
+                        try:
+                            key_path = fr"{sid}\Software\Microsoft\Windows\CurrentVersion\Run"
+                            with winreg.OpenKey(winreg.HKEY_USERS, key_path, 0, winreg.KEY_SET_VALUE) as key:
+                                winreg.DeleteValue(key, "SimpleProductivityBlocker")
+                        except FileNotFoundError:
+                            pass
+                    idx += 1
+                except OSError:
+                    break
+    except Exception as e:
+        print(f"Note: Persistence cleanup encountered an issue: {e}")
 
 def restore_hosts():
     print("Restoring hosts file...")
@@ -96,7 +146,8 @@ def restore_hosts():
     subprocess.run(["ipconfig", "/flushdns"], capture_output=True)
 
 def remove_files():
-    dest_dir = os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Simple Productivity Blocker")
+    base_prog_files = get_program_files_path()
+    dest_dir = os.path.join(base_prog_files, "Simple Productivity Blocker")
     if os.path.exists(dest_dir):
         print(f"Removing installation directory: {dest_dir}")
         try:
@@ -122,7 +173,7 @@ def remove_files():
             pass
 
 def main():
-    print("Welcome to the Simple Productivity Blocker Uninstaller")
+    print("Simple Productivity Blocker v1.3.3 Uninstaller")
     print("-------------------------------------------------------")
     
     if not is_admin():
@@ -137,7 +188,7 @@ def main():
         sys.exit(0)
         
     kill_processes()
-    remove_scheduled_task()
+    cleanup_persistence()
     restore_hosts()
     remove_files()
     
