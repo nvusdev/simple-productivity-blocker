@@ -185,17 +185,22 @@ def cleanup_acls():
             with open(history_file, 'r') as f:
                 paths = json.load(f)
             
+            target = "*S-1-1-0" # Everyone
             for path in paths:
+                path = os.path.normpath(path)
                 if os.path.exists(path):
-                    # Remove the 'Everyone' Deny ACE
-                    subprocess.run(['icacls', path, '/remove:d', '*S-1-1-0', '/c', '/q'], 
-                                   capture_output=True, creationflags=0x08000000) # CREATE_NO_WINDOW
+                    # SLEDGEHAMMER RESTORE: Re-enable inheritance and remove our Deny rule
+                    args = ['icacls', path, '/inheritance:e', '/remove:d', target, '/c', '/q']
+                    if os.path.isdir(path):
+                        args.insert(2, '/t') # Add recursive for folders
+                        
+                    subprocess.run(args, capture_output=True, creationflags=0x08000000)
             print("Physical blocks released successfully.")
         except Exception as e:
             print(f"Warning: Could not clear all physical blocks: {e}")
 
 def main():
-    print("Simple Productivity Blocker v1.4.0 Uninstaller")
+    print("Simple Productivity Blocker v1.4.3 Uninstaller")
     print("-------------------------------------------------------")
     
     if not is_admin():
