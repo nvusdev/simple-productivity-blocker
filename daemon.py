@@ -5,8 +5,12 @@ import ctypes
 import zlib
 import base64
 import concurrent.futures
+import logging
+import json
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Ensure root directory is in path for imports
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(BASE_DIR)
 
 # Prevent crashing dependencies (redis/opentelemetry) from loading via portalocker/others
 sys.modules['redis'] = None
@@ -20,6 +24,30 @@ if os.name == 'nt':
     except ImportError:
         pass
 
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+# --- Logging & Data Setup ---
+LOG_DIR = os.path.join(os.getenv("PROGRAMDATA", r"C:\ProgramData"), "SimpleProductivityBlocker")
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE = os.path.join(LOG_DIR, "daemon.log")
+RECOVERY_FILE = os.path.join(LOG_DIR, "recovery_history.json")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("SPB_Daemon")
+
 from core.config_manager import load_config
 from core.scheduler import is_active, is_day_active
 from blockers.website_blocker import apply_blocks, remove_blocks
@@ -28,7 +56,8 @@ from blockers.dns_server import DNSProxyServer, detect_system_dns
 
 try:
     from blockers.file_blocker import FileBlocker
-except Exception:
+except Exception as e:
+    logger.debug(f"FileBlocker not available: {e}")
     FileBlocker = None
 
 import urllib.request
@@ -167,7 +196,7 @@ class CustomListManager:
             elif os.path.exists(list_path):
                 return self._parse_file(list_path)
         except Exception as e:
-            print(f"Custom list error ({list_path}): {e}")
+            logger.error(f"Custom list error ({list_path}): {e}")
         return []
 
     def _parse_file(self, path: str) -> list[str]:
@@ -201,61 +230,66 @@ def _is_excepted(domain: str, exc_set: set[str]) -> bool:
     b = _base(domain)
     return any(b == e or b.endswith("." + e) for e in exc_set)
 
-def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, set, set, bool]:
-    tier1: list[str] = []
-    tier2: list[str] = []
+def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, set, set, set, set, bool]:
+    tier1: list[str] = [] # Manual Website Blocks
+    tier2: list[str] = [] # Content Filter Blocks
     all_apps:  list[str] = []
     all_files: list[str] = []
     all_folders: list[str] = []
     all_exceptions: set[str] = set()
     schedule_anywhere = False
 
+    # The user requested hierarchy:
+    # 1. Cloud allowlist (handled in ProcessMonitor directly)
+    # 2. Scheduling / 'Enforce All Day' (handled here)
+    # 3. Blocked Websites (tier1)
+    # 4. Exempted Websites (all_exceptions)
+    # 5. Content Filter Category (tier2)
+
     for _, gdata in config.get("groups", {}).items():
         schedule = gdata.get("schedule", {})
         day_active = is_day_active(schedule)
         sched_active = is_active(gdata)
+        
+        # Determine if rules for this group are active
+        # Content filter can be "Enforce All Day" independently of the main group schedule
         ad = gdata.get("adblocker", {})
         ad_on = ad.get("enabled", False)
         ad_persist = ad.get("persist_all_day", False)
+        
+        rules_active = sched_active
+        content_active = ad_on and (ad_persist if day_active else sched_active)
 
-        if sched_active:
+        if rules_active:
             schedule_anywhere = True
             tier1.extend(gdata.get("websites", []))
             all_apps.extend(gdata.get("apps", []))
             all_files.extend(gdata.get("files", []))
             all_folders.extend(gdata.get("folders", []))
 
-        adblocker_active = ad_on and ((day_active if ad_persist else sched_active))
-        if adblocker_active:
+        if content_active:
             schedule_anywhere = True
+            # Exceptions are part of the Content Filter category layer
+            raw_exc = ad.get("exceptions", [])
+            exc_set = {_base(e) for e in raw_exc if e.strip()}
+            all_exceptions.update(exc_set)
+            
             keys = ["ads_trackers", "malware_annoyances", "adult_content", "social_media",
                     "gambling", "piracy_illegal", "entertainment", "shopping", "ai_tech", "gaming"]
-            group_content: list[str] = []
             for k in keys:
                 if ad.get(k):
-                    val = ADBLOCK_LISTS[k]
+                    val = ADBLOCK_LISTS.get(k, [])
+                    # We don't filter exceptions here anymore, the DNSProxy and DomainMatcher handle the tiered matching
                     if isinstance(val, list):
-                        group_content.extend([d for d in val if isinstance(d, str)])
+                        tier2.extend([d for d in val if isinstance(d, str)])
                     elif isinstance(val, str):
-                        group_content.append(val)
+                        tier2.append(val)
 
             custom_paths = ad.get("custom_lists", [])
             if custom_paths:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
                     for res in ex.map(clm.get_domains_from_list, set(custom_paths)):
-                        group_content.extend(res)
-
-            raw_exc = ad.get("exceptions", [])
-            exc_set = {_base(e) for e in raw_exc if e.strip()}
-            all_exceptions.update(exc_set)
-            if exc_set:
-                group_content = [d for d in group_content if not _is_excepted(d, exc_set)]
-            tier2.extend(group_content)
-
-    t1_bases = {_base(d) for d in tier1}
-    merged = list(tier1)
-    for d in tier2:
-        if _base(d) not in t1_bases: merged.append(d)
+                        tier2.extend(res)
 
     return set(tier1), set(tier2), set(all_apps), set(all_files), set(all_folders), all_exceptions, schedule_anywhere
 
@@ -286,7 +320,30 @@ def main() -> None:
     stable_mtime:   float = 0.0
     debounce:       int   = 0
 
-    POLL_INTERVALS = {"Passive": 5, "Balanced": 2, "Strict": 1}
+    logger.info("Productivity Daemon v1.4.0 started.")
+    POLL_INTERVALS = {"Passive": 5, "Balanced": 2, "Strict": 0.5}
+
+    def _get_history():
+        if os.path.exists(RECOVERY_FILE):
+            try:
+                with open(RECOVERY_FILE, "r") as f: return set(json.load(f))
+            except: pass
+        return set()
+
+    def _save_history(current_set):
+        try:
+            with open(RECOVERY_FILE, "w") as f: json.dump(list(current_set), f)
+        except: pass
+
+    # Startup Survival Recovery
+    history = _get_history()
+    if history:
+        logger.info(f"Running Survival Recovery for {len(history)} historical paths...")
+        # Temporarily set them as blocked then clear them to force ACL removal
+        pm.set_blocked_folders(list(history))
+        pm.set_blocked_files([])
+        pm.stop() # This triggers _clear_all_acls in the new ProcessMonitor
+        logger.info("Survival Recovery complete. System access restored.")
 
     def _notif(key, default=True):
         return cfg_cache.get("settings", {}).get("notifications", {}).get(key, default)
@@ -308,7 +365,7 @@ def main() -> None:
             if debounce == 3 and stable_mtime != mtime:
                 stable_mtime = mtime
                 cfg_cache = load_config()
-                if _notif("on_config_reload", False): print("Config reloaded.")
+                if _notif("on_config_reload", False): logger.info("Configuration reloaded due to file change.")
 
             want_manual, want_filters, want_apps, want_files, want_folders, want_exceptions, sched_anywhere = _compute_targets(cfg_cache, clm)
             want_domains = want_manual.union(want_filters)
@@ -323,10 +380,10 @@ def main() -> None:
                         dns_server.cur_exc = want_exceptions
                         if dns_server.start():
                             using_dns_proxy = True
-                            print("DNS Proxy Server active.")
+                            logger.info("DNS Proxy Server active on port 53.")
                         else:
                             using_dns_proxy = False
-                            print("Port 53 taken. Falling back to hosts-file.")
+                            logger.warning("Port 53 taken. Falling back to hosts-file redirection.")
                     
                     if using_dns_proxy:
                         # Update existing DNS server matcher
@@ -336,13 +393,14 @@ def main() -> None:
                         apply_blocks(list(want_domains), block_doh=sched_anywhere)
                     
                     if _notif("on_hosts_write", False):
-                        print(f"Blocking {len(want_domains)} domain(s) with {len(want_exceptions)} exceptions.")
+                        logger.info(f"Blocking {len(want_domains)} domain(s) with {len(want_exceptions)} exceptions.")
                 else:
                     if dns_server:
                         dns_server.stop()
                         dns_server = None
+                        logger.info("DNS Proxy Server stopped.")
                     remove_blocks()
-                    if _notif("on_hosts_write", False): print("All domains unblocked.")
+                    if _notif("on_hosts_write", False): logger.info("All domains unblocked.")
                 cur_domains = want_domains
 
             # --- App/File/Folder Blocking ---
@@ -352,10 +410,19 @@ def main() -> None:
                 cur_folders = want_folders
                 
                 settings = cfg_cache.get("settings", {})
+                perf_mode = settings.get("performance_mode", "Balanced")
+                pm.configure_performance(perf_mode)
+                
                 pm.set_allowlisted_processes(settings.get("cloud_allowlist", []), enabled=settings.get("cloud_allowlist_enabled", True))
                 pm.set_allowlisted_keywords(settings.get("cloud_path_keywords", []))
                 
                 if cur_apps or cur_files or cur_folders:
+                    # Update history (Write-Ahead Logging for recovery)
+                    new_history = history.union(cur_folders).union(cur_files)
+                    if new_history != history:
+                        history = new_history
+                        _save_history(history)
+                        
                     pm.set_blocked_apps(list(cur_apps))
                     pm.set_blocked_files(list(cur_files))
                     pm.set_blocked_folders(list(cur_folders))
@@ -369,7 +436,13 @@ def main() -> None:
         if dns_server: dns_server.stop()
         remove_blocks()
         pm.stop()
-        print("Daemon stopped.")
+        logger.info("Daemon stopped by user.")
+    except Exception as e:
+        logger.critical(f"FATAL DAEMON CRASH: {e}", exc_info=True)
+        if dns_server: dns_server.stop()
+        remove_blocks()
+        pm.stop()
+        sys.exit(1)
 
 if __name__ == "__main__":
     if not is_admin():
