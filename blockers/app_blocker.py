@@ -40,7 +40,6 @@ class ProcessMonitor:
         self._current_acl_paths = set()
         self._acl_sync_lock = threading.RLock()
         self._acl_queue = queue.Queue()
-        self._stop_event = threading.Event()
         self._username = getpass.getuser() if os.name == 'nt' else None
         self._path_cache = {}
         self.logger = logging.getLogger("SPB_AppBlocker")
@@ -83,7 +82,6 @@ class ProcessMonitor:
         try:
             norm = os.path.normcase(os.path.abspath(path))
             self._path_cache[path] = norm
-            # Limit cache size
             if len(self._path_cache) > 2000:
                 self._path_cache.clear()
             return norm
@@ -116,17 +114,6 @@ class ProcessMonitor:
                 candidates.append(part)
         return candidates
 
-    def _arg_mentions_filename(self, arg_lower, name):
-        if arg_lower == name:
-            return True
-        if arg_lower.endswith(os.path.sep + name):
-            return True
-        if os.path.altsep and arg_lower.endswith(os.path.altsep + name):
-            return True
-        if "=" in arg_lower and arg_lower.endswith(name):
-            return True
-        return False
-
     def _is_in_blocked_folder(self, path_norm):
         for root, prefix in zip(self.blocked_folder_roots, self.blocked_folder_prefixes):
             if path_norm == root or path_norm.startswith(prefix):
@@ -139,8 +126,7 @@ class ProcessMonitor:
         self.blocked_app_paths.clear()
         for app in apps:
             app = app.strip()
-            if not app:
-                continue
+            if not app: continue
             app_lower = app.lower()
             base = os.path.basename(app_lower)
             if base:
@@ -149,25 +135,28 @@ class ProcessMonitor:
                 if stem and stem != base:
                     self.blocked_app_names.add(stem)
             if self._looks_like_path(app):
-                self.blocked_app_paths.add(self._normalize_path(app))
+                path_norm = os.path.normpath(app)
+                self.blocked_app_paths.add(path_norm.lower())
+                if self.is_active:
+                    self._set_acl_lock(path_norm, True)
         
         if self.is_active:
             self._apply_disallow_run()
 
     def set_blocked_files(self, files):
         self._fast_until = time.time() + 10
-        self.blocked_file_paths.clear()
+        new_paths = {self._normalize_path(f) for f in files if f.strip()}
+        removed_paths = self.blocked_file_paths - new_paths
+        for path in removed_paths:
+            self._set_acl_lock(path, False)
+            
+        self.blocked_file_paths = new_paths
         self.blocked_file_names.clear()
-        for file_path in files:
-            file_path = file_path.strip()
-            if not file_path:
-                continue
-            norm = self._normalize_path(file_path)
-            self.blocked_file_paths.add(norm)
-            base = os.path.basename(norm)
+        for path in self.blocked_file_paths:
+            base = os.path.basename(path)
             if base:
                 self.blocked_file_names.add(base.lower())
-        
+            
         if self.is_active:
             self._apply_file_locks()
             for path in self.blocked_file_paths:
@@ -175,22 +164,23 @@ class ProcessMonitor:
 
     def set_blocked_folders(self, folders):
         self._fast_until = time.time() + 10
-        self.blocked_folder_roots = []
-        self.blocked_folder_prefixes = []
-        for folder in folders:
-            folder = folder.strip()
-            if not folder:
-                continue
-            root = self._normalize_path(folder)
-            prefix = root if root.endswith(os.path.sep) else root + os.path.sep
-            self.blocked_folder_roots.append(root)
-            self.blocked_folder_prefixes.append(prefix)
-            if self.is_active:
+        new_roots = {self._normalize_path(f) for f in folders if f.strip()}
+        old_roots = set(self.blocked_folder_roots)
+        removed = old_roots - new_roots
+        for path in removed:
+            self._set_acl_lock(path, False)
+            
+        self.blocked_folder_roots = list(new_roots)
+        self.blocked_folder_prefixes = [
+            (r if r.endswith(os.path.sep) else r + os.path.sep) for r in self.blocked_folder_roots
+        ]
+        
+        if self.is_active:
+            for root in self.blocked_folder_roots:
                 self._set_acl_lock(root, True)
 
     def start(self):
-        if self.is_active:
-            return
+        if self.is_active: return
         self.is_active = True
         self._stop_event.clear()
         self._apply_disallow_run()
@@ -208,103 +198,101 @@ class ProcessMonitor:
             self._watcher_thread.join(timeout=2)
 
     def _process_acl_queue(self):
-        """Background worker to process slow recursive ACL operations."""
         while not self._stop_event.is_set():
             try:
                 task = self._acl_queue.get(timeout=1)
                 path, lock = task
                 self._apply_acl_internal(path, lock)
                 self._acl_queue.task_done()
-            except queue.Empty:
-                continue
+            except queue.Empty: continue
             except Exception as e:
                 self.logger.error(f"Background ACL worker error: {e}")
                 time.sleep(1)
 
+    def _is_critical_path(self, path):
+        path = path.lower()
+        system_root = os.environ.get("SystemRoot", "C:\\Windows").lower()
+        program_data = os.environ.get("ProgramData", "C:\\ProgramData").lower()
+        user_profile = os.environ.get("USERPROFILE", "").lower()
+        
+        critical_zones = [
+            system_root,
+            os.path.join(system_root, "system32"),
+            program_data,
+            os.path.join(user_profile, "appdata")
+        ]
+        
+        for zone in critical_zones:
+            if path == zone or path.startswith(zone + os.sep):
+                return True
+        return False
+
     def _apply_acl_internal(self, path, lock=True):
-        """Executes the actual icacls command securely."""
         if os.name != 'nt': return
-        
-        # Use *S-1-1-0 (Everyone) for physical blocking
-        target = "*S-1-1-0"
+        if lock and self._is_critical_path(path):
+            self.logger.error(f"CRITICAL PATH VIOLATION: Refusing to lock system-critical path: {path}")
+            return False
+        target = "*S-1-1-0" # Everyone
         is_dir = os.path.isdir(path)
-        
         try:
             if lock:
-                if is_dir:
-                    # Recursive deny: /deny *S-1-1-0:(OI)(CI)(F) /t /c /q
-                    args = ["icacls", path, "/deny", f"{target}:(OI)(CI)(F)", "/t", "/c", "/q"]
-                else:
-                    # Single file deny: /deny *S-1-1-0:(F) /c /q
-                    args = ["icacls", path, "/deny", f"{target}:(F)", "/c", "/q"]
-                
-                res = subprocess.run(args, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
-                if res.returncode == 0:
-                    with self._acl_sync_lock:
-                        self._current_acl_paths.add(path)
+                perm_flags = "(OI)(CI)(F)" if is_dir else "(F)"
+                args = [
+                    "icacls", path, "/inheritance:r", 
+                    "/grant:r", f"System:{perm_flags}", 
+                    "/grant:r", f"Administrators:{perm_flags}",
+                    "/deny", f"{target}:{perm_flags}", "/c", "/q"
+                ]
             else:
-                if is_dir:
-                    # Remove recursive deny
-                    args = ["icacls", path, "/remove:d", target, "/t", "/c", "/q"]
-                else:
-                    args = ["icacls", path, "/remove:d", target, "/c", "/q"]
-                
-                subprocess.run(args, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
-                with self._acl_sync_lock:
-                    if path in self._current_acl_paths:
-                        self._current_acl_paths.remove(path)
-        except Exception:
-            pass
+                args = ["icacls", path, "/inheritance:e", "/remove:d", target, "/c", "/q"]
+            
+            res = subprocess.run(args, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            if res.returncode != 0:
+                self.logger.error(f"ACL Failure for {path}: {res.stderr.strip()}")
+            else:
+                self.logger.info(f"ACL {'Locked' if lock else 'Restored'} for {path}")
+
+            with self._acl_sync_lock:
+                if lock: self._current_acl_paths.add(path)
+                elif path in self._current_acl_paths: self._current_acl_paths.remove(path)
+        except Exception as e:
+            self.logger.error(f"ACL Exception for {path}: {e}")
 
     def _set_acl_lock(self, path, lock=True):
         if os.name != 'nt' or not self._username: return
         path = self._normalize_path(path)
-        
         if os.path.isdir(path):
-            # Slow operation: queue for background worker
             self._acl_queue.put((path, lock))
         else:
-            # Critical file: block synchronously to prevent race condition
             self._apply_acl_internal(path, lock)
 
     def _clear_all_acls(self):
         with self._acl_sync_lock:
             paths = list(self._current_acl_paths)
-        
         for path in paths:
-            # Clearing should be synchronous on shutdown to ensure cleanup
             self._apply_acl_internal(path, False)
         self._current_acl_paths.clear()
 
     def _apply_disallow_run(self):
         if os.name != 'nt': return
         try:
-            # 1. Enable DisallowRun policy
             policy_key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer")
             winreg.SetValueEx(policy_key, "DisallowRun", 0, winreg.REG_DWORD, 1)
-            
-            # 2. Fill the DisallowRun list
             list_key = winreg.CreateKey(policy_key, "DisallowRun")
-            # Clear existing
             try:
-                i = 0
                 while True:
                     name, _, _ = winreg.EnumValue(list_key, 0)
                     winreg.DeleteValue(list_key, name)
-            except OSError:
-                pass
+            except OSError: pass
             
-            # Add new (only .exe names)
             idx = 1
             for app in self.blocked_app_names:
                 if app.endswith(".exe"):
                     winreg.SetValueEx(list_key, str(idx), 0, winreg.REG_SZ, app)
                     idx += 1
-            
             winreg.CloseKey(list_key)
             winreg.CloseKey(policy_key)
-        except Exception as e:
-            print(f"Failed to apply DisallowRun: {e}")
+        except Exception: pass
 
     def _clear_disallow_run(self):
         if os.name != 'nt': return
@@ -312,23 +300,7 @@ class ProcessMonitor:
             policy_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer", 0, winreg.KEY_SET_VALUE)
             winreg.SetValueEx(policy_key, "DisallowRun", 0, winreg.REG_DWORD, 0)
             winreg.CloseKey(policy_key)
-        except Exception:
-            pass
-
-    def _apply_file_lock(self, file_path):
-        if not HAS_PORTALOCKER:
-            return
-        try:
-            # We open the file in read-mode with an exclusive lock (LockFlags.EXCLUSIVE | LockFlags.NON_BLOCKING)
-            # This prevents other processes from opening the file.
-            f = open(file_path, 'r')
-            portalocker.lock(f, portalocker.LockFlags.EXCLUSIVE | portalocker.LockFlags.NON_BLOCKING)
-            self.locked_file_handles[file_path] = f
-        except (portalocker.exceptions.LockException, IOError):
-            # File already in use or access denied, which is fine (it's effectively blocked)
-            pass
-        except Exception:
-            pass
+        except Exception: pass
 
     def _apply_file_locks(self):
         self._clear_file_locks()
@@ -337,11 +309,9 @@ class ProcessMonitor:
             try:
                 if os.path.exists(path):
                     f = open(path, "rb")
-                    # Lock the first byte exclusively (non-blocking)
                     msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
                     self._locked_files.append(f)
-            except Exception:
-                continue
+            except Exception: continue
 
     def _clear_file_locks(self):
         for f in self._locked_files:
@@ -350,9 +320,66 @@ class ProcessMonitor:
                     f.seek(0)
                     msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
                 f.close()
-            except Exception:
-                pass
+            except Exception: pass
         self._locked_files = []
+
+    def _check_shell_windows(self, shell):
+        try:
+            targets = []
+            for window in shell.Windows():
+                try:
+                    url = getattr(window, "LocationURL", "")
+                    if url.startswith("file:///"):
+                        path = urllib.parse.unquote(url[8:]).replace('/', '\\')
+                        path_norm = self._normalize_path(path)
+                        if self._is_in_blocked_folder(path_norm):
+                            targets.append(window)
+                except Exception: continue
+            for window in targets:
+                try: window.Quit()
+                except Exception:
+                    try: window.Navigate("C:\\")
+                    except Exception: pass
+        except Exception: pass
+
+    def _should_terminate_proc(self, proc, now, last_handle_check):
+        try:
+            info = proc.info
+            name_lower = (info.get('name') or "").lower()
+            exe = info.get('exe')
+            cmdline = info.get('cmdline')
+            
+            if self._allowlist_enabled:
+                if name_lower in self._allowlisted_processes: return False
+                if self._allowlisted_keywords:
+                    search = (exe or "").lower() + " " + " ".join(str(a).lower() for a in (cmdline or []))
+                    if any(kw in search for kw in self._allowlisted_keywords): return False
+
+            if exe:
+                exe_norm = self._normalize_path(exe)
+                if exe_norm in self.blocked_app_paths or self._is_in_blocked_folder(exe_norm): return True
+
+            try:
+                cwd = proc.cwd()
+                if cwd and self._is_in_blocked_folder(self._normalize_path(cwd)): return True
+            except: pass
+
+            if cmdline:
+                cmdline_str = " ".join(str(a).lower() for a in cmdline)
+                for bp in self.blocked_file_paths:
+                    if bp.lower() in cmdline_str:
+                        for arg in cmdline:
+                            if bp.lower() in str(arg).lower(): return True
+
+            if self.blocked_file_paths and (now - last_handle_check) >= 3.0:
+                if name_lower not in ("svchost.exe", "system", "idle", "searchindexer.exe"):
+                    try:
+                        for f in proc.open_files():
+                            f_norm = self._normalize_path(f.path)
+                            if f_norm in self.blocked_file_paths or self._is_in_blocked_folder(f_norm): return True
+                    except: pass
+            return False
+        except: return False
 
     def _watch_processes(self):
         shell = None
@@ -360,110 +387,23 @@ class ProcessMonitor:
             try:
                 pythoncom.CoInitialize()
                 shell = win32com.client.Dispatch("Shell.Application")
-            except:
-                pass
+            except: pass
             
+        last_handle_check = 0.0
         while not self._stop_event.is_set():
             now = time.time()
             if self.blocked_folder_roots and shell and (now - self._last_shell_check) >= self._shell_interval:
                 self._last_shell_check = now
-                try:
-                    targets = []
-                    for window in shell.Windows():
-                        try:
-                            url = getattr(window, "LocationURL", "")
-                            if url.startswith("file:///"):
-                                path = urllib.parse.unquote(url[8:]).replace('/', '\\')
-                                path_norm = self._normalize_path(path)
-                                if self._is_in_blocked_folder(path_norm):
-                                    targets.append(window)
-                        except Exception:
-                            continue
-                    
-                    for window in targets:
-                        try:
-                            window.Quit()
-                        except Exception:
-                            try:
-                                window.Navigate("C:\\")
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
+                self._check_shell_windows(shell)
 
-            # Polling loop remains for non-DisallowRun blocks (paths, cmdline args, folders)
             if self.blocked_app_paths or self.blocked_file_paths or self.blocked_folder_roots:
-                for proc in psutil.process_iter(['name', 'pid', 'exe', 'cmdline']):
-                    try:
-                        name = proc.info.get('name')
-                        exe = proc.info.get('exe')
-                        cmdline = proc.info.get('cmdline')
-                        name_lower = (name or "").lower()
-                        
-                        is_allowlisted = False
-                        if self._allowlist_enabled:
-                            if name_lower in self._allowlisted_processes:
-                                is_allowlisted = True
-                            if not is_allowlisted and self._allowlisted_keywords:
-                                search_text = ""
-                                if exe: search_text += exe.lower() + " "
-                                if cmdline: search_text += " ".join(str(a).lower() for a in cmdline)
-                                if any(kw in search_text for kw in self._allowlisted_keywords):
-                                    is_allowlisted = True
-                        
-                        if is_allowlisted:
-                            continue
-                            
-                        should_kill = False
-                        if exe:
-                            exe_norm = self._normalize_path(exe)
-                            if exe_norm in self.blocked_app_paths:
-                                should_kill = True
-                            elif self._is_in_blocked_folder(exe_norm):
-                                should_kill = True
-                        
-                        if not should_kill:
-                            try:
-                                cwd = proc.cwd()
-                                if cwd:
-                                    cwd_norm = self._normalize_path(cwd)
-                                    if self._is_in_blocked_folder(cwd_norm):
-                                        should_kill = True
-                            except Exception:
-                                pass
+                for proc in psutil.process_iter(['name', 'exe', 'cmdline']):
+                    if self._should_terminate_proc(proc, now, last_handle_check):
+                        try: proc.kill()
+                        except: pass
+                
+                if (now - last_handle_check) >= 3.0:
+                    last_handle_check = now
 
-                        if not should_kill and cmdline:
-                            # Optimization: single-pass check for fragments before expensive normalization
-                            cmdline_str = " ".join(str(a).lower() for a in cmdline)
-                            
-                            # Check if ANY blocked path fragment is in the cmdline
-                            has_candidate = False
-                            for bp in self.blocked_file_paths:
-                                if bp.lower() in cmdline_str:
-                                    has_candidate = True; break
-                            if not has_candidate:
-                                for br in self.blocked_folder_roots:
-                                    if br.lower() in cmdline_str:
-                                        has_candidate = True; break
-                            
-                            if has_candidate:
-                                for arg in cmdline:
-                                    arg_str = str(arg).strip("\"'")
-                                    if not arg_str: continue
-                                    for candidate in self._extract_path_candidates(arg_str):
-                                        arg_norm = self._normalize_path(candidate)
-                                        if arg_norm in self.blocked_file_paths or self._is_in_blocked_folder(arg_norm):
-                                            should_kill = True
-                                            break
-                                    if should_kill: break
-
-                        if should_kill:
-                            try:
-                                proc.kill()
-                            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                pass
-                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                        pass
-
-            interval = self._fast_interval if time.time() < self._fast_until else self._base_interval
+            interval = self._fast_interval if now < self._fast_until else self._base_interval
             time.sleep(interval)
