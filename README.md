@@ -8,21 +8,22 @@ It combines advanced website filtering, application termination, and strict file
 
 ## Why use SPB?
 
-* **System-Level Enforcement:** Instead of just asking you to stop scrolling, SPB uses native Windows security features to lock down files and folders. During a focus session, the operating system itself denies access to your distractions.
+* **System-Level Enforcement:** Instead of just asking you to stop scrolling, SPB uses a "Triple-Lock" suite (Registry + File Handles + NTFS ACLs) to lock down files and folders. During a focus session, the operating system itself denies access to your distractions at the kernel level.
 * **Smart DNS Interception:** SPB catches website requests before they leave your computer. You can block specific sites, use wildcards to block entire networks, or apply our curated filters for categories like Social Media, Gaming, and Adult Content.
 * **Schedule Your Focus:** Create different profiles for different needs. Set SPB to lock down your gaming folders during work hours or block entertainment websites all day.
-* **Crash-Proof Recovery:** SPB logs every permission change it makes to a recovery file. If your computer loses power or crashes during a focus session, the background service will automatically audit and restore your normal access on the next boot.
-* **Lightweight:** The background service uses intelligent caching and only evaluates your rules when necessary. This keeps CPU usage near zero so your machine stays fast.
+* **Crash-Proof Recovery:** SPB logs every permission change to a recovery history. If your computer loses power or crashes, the background service performs a surgical "Safe-Boot" sweep on the next startup to reconcile and restore your normal access.
+* **Battery-Aware Performance:** The background service uses intelligent caching and performance profiles (Passive, Balanced, Strict) to minimize CPU wake-ups. On battery mode, the system dynamically adjusts its scanning frequency to save power.
 
 ## The Enforcement Engine (Under the Hood)
 
 SPB is built to eliminate the "willpower gap" by removing any easy bypasses. Here is how it secures your focus behind the scenes:
 
-* **Registry-Level App Blocking:** SPB does not just look for running apps and close them. It utilizes native Windows `DisallowRun` policies to register blocked applications directly with the OS, preventing Windows from even attempting to launch them.
+* **The Triple-Lock Suite:** SPB does not just look for running apps and close them. It registers blocked applications with the Windows `DisallowRun` policy, applies exclusive `msvcrt` file handle locks, and modifies NTFS ACLs (`icacls`) to ensure that blocked exes cannot be launched, renamed, or read.
 * **Deep Process Scanning:** You cannot bypass a block by simply renaming an executable or moving it to a new folder. SPB scans the full file path, the current working directory, and the command-line arguments of every launched process.
 * **Active Window Interception:** If a user tries to circumvent file blocks by manually navigating through Windows File Explorer, SPB detects and instantly terminates any Explorer windows attempting to view restricted directories.
 * **Dual-Layer Network Traps:** SPB intercepts network requests using a local DNS proxy, but it also automatically manages your system `hosts` file as a fallback layer. If a request somehow bypasses the proxy, the hosts file catches the traffic and drops it.
-* **Encrypted Vulnerability Lists:** For sensitive categories like Adult Content or Gambling, the blocklists are not stored in plain text. They are encrypted directly into the application, preventing users from opening configuration files and deleting domains during a moment of weakness.
+* **SSRF & Path Hardening:** For custom blocklists, SPB resolves remote hostnames to IPs and blocks any access to private or reserved network ranges (SSRF protection). Local lists are restricted to the application configuration directory to prevent unauthorized system file access.
+* **Encrypted Vulnerability Lists:** For sensitive categories like Adult Content or Gambling, the blocklists are XOR-encrypted directly into the application, preventing users from opening configuration files and deleting domains during a moment of weakness.
 
 ## Core Capabilities
 
