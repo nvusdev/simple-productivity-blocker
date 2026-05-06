@@ -8,6 +8,9 @@ def is_day_active(schedule):
     return current_day in schedule.get("days", [])
 
 def is_active(config):
+    if not config.get("enabled", True):
+        return False
+        
     schedule = config.get("schedule", {})
     if not schedule.get("enabled", False):
         return True # If schedule is not enabled, blocks are always active
