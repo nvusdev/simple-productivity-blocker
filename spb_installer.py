@@ -8,6 +8,11 @@ import psutil
 import winreg
 import uuid
 from ctypes import wintypes
+try:
+    import win32com.client
+    import pythoncom
+except ImportError:
+    pass
 
 # --- Win32 API Helpers ---
 class GUID(ctypes.Structure):
@@ -26,27 +31,34 @@ class GUID(ctypes.Structure):
         for i in range(8):
             self.Data4[i] = u.bytes[8 + i]
 
-def get_program_files_path():
-    """Securely resolve Program Files path bypassing environment variables."""
+def get_known_folder_path(folder_guid_str):
+    """Securely resolve Windows Known Folders (Desktop, Program Files, etc)."""
     try:
         SHGetKnownFolderPath = ctypes.windll.shell32.SHGetKnownFolderPath
-        SHGetKnownFolderPath.argtypes = [ctypes.POINTER(GUID), wintypes.DWORD, wintypes.HANDLE, ctypes.POINTER(ctypes.c_wchar_p)]
+        SHGetKnownFolderPath.argtypes = [ctypes.POINTER(GUID), wintypes.DWORD, wintypes.HANDLE, ctypes.POINTER(ctypes.c_void_p)]
         SHGetKnownFolderPath.restype = wintypes.HRESULT
         
-        # FOLDERID_ProgramFiles
-        PROGRAM_FILES_GUID = "{905e63b6-c1bf-494e-b29c-65b732d3d21a}"
-        folder_id = GUID(PROGRAM_FILES_GUID)
-        path_ptr = ctypes.c_wchar_p()
+        folder_id = GUID(folder_guid_str)
+        path_ptr = ctypes.c_void_p()
         
         result = SHGetKnownFolderPath(ctypes.byref(folder_id), 0, None, ctypes.byref(path_ptr))
         if result == 0:
-            path = path_ptr.value
+            path = ctypes.cast(path_ptr, ctypes.c_wchar_p).value
             ctypes.windll.ole32.CoTaskMemFree(path_ptr)
             return path
     except Exception:
         pass
-    # Fallback if API fails
-    return os.environ.get("ProgramFiles", "C:\\Program Files")
+    return None
+
+def get_program_files_path():
+    # FOLDERID_ProgramFiles: {905e63b6-c1bf-494e-b29c-65b732d3d21a}
+    path = get_known_folder_path("{905e63b6-c1bf-494e-b29c-65b732d3d21a}")
+    return path or os.environ.get("ProgramFiles", "C:\\Program Files")
+
+def get_desktop_path():
+    # FOLDERID_Desktop: {B4BFCC3A-DB2C-424C-B029-7FE99A87C641}
+    path = get_known_folder_path("{B4BFCC3A-DB2C-424C-B029-7FE99A87C641}")
+    return path or os.path.join(os.environ["USERPROFILE"], "Desktop")
 
 def is_admin():
     try:
@@ -57,14 +69,16 @@ def is_admin():
 def terminate_ghost_instances():
     """Surgically terminate any instances of the app or daemon."""
     print("\nStopping existing processes and legacy ghost instances...")
-    for proc in psutil.process_iter(['name', 'cmdline']):
+    for proc in psutil.process_iter(['name']):
         try:
             name = proc.info['name']
-            cmd = proc.info['cmdline'] or []
             if name in ["python.exe", "pythonw.exe"]:
+                cmd = proc.cmdline()
                 if any("SimpleProductivityBlocker" in s or "main.py" in s or "daemon.py" in s for s in cmd):
+                    print(f"Terminating {name} (PID: {proc.pid})...")
                     proc.kill()
             elif name in ["SPB_Daemon.exe", "SimpleProductivityBlocker.exe"]:
+                print(f"Terminating {name} (PID: {proc.pid})...")
                 proc.kill()
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
@@ -98,20 +112,49 @@ def install_files(dest_dir):
     print(f"\nInstalling to: {dest_dir}")
     os.makedirs(dest_dir, exist_ok=True)
     
-    src_dir = os.path.dirname(os.path.abspath(__file__))
+    # If compiled, we should source from the extracted _MEIPASS directory (onefile) 
+    # or the executable directory (onedir).
+    if getattr(sys, 'frozen', False):
+        src_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+    else:
+        src_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Special check: if we are in '_internal', go up one level
+    if os.path.basename(src_dir) == "_internal":
+        src_dir = os.path.dirname(src_dir)
+        
+    print(f"Sourcing files from: {src_dir}")
+    
     for item in os.listdir(src_dir):
         s = os.path.join(src_dir, item)
         d = os.path.join(dest_dir, item)
-        if os.path.isfile(s) and item != "spb_installer.py":
+        
+        # Skip the installer itself, build artifacts, and _internal (we'll handle _internal surgically)
+        if item.lower() in ["spb_installer.exe", "spb_installer.py", "spb_uninstaller.exe", "spb_uninstaller.py", "_internal"]:
+            continue
+            
+        if os.path.isfile(s):
             shutil.copy2(s, d)
         elif os.path.isdir(s) and item not in ["build", "dist", "__pycache__", ".git"]:
             if os.path.exists(d):
-                shutil.rmtree(d)
+                try:
+                    shutil.rmtree(d)
+                except Exception:
+                    pass
             shutil.copytree(s, d)
+    
+    # Surgical deployment of _internal folders from binaries
+    # In --onedir builds, _internal is shared or adjacent.
+    internal_src = os.path.join(src_dir, "_internal")
+    if os.path.isdir(internal_src):
+        internal_dest = os.path.join(dest_dir, "_internal")
+        if not os.path.exists(internal_dest):
+            print("Deploying system assets...")
+            shutil.copytree(internal_src, internal_dest)
 
 def register_daemon_task(daemon_path):
     """Registers the background daemon as a high-integrity scheduled task."""
-    print("\nRegistering Antigravity Daemon...")
+    print("\nRegistering Productivity Daemon...")
     # Using 'highest' is necessary to allow the daemon to manage DNS and system processes
     subprocess.run([
         'schtasks', '/create', '/tn', 'SPB_Daemon', 
@@ -121,19 +164,42 @@ def register_daemon_task(daemon_path):
     subprocess.run(['schtasks', '/run', '/tn', 'SPB_Daemon'], capture_output=True)
 
 def create_shortcut(target, shortcut_path, icon=None):
-    """Creates a Windows shortcut (.lnk) using COM via PowerShell."""
+    """Creates a Windows shortcut (.lnk) using native COM via win32com."""
     try:
-        icon_arg = f"-IconLocation '{icon}'" if icon else ""
-        ps_command = (
-            f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{shortcut_path}');"
-            f"$s.TargetPath='{target}';"
-            f"{icon_arg};"
-            f"$s.Save()"
-        )
-        subprocess.run(["powershell", "-Command", ps_command], capture_output=True, check=True)
+        pythoncom.CoInitialize() # Initialize COM for the thread
+        shell = win32com.client.Dispatch("WScript.Shell")
+        shortcut = shell.CreateShortcut(shortcut_path)
+        shortcut.TargetPath = target
+        shortcut.WorkingDirectory = os.path.dirname(target)
+        if icon:
+            shortcut.IconLocation = icon
+        shortcut.Save()
+        
+        # Explicit cleanup to prevent "Win32 exception occurred releasing IUnknown"
+        shortcut = None
+        shell = None
         return True
-    except Exception:
-        return False
+    except Exception as e:
+        print(f"Warning: Native shortcut creation failed ({e}). Falling back to PowerShell...")
+        # Fallback to PowerShell if win32com fails or isn't available
+        try:
+            icon_cmd = f"$s.IconLocation=\\\"{icon}\\\";" if icon else ""
+            ps_command = (
+                f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut(\\\"{shortcut_path}\\\");"
+                f"$s.TargetPath=\\\"{target}\\\";"
+                f"$s.WorkingDirectory=\\\"{os.path.dirname(target)}\\\";"
+                f"{icon_cmd}"
+                f"$s.Save()"
+            )
+            subprocess.run(["powershell", "-Command", ps_command], capture_output=True, check=True)
+            return True
+        except Exception:
+            return False
+    finally:
+        try:
+            pythoncom.CoUninitialize()
+        except:
+            pass
 
 def main():
     print("Simple Productivity Blocker v1.3.3 Installer")
@@ -154,22 +220,31 @@ def main():
         
         # 2. Deploy Binaries
         install_files(dest_dir)
+        
+        # 3. Harden permissions: Only System/Admins can write
+        print("Hardening directory permissions...")
+        subprocess.run(['icacls', dest_dir, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)(F)', '/grant:r', '*S-1-5-32-544:(OI)(CI)(F)', '/grant:r', '*S-1-5-32-545:(OI)(CI)(RX)'], capture_output=True)
 
         # 3. Register Background Task
         daemon_path = os.path.join(dest_dir, "SPB_Daemon.exe")
-        register_daemon_task(daemon_path)
+        if os.path.exists(daemon_path):
+            register_daemon_task(daemon_path)
+        else:
+            print(f"Warning: Daemon binary not found at {daemon_path}. Protection engine may not start automatically.")
 
         # 4. Create Desktop Shortcut
-        desktop = os.path.join(os.environ["USERPROFILE"], "Desktop")
+        desktop = get_desktop_path()
         app_path = os.path.join(dest_dir, "SimpleProductivityBlocker.exe")
         shortcut_path = os.path.join(desktop, "Simple Productivity Blocker.lnk")
         icon_loc = f"{app_path},0"
         
         if create_shortcut(app_path, shortcut_path, icon=icon_loc):
             print("Desktop shortcut created successfully!")
+        else:
+            print("Warning: Could not create desktop shortcut automatically.")
 
         print("\nInstallation Complete!")
-        print("v1.3.3 Antigravity Protocol is now active.")
+        print("v1.3.3 Enhanced Engine is now active.")
         time.sleep(2)
 
     except Exception as e:
