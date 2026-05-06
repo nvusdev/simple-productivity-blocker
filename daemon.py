@@ -264,8 +264,11 @@ def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, se
             schedule_anywhere = True
             tier1.extend(gdata.get("websites", []))
             all_apps.extend(gdata.get("apps", []))
-            all_files.extend(gdata.get("files", []))
-            all_folders.extend(gdata.get("folders", []))
+            # Normalize file/folder paths to Windows backslashes
+            for f in gdata.get("files", []):
+                all_files.append(os.path.normpath(f))
+            for f in gdata.get("folders", []):
+                all_folders.append(os.path.normpath(f))
 
         if content_active:
             schedule_anywhere = True
@@ -322,12 +325,22 @@ def main() -> None:
 
     logger.info("Productivity Daemon v1.4.0 started.")
     POLL_INTERVALS = {"Passive": 5, "Balanced": 2, "Strict": 0.5}
+    
+    # Initial load: Don't wait for debounce on first start
+    cfg_cache = load_config()
+    stable_mtime = os.path.getmtime(cfg_path) if os.path.exists(cfg_path) else 0.0
+    pending_mtime = stable_mtime
+    logger.info(f"Initial configuration loaded. Active profiles: {list(cfg_cache.get('groups', {}).keys())}")
 
     def _get_history():
         if os.path.exists(RECOVERY_FILE):
             try:
-                with open(RECOVERY_FILE, "r") as f: return set(json.load(f))
-            except: pass
+                with open(RECOVERY_FILE, "r") as f: 
+                    data = json.load(f)
+                    logger.info(f"Recovery file found with {len(data)} entries.")
+                    return set(data)
+            except Exception as e: 
+                logger.error(f"Failed to read recovery file: {e}")
         return set()
 
     def _save_history(current_set):
@@ -335,21 +348,36 @@ def main() -> None:
             with open(RECOVERY_FILE, "w") as f: json.dump(list(current_set), f)
         except: pass
 
-    # Startup Survival Recovery
+    def _boot_sweep_task(pm_instance, lock_history):
+        if not lock_history:
+            logger.info("No historical locks found. Clean startup.")
+            return
+            
+        logger.info(f"Failsafe Boot Sweep: Re-verifying {len(lock_history)} kernel-level locks in background...")
+        for path in lock_history:
+            path = os.path.normpath(path)
+            if os.path.exists(path):
+                pm_instance._apply_acl_internal(path, True)
+            else:
+                logger.warning(f"Historical path no longer exists: {path}")
+        logger.info("Boot Sweep complete. Active protection engaged.")
+
+    # Startup Survival Recovery (Safe Boot Sweep)
     history = _get_history()
-    if history:
-        logger.info(f"Running Survival Recovery for {len(history)} historical paths...")
-        # Temporarily set them as blocked then clear them to force ACL removal
-        pm.set_blocked_folders(list(history))
-        pm.set_blocked_files([])
-        pm.stop() # This triggers _clear_all_acls in the new ProcessMonitor
-        logger.info("Survival Recovery complete. System access restored.")
+    threading.Thread(target=_boot_sweep_task, args=(pm, history), daemon=True).start()
 
     def _notif(key, default=True):
         return cfg_cache.get("settings", {}).get("notifications", {}).get(key, default)
 
+    last_admin_check = 0.0
     try:
         while True:
+            # Heartbeat check for elevation status
+            now = time.time()
+            if (now - last_admin_check) >= 60.0:
+                is_admin_active = is_admin()
+                logger.info(f"Daemon Heartbeat: [Admin={is_admin_active}] [Active={pm.is_active}]")
+                last_admin_check = now
             poll_sleep = POLL_INTERVALS.get(cfg_cache.get("settings", {}).get("performance_mode", "Balanced"), 2)
             try:
                 mtime = os.path.getmtime(cfg_path) if os.path.exists(cfg_path) else 0.0
@@ -359,16 +387,20 @@ def main() -> None:
             if mtime != pending_mtime:
                 pending_mtime = mtime
                 debounce = 0
-            elif debounce < 3:
+            elif debounce < 2: # Reduce debounce to 2 cycles (approx 1-4 seconds)
                 debounce += 1
 
-            if debounce == 3 and stable_mtime != mtime:
+            if debounce == 2 and stable_mtime != mtime:
                 stable_mtime = mtime
                 cfg_cache = load_config()
-                if _notif("on_config_reload", False): logger.info("Configuration reloaded due to file change.")
+                logger.info("Configuration reloaded due to file change.")
 
             want_manual, want_filters, want_apps, want_files, want_folders, want_exceptions, sched_anywhere = _compute_targets(cfg_cache, clm)
             want_domains = want_manual.union(want_filters)
+            
+            # Heartbeat every 30 iterations
+            if int(time.time()) % 60 == 0:
+                logger.debug("Daemon heartbeat: Monitoring active.")
 
             # --- DNS/Web Blocking ---
             if want_domains != cur_domains or want_exceptions != getattr(dns_server, "cur_exc", None):
