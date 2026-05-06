@@ -1,11 +1,23 @@
 # Simple Productivity Blocker - Version History
 
 ## [1.4.1] - 2026-05-06
-### fixed
-- **Allowlist unlock logic**: fixed a critical bug where allowlisted processes were not explicitly unlocked, potentially causing access issues for critical apps.
-- **termination sequence**: resolved an `AttributeError` in the `ProcessMonitor.stop()` sequence caused by a typo in the lock-clearing method.
-- **daemon persistence**: integrated global exception handling to ensure the `SPB` daemon main loop persists through unexpected runtime errors.
-- **stress test reliability**: updated the verification suite to handle `PermissionError` as a success state during `NTFS` `ACL` validation.
+### Added
+- **Triple-Lock Enforcement Suite**: Unified Registry (`DisallowRun`), exclusive File Handles (`msvcrt`), and NTFS ACLs (`icacls`) into a single atomic protection layer for both Apps and Files.
+- **SSRF & DNS Rebinding Protection**: Implemented IP-based validation for all remote list downloads, resolving hostnames to IPs and blocking access to private/reserved ranges (IPv4/IPv6).
+- **Safe-Boot Recovery Engine**: Refactored the startup reconciliation into a surgical, additive operation that restores historical locks without overwriting the active configuration.
+- **Safe Elevation Protocol**: Updated the self-elevation launcher to use industry-standard argument quoting (`subprocess.list2cmdline`), ensuring the app starts correctly in paths containing spaces (e.g., "Program Files").
+- **Resource Protection Gates**: Implemented a 10MB safety limit on remote list downloads and symlink-trap detection for all cache files.
+
+### Fixed
+- **Thread Leak Prevention**: Fixed the `ProcessMonitor` lifecycle to ensure old background workers are joined and terminated before new ones are spawned during configuration reloads.
+- **Unique Category Payload**: Resolved a domain duplication bug by deploying unique, category-specific XOR-encrypted payloads for Social Media, Gaming, and Entertainment.
+- **Fresh Install Scheduling**: Fixed a regression where new installations failed to match day schedules due to configuration format mismatches.
+- **Content Filter Logic**: "Enforce All Day" now correctly respects the group's day schedule while bypassing the time window.
+- **Allowlist Unlock Logic**: Fixed a bug where allowlisted processes were not explicitly unlocked, potentially causing access issues for critical apps.
+
+### Improved
+- **Battery-Aware Performance Profiles**: Synchronized daemon polling intervals with user performance modes (Passive: 5s, Balanced: 2s, Strict: 0.5s) and optimized handle-scanning intervals to 10 seconds for reduced CPU load on mobile devices.
+- **Non-Blocking Architecture**: Refactored the daemon main loop with a `targets_dirty` flag and background fetching, eliminating UI and heartbeat stuttering during list updates.
 
 
 ## [1.4.0] - 2026-05-06
