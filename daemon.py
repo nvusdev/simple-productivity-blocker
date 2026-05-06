@@ -7,6 +7,8 @@ import base64
 import concurrent.futures
 import logging
 import json
+import psutil
+import threading
 
 # Ensure root directory is in path for imports
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,6 +25,11 @@ if os.name == 'nt':
         import pythoncom
     except ImportError:
         pass
+    base_data = os.path.join(os.getenv("PROGRAMDATA", r"C:\ProgramData"), "SimpleProductivityBlocker")
+else:
+    base_data = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "SimpleProductivityBlocker")
+
+RECOVERY_FILE = os.path.join(base_data, "recovery.json")
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -33,20 +40,39 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 # --- Logging & Data Setup ---
-LOG_DIR = os.path.join(os.getenv("PROGRAMDATA", r"C:\ProgramData"), "SimpleProductivityBlocker")
-os.makedirs(LOG_DIR, exist_ok=True)
-LOG_FILE = os.path.join(LOG_DIR, "daemon.log")
-RECOVERY_FILE = os.path.join(LOG_DIR, "recovery_history.json")
+LOG_DIR = os.path.normpath(os.path.join(os.getenv("PROGRAMDATA", r"C:\ProgramData"), "SimpleProductivityBlocker"))
+try:
+    os.makedirs(LOG_DIR, exist_ok=True)
+except Exception:
+    LOG_DIR = os.path.join(os.getenv("TEMP", r"C:\Windows\Temp"), "SPB_Daemon")
+    os.makedirs(LOG_DIR, exist_ok=True)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger("SPB_Daemon")
+LOG_FILE = os.path.normpath(os.path.join(LOG_DIR, "daemon.log"))
+
+def setup_logger():
+    global LOG_FILE
+    try:
+        # Try to rotate or clear the log if it's too big, or just check write access
+        if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > 5 * 1024 * 1024:
+            os.remove(LOG_FILE)
+        
+        handler = logging.FileHandler(LOG_FILE)
+    except PermissionError:
+        # Fallback to a unique log if primary is locked
+        LOG_FILE = os.path.normpath(os.path.join(LOG_DIR, f"daemon_{int(time.time())}.log"))
+        handler = logging.FileHandler(LOG_FILE)
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        handlers=[
+            handler,
+            logging.StreamHandler()
+        ]
+    )
+    return logging.getLogger("SPB_Daemon")
+
+logger = setup_logger()
 
 from core.config_manager import load_config
 from core.scheduler import is_active, is_day_active
@@ -264,11 +290,11 @@ def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, se
             schedule_anywhere = True
             tier1.extend(gdata.get("websites", []))
             all_apps.extend(gdata.get("apps", []))
-            # Normalize file/folder paths to Windows backslashes
+            # Normalize file/folder paths to absolute Windows backslashes
             for f in gdata.get("files", []):
-                all_files.append(os.path.normpath(f))
+                all_files.append(os.path.normpath(os.path.abspath(f)))
             for f in gdata.get("folders", []):
-                all_folders.append(os.path.normpath(f))
+                all_folders.append(os.path.normpath(os.path.abspath(f)))
 
         if content_active:
             schedule_anywhere = True
@@ -302,7 +328,28 @@ def is_admin() -> bool:
         except Exception: return False
     return os.geteuid() == 0
 
+def kill_other_instances():
+    """Ensures only one instance of the daemon is running by checking name and cmdline."""
+    current_pid = os.getpid()
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            if proc.info['pid'] == current_pid:
+                continue
+                
+            name = proc.info['name']
+            cmdline = proc.info.get('cmdline') or []
+            cmdline_str = " ".join(cmdline).lower()
+            
+            # Case 1: Compiled binary
+            if name == "SPB_Daemon.exe":
+                proc.kill()
+            # Case 2: Development script
+            elif "python" in name.lower() and "daemon.py" in cmdline_str:
+                proc.kill()
+        except: pass
+
 def main() -> None:
+    kill_other_instances()
     if os.name == "nt":
         cfg_path = os.path.join(os.getenv("PROGRAMDATA", r"C:\ProgramData"), "SimpleProductivityBlocker", "config.json")
     else:
@@ -370,20 +417,30 @@ def main() -> None:
         return cfg_cache.get("settings", {}).get("notifications", {}).get(key, default)
 
     last_admin_check = 0.0
+    last_minute = -1
+    last_compute_time = 0.0
+    
+    # Target state cache
+    cached_targets = None
+    
     try:
         while True:
             # Heartbeat check for elevation status
             now = time.time()
+            current_minute = time.localtime(now).tm_min
+            
             if (now - last_admin_check) >= 60.0:
                 is_admin_active = is_admin()
                 logger.info(f"Daemon Heartbeat: [Admin={is_admin_active}] [Active={pm.is_active}]")
                 last_admin_check = now
+            
             poll_sleep = POLL_INTERVALS.get(cfg_cache.get("settings", {}).get("performance_mode", "Balanced"), 2)
             try:
                 mtime = os.path.getmtime(cfg_path) if os.path.exists(cfg_path) else 0.0
             except Exception:
                 mtime = 0.0
 
+            config_changed = False
             if mtime != pending_mtime:
                 pending_mtime = mtime
                 debounce = 0
@@ -394,13 +451,24 @@ def main() -> None:
                 stable_mtime = mtime
                 cfg_cache = load_config()
                 logger.info("Configuration reloaded due to file change.")
+                config_changed = True
 
-            want_manual, want_filters, want_apps, want_files, want_folders, want_exceptions, sched_anywhere = _compute_targets(cfg_cache, clm)
+            # Re-compute targets only if:
+            # 1. Config was reloaded (config_changed)
+            # 2. System minute changed (for scheduling transitions)
+            # 3. Cache is empty (initial start)
+            if config_changed or current_minute != last_minute or cached_targets is None:
+                last_minute = current_minute
+                cached_targets = _compute_targets(cfg_cache, clm)
+                # logger.debug("Protection targets re-computed.")
+
+            want_manual, want_filters, want_apps, want_files, want_folders, want_exceptions, sched_anywhere = cached_targets
             want_domains = want_manual.union(want_filters)
             
-            # Heartbeat every 30 iterations
-            if int(time.time()) % 60 == 0:
-                logger.debug("Daemon heartbeat: Monitoring active.")
+            # Diagnostic Heartbeat
+            if int(now) % 60 == 0 and int(now) != int(last_compute_time):
+                last_compute_time = int(now)
+                # logger.debug("Daemon heartbeat: Monitoring active.")
 
             # --- DNS/Web Blocking ---
             if want_domains != cur_domains or want_exceptions != getattr(dns_server, "cur_exc", None):
@@ -436,7 +504,7 @@ def main() -> None:
                 cur_domains = want_domains
 
             # --- App/File/Folder Blocking ---
-            if want_apps != cur_apps or want_files != cur_files or want_folders != cur_folders or debounce == 3:
+            if config_changed or want_apps != cur_apps or want_files != cur_files or want_folders != cur_folders or debounce == 3:
                 cur_apps = want_apps
                 cur_files = want_files
                 cur_folders = want_folders
@@ -449,8 +517,11 @@ def main() -> None:
                 pm.set_allowlisted_keywords(settings.get("cloud_path_keywords", []))
                 
                 if cur_apps or cur_files or cur_folders:
+                    
                     # Update history (Write-Ahead Logging for recovery)
-                    new_history = history.union(cur_folders).union(cur_files)
+                    # Include anything that looks like a path from apps too
+                    app_paths = {a for a in cur_apps if os.path.sep in a or (os.name == 'nt' and '/' in a)}
+                    new_history = history.union(cur_folders).union(cur_files).union(app_paths)
                     if new_history != history:
                         history = new_history
                         _save_history(history)
