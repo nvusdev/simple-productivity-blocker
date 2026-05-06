@@ -19,30 +19,38 @@ class DomainMatcher:
             p = "*" + p
             
         if p.startswith("~"):
-            # Keyword / Prefix / Suffix logic
+            # Keyword logic
             body = p[1:]
             if body.startswith("*") and body.endswith("*"):
                 # Keyword: ~*word*
                 regex = re.escape(body[1:-1])
             elif body.startswith("*"):
-                # Suffix: ~*alicious -> [^.]*alicious
-                regex = r"[^.]*" + re.escape(body[1:]) + r"$"
+                # Suffix: ~*alicious -> .*[.]?alicious$
+                regex = r".*" + re.escape(body[1:]) + r"$"
             elif body.endswith("*"):
-                # Prefix: ~crypto* -> crypto[^.]*
-                regex = r"^" + re.escape(body[:-1]) + r"[^.]*"
+                # Prefix: ~crypto* -> ^crypto.*
+                regex = r"^" + re.escape(body[:-1]) + r".*"
             else:
-                # Keyword (phrase anywhere): ~amazon -> .*amazon.*
+                # Phrase anywhere: ~amazon -> .*amazon.*
                 regex = r".*" + re.escape(body) + r".*"
-            return re.compile(regex)
+            return re.compile(regex, re.IGNORECASE)
         elif "*" in p:
-            # Wildcard: *.site.com -> ^(.*\.)?site\.com$
-            base = p.replace("*.", "").replace("*", "")
-            regex = r"^(.*\.)?" + re.escape(base) + r"$"
-            return re.compile(regex)
+            if p.startswith("*."):
+                # Wildcard: *.site.com -> ^(.*\.)?site\.com$
+                base = p[2:]
+                safe_base = re.escape(base)
+                return re.compile(f"^(.*\\.)?{safe_base}$", re.IGNORECASE)
+            else:
+                # Generic Wildcard: crypto* -> ^crypto.*
+                parts = p.split("*")
+                regex_parts = [re.escape(part) for part in parts]
+                regex = ".*".join(regex_parts)
+                return re.compile(f"^{regex}$", re.IGNORECASE)
         else:
-            # Explicit: site.com -> ^(.*\.)?site\.com$ (includes subdomains for safety)
-            regex = r"^(.*\.)?" + re.escape(p) + r"\.?$"
-            return re.compile(regex)
+            # Explicit: site.com -> match base and all subdomains
+            # ^(.*\.)?site\.com$
+            safe = re.escape(p)
+            return re.compile(f"^(.*\\.)?{safe}$", re.IGNORECASE)
 
     def matches(self, domain):
         if not domain: return False
