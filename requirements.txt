@@ -1,5 +1,6 @@
 customtkinter>=5.2.0
 psutil>=5.9.0
+Pillow>=10.0.0
 pywin32>=306 ; sys_platform == 'win32'
 dnslib>=0.9.23
 watchdog>=3.0.0

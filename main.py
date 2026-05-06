@@ -12,7 +12,7 @@ import copy
 from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, get_config_dir, export_config, import_config
 from core.persistence import set_startup, is_startup_enabled
 
-VERSION = "1.3.2"
+VERSION = "1.3.3"
 
 def resource_path(relative_path):
     try:
@@ -43,7 +43,7 @@ class InputListFrame(ctk.CTkFrame):
         if not self.group_name and hasattr(master, "master"):
              self.group_name = getattr(master.master, "group_name", None)
         
-        group_data = self.app.config_data["groups"][self.group_name]
+        group_data = self.app.config_data.get("groups", {}).get(self.group_name, {})
         if self.config_section:
             section = group_data.get(self.config_section, {})
             self.items = section.get(config_key, [])
