@@ -3,9 +3,18 @@ import datetime
 def is_day_active(schedule):
     if not schedule.get("enabled", False):
         return True
+    if schedule.get("always", False):
+        return True
     now = datetime.datetime.now()
     current_day = now.strftime("%A")
-    return current_day in schedule.get("days", [])
+    
+    # Handle list format (used by GUI)
+    days = schedule.get("days", [])
+    if isinstance(days, list) and current_day in days:
+        return True
+        
+    # Handle boolean keys format (fallback)
+    return schedule.get(current_day, False)
 
 def is_active(config):
     if not config.get("enabled", True):
