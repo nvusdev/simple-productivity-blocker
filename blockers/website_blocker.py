@@ -20,7 +20,9 @@ DOH_PROVIDERS = [
     "dns.quad9.net", "9.9.9.9",
     "doh.opendns.com", "doh.adguard.com",
     "doh.cleanbrowsing.org", "doh.mullvad.net",
-    "dns.nextdns.io", "dns.controld.com"
+    "dns.nextdns.io", "dns.controld.com",
+    "family-filter.cleanbrowsing.org", "dns.google.com",
+    "mozilla.cloudflare-dns.com", "firefox.dns.google"
 ]
 
 def flush_dns():
