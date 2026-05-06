@@ -1,4 +1,4 @@
-# Simple Productivity Blocker Makefile (v1.3.3 Antigravity)
+# Simple Productivity Blocker Makefile (v1.4.0)
 
 PYTHON = python3
 PIP = $(PYTHON) -m pip

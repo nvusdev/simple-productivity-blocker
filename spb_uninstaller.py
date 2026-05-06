@@ -27,14 +27,15 @@ class GUID(ctypes.Structure):
 def get_program_files_path():
     try:
         SHGetKnownFolderPath = ctypes.windll.shell32.SHGetKnownFolderPath
-        SHGetKnownFolderPath.argtypes = [ctypes.POINTER(GUID), wintypes.DWORD, wintypes.HANDLE, ctypes.POINTER(ctypes.c_wchar_p)]
+        # Update argtypes to accept void_p pointer
+        SHGetKnownFolderPath.argtypes = [ctypes.POINTER(GUID), wintypes.DWORD, wintypes.HANDLE, ctypes.POINTER(ctypes.c_void_p)]
         SHGetKnownFolderPath.restype = wintypes.HRESULT
         PROGRAM_FILES_GUID = "{905e63b6-c1bf-494e-b29c-65b732d3d21a}"
         folder_id = GUID(PROGRAM_FILES_GUID)
-        path_ptr = ctypes.c_wchar_p()
+        path_ptr = ctypes.c_void_p()
         result = SHGetKnownFolderPath(ctypes.byref(folder_id), 0, None, ctypes.byref(path_ptr))
         if result == 0:
-            path = path_ptr.value
+            path = ctypes.cast(path_ptr, ctypes.c_wchar_p).value
             ctypes.windll.ole32.CoTaskMemFree(path_ptr)
             return path
     except Exception:
@@ -172,8 +173,29 @@ def remove_files():
         except:
             pass
 
+def cleanup_acls():
+    """Removes all NTFS ACL blocks before uninstallation to prevent permanent lockouts."""
+    print("Releasing all physical file/folder blocks...")
+    config_dir = os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
+    history_file = os.path.join(config_dir, "recovery_history.json")
+    
+    if os.path.exists(history_file):
+        try:
+            import json
+            with open(history_file, 'r') as f:
+                paths = json.load(f)
+            
+            for path in paths:
+                if os.path.exists(path):
+                    # Remove the 'Everyone' Deny ACE
+                    subprocess.run(['icacls', path, '/remove:d', '*S-1-1-0', '/c', '/q'], 
+                                   capture_output=True, creationflags=0x08000000) # CREATE_NO_WINDOW
+            print("Physical blocks released successfully.")
+        except Exception as e:
+            print(f"Warning: Could not clear all physical blocks: {e}")
+
 def main():
-    print("Simple Productivity Blocker v1.3.3 Uninstaller")
+    print("Simple Productivity Blocker v1.4.0 Uninstaller")
     print("-------------------------------------------------------")
     
     if not is_admin():
@@ -190,6 +212,7 @@ def main():
     kill_processes()
     cleanup_persistence()
     restore_hosts()
+    cleanup_acls() # Essential before deleting history and files
     remove_files()
     
     print("\nUninstallation Complete.")

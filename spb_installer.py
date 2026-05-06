@@ -202,7 +202,7 @@ def create_shortcut(target, shortcut_path, icon=None):
             pass
 
 def main():
-    print("Simple Productivity Blocker v1.3.3 Installer")
+    print("Simple Productivity Blocker v1.4.0 Installer")
     print("---------------------------------------------")
     
     if not is_admin():
@@ -244,7 +244,7 @@ def main():
             print("Warning: Could not create desktop shortcut automatically.")
 
         print("\nInstallation Complete!")
-        print("v1.3.3 Enhanced Engine is now active.")
+        print("v1.4.0 Hardened Engine is now active.")
         time.sleep(2)
 
     except Exception as e:
