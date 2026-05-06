@@ -1,60 +1,64 @@
-# Simple Productivity Blocker v1.4.0
+# Simple Productivity Blocker (SPB)
 
-A high-performance, kernel-enforced productivity suite for Windows designed to eliminate digital distractions through unbypassable filesystem locks, advanced DNS filtering, and hierarchical scheduling.
+A system-level focus and time management suite for Windows.
 
-Simple Productivity Blocker (SPB) is a professional-grade tool for focus and time management. Unlike standard extensions or application-level blockers, SPB operates at the system level using native Windows security descriptors and a decoupled background engine. It provides absolute protection against distraction by combining NTFS-level access denial with a robust, schedule-aware enforcement daemon.
+Simple Productivity Blocker is designed for people who need absolute focus. Browser extensions are too easy to turn off. Basic app blockers can be bypassed or closed. SPB operates directly at the Windows operating system level to ensure that when you decide to lock in and work, your computer enforces that decision. 
 
-## 🛡️ The Nuclear Protection Engine
+It combines advanced website filtering, application termination, and strict file access controls into one clean interface.
 
-At the core of v1.4.0 is the **Nuclear Protection Engine**, a shift from passive process monitoring to active kernel-level enforcement:
+## Why use SPB?
 
-*   **NTFS ACL Hardening**: SPB utilizes native Windows Access Control Lists (ACLs) to apply 'Deny' ACEs (Access Control Entries) to blocked files and folders. This makes blocks invisible to standard user-mode bypasses and resistant to process-suspension tricks.
-*   **Write-Ahead Logging (WAL)**: Every protection state is logged to a recovery engine before enforcement. This ensures that even in the event of a system crash or power loss, the blocker can reconcile and restore the system to a safe, unlocked state upon reboot.
-*   **Boot-Sweep Reconciliation**: The background daemon performs a full audit of the system security descriptors at every boot, ensuring that no "zombie" blocks persist and that the system state matches your active configuration.
+* **System-Level Enforcement:** Instead of just asking you to stop scrolling, SPB uses native Windows security features to lock down files and folders. During a focus session, the operating system itself denies access to your distractions.
+* **Smart DNS Interception:** SPB catches website requests before they leave your computer. You can block specific sites, use wildcards to block entire networks, or apply our curated filters for categories like Social Media, Gaming, and Adult Content.
+* **Schedule Your Focus:** Create different profiles for different needs. Set SPB to lock down your gaming folders during work hours or block entertainment websites all day.
+* **Crash-Proof Recovery:** SPB logs every permission change it makes to a recovery file. If your computer loses power or crashes during a focus session, the background service will automatically audit and *restore your normal access on the next boot.*
+* **Lightweight:** The background service uses intelligent caching and only evaluates your rules when necessary. This keeps CPU usage near zero so your machine stays fast.
 
-## 🚀 Key Features
+## Core Capabilities
 
-*   **Advanced DNS Interception**: Intercepts domain requests on Port 53 with a built-in micro-DNS proxy. Supports wildcards (`*.distraction.com`) and advanced pattern matching (prefixes, suffixes, and keywords).
-*   **Absolute App Blocking**: Instantly terminates any process matching a blocked binary name or path, normalized for the Windows environment.
-*   **Recursive Folder Shield**: Block entire directories. SPB intercepts File Explorer navigation and prevents any application—from IDEs to games—from accessing or executing files within the protected path.
-*   **Curated Content Filters**: One-click protection across 10 categories, including Social Media, Adult Content, Gambling, Entertainment, and Gaming. Sensitive categories are XOR-encrypted within the binary to prevent tampering.
-*   **State-Caching Optimization**: The engine utilizes an intelligent caching layer that re-evaluates rules only on configuration changes or scheduled minute transitions, reducing idle CPU overhead by over 90%.
-*   **Custom Performance Tiers**:
-    *   **Passive**: 5.0s polling for minimal system impact.
-    *   **Balanced**: 2.0s polling for standard daily use.
-    *   **Strict**: 0.5s polling for high-stakes focus sessions.
-*   **Stealth Initialization**: All GUI components utilize alpha-channel stealth loading, eliminating window flicker and ensuring a perfectly positioned reveal for a professional, accessible experience.
+### Website and Network Control
+* Block specific domains or use keywords to catch related sites.
+* Apply pre-built filters for common distractions (Streaming, Shopping, Ads, etc.).
+* Add specific exceptions for sites you still need to access within a blocked category.
 
-## ⚖️ Enforcement Hierarchy
+### Application and File Locking
+* Instantly close any program by its name or file path.
+* Block entire directories. SPB will stop any application from opening files inside a protected folder.
+* Prevent Windows File Explorer from opening or viewing blocked folders.
 
-SPB follows a strict logic hierarchy to prevent rule conflicts:
+### Customization and Safety
+* Set your "Performance Mode" to control how aggressively the blocker checks for running programs.
+* Maintain a "Cloud Allowlist" to ensure critical work applications (like OneDrive, Git, or your code editor) are never accidentally blocked by broad folder rules.
 
-1.  **System Allowlist**: Critical system processes (Windows Update, OneDrive, etc.) are always exempted.
-2.  **Scheduling**: Protection only engages during your defined "Active" windows.
-3.  **Manual Website Blocks**: Explicit domain blocks take absolute priority.
-4.  **Website Exceptions**: Individual domains can be exempted from Category Filters.
-5.  **Content Filters**: Broad categories are enforced last to capture remaining distractions.
+## Installation
 
-## 📥 Installation
+Because SPB modifies system permissions and network files to do its job, it requires Administrator rights.
 
-1.  Download the latest `SimpleProductivityBlocker_v1.4.0.zip` from the [Releases](https://github.com/nvusdev/simple-productivity-blocker/releases) page.
-2.  Extract the archive and run `spb_installer.exe` as Administrator.
-3.  Launch the application from the desktop shortcut to configure your profiles.
+1. Download the latest release zip file from the Releases page.
+2. Extract the downloaded archive to a folder on your computer.
+3. Right-click `spb_installer.exe` and select "Run as Administrator".
+4. Once installed, use the new desktop shortcut to open the dashboard and configure your first profile.
 
-> [!IMPORTANT]
-> **Administrator privileges are mandatory.** The application requires elevated access to modify the system `hosts` file, bind to DNS Port 53, and manage NTFS security descriptors.
+## Safe Uninstallation
 
-## 🛠️ Uninstallation
+SPB takes system modifications seriously. If you ever need to remove the software, please use the provided uninstaller rather than deleting files manually.
 
-Run `spb_uninstaller.exe` from the installation directory (`C:\Program Files\Simple Productivity Blocker`). The uninstaller will surgically restore all NTFS permissions, reset DNS settings, and flush the system cache before removing application data.
+Run `spb_uninstaller.exe` located in the installation directory (usually `C:\Program Files\Simple Productivity Blocker`). The uninstaller will safely restore all Windows file permissions, reset your network settings, and clean up background tasks before completely removing the application.
 
-## 🏗️ Architecture
+## For Developers
 
-Simple Productivity Blocker utilizes a decoupled, two-part architecture:
+SPB is built with Python and utilizes a decoupled architecture to separate the interface from the enforcement engine.
 
-1.  **Management Dashboard**: A CustomTkinter-based interface for rule configuration. It operates purely as a state editor, writing to a central, hardened `config.json`.
-2.  **Hardened Daemon**: A background service that acts as the authoritative enforcement engine. It monitors configuration state, manages the DNS proxy, and enforces kernel-level filesystem locks.
+1. **The Dashboard:** A user interface built with CustomTkinter that edits your configuration state.
+2. **The Daemon:** A hardened background service that monitors the system, manages the local DNS proxy, and enforces the rules.
 
-## 📄 License & Disclaimer
+To build the project from source, ensure you have Python installed along with the required dependencies, then run the provided PowerShell build script.
 
-Simple Productivity Blocker is open-source and provided "as is". It modifies critical system files (`hosts`) and security descriptors. While the WAL and Uninstaller protocols are designed for maximum safety, users should use the application responsibly.
+```powershell
+pip install -r requirements.txt
+.\build.ps1
+```
+
+## Disclaimer
+
+This software modifies Windows security descriptors and the system hosts file. While we have built extensive recovery and safety mechanisms into the code, please use this tool responsibly and maintain backups of your critical work.
