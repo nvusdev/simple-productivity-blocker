@@ -177,7 +177,7 @@ def cleanup_acls():
     """Removes all NTFS ACL blocks before uninstallation to prevent permanent lockouts."""
     print("Releasing all physical file/folder blocks...")
     config_dir = os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
-    history_file = os.path.join(config_dir, "recovery_history.json")
+    history_file = os.path.join(config_dir, "recovery.json")
     
     if os.path.exists(history_file):
         try:
@@ -200,7 +200,7 @@ def cleanup_acls():
             print(f"Warning: Could not clear all physical blocks: {e}")
 
 def main():
-    print("Simple Productivity Blocker v1.4.3 Uninstaller")
+    print("Simple Productivity Blocker v1.4.0 Uninstaller")
     print("-------------------------------------------------------")
     
     if not is_admin():
