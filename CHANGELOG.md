@@ -1,5 +1,23 @@
 # Simple Productivity Blocker - Version History
 
+## [1.3.3] - 2026-05-06
+### Added
+- **UI Stability Patch**: Fixed a high-priority `KeyError` in the configuration loader.
+- **Project Sanitization**: Deprecated legacy scripts into `/legacy` and updated build dependencies (Pillow).
+- **Final Hardening**: Synchronized versioning across all entry points (Installer/Uninstaller/Makefile).
+
+## [1.3.2] - 2026-05-06
+### Added
+- **Antigravity Protocol (Security Hardening)**: Replaced insecure `%ProgramFiles%` environment resolution with the native Win32 `SHGetKnownFolderPath` API.
+- **Cross-Profile Persistence Cleanup**: The installer and uninstaller now iterate through `HKEY_USERS` SIDs to ensure "ghost" startup stubs are cleared for all users, regardless of UAC context.
+- **Atomic Configuration Management**: Implemented an atomic `os.replace` strategy with a 10-attempt retry loop to eliminate file-locking race conditions between the GUI and Daemon.
+- **Invisible Startup Protocol**: Implemented `attributes('-alpha', 0.0)` stealth phase to eliminate UI flashing during window hydration.
+- **Modular Installer Architecture**: Decomposed the monolithic installer into specialized, auditable functions.
+
+### Fixed
+- **PermissionError (WinError 5)**: Resolved an issue where ghost Python instances would lock configuration files during re-installation.
+- **Profile Mismatch**: Fixed a bug where the installer would fail to clean up the correct user's registry startup entry when elevated via UAC.
+
 ## [1.3.1] - 2026-05-05
 ### Added
 - **Linux Readiness**: Created `PlatformHandler` and `Makefile` to support the v1.3.1 Linux development roadmap.
