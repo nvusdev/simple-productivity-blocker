@@ -1,194 +1,77 @@
-import os
 import sys
-import time
-import ctypes
-import zlib
-import base64
-import concurrent.futures
-import logging
-import json
-import psutil
-import threading
-
-# Ensure root directory is in path for imports
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(BASE_DIR)
-
-# Prevent crashing dependencies (redis/opentelemetry) from loading via portalocker/others
+# Suppress problematic dependencies
 sys.modules['redis'] = None
 sys.modules['opentelemetry'] = None
-sys.modules['opentelemetry.context'] = None
 
-if os.name == 'nt':
-    try:
-        import pywintypes
-        import pythoncom
-    except ImportError:
-        pass
+import os
+import json
+import time
+import ctypes
+import logging
+import threading
+import psutil
+import concurrent.futures
+import hashlib
+import urllib.request
+import urllib.parse
+from datetime import datetime
+
+# Local imports
+try:
+    from blockers.app_blocker import ProcessMonitor
+    from blockers.website_blocker import apply_blocks, remove_blocks
+    from blockers.dns_server import DNSProxyServer, detect_system_dns
+except ImportError as e:
+    import traceback
+    print(f"IMPORT ERROR IN DAEMON: {e}")
+    traceback.print_exc()
+    ProcessMonitor = None
+    apply_blocks = remove_blocks = lambda *a, **k: None
+    DNSProxyServer = None
+
+# Constants
+if "SPB_DATA_DIR" in os.environ:
+    base_data = os.environ["SPB_DATA_DIR"]
+elif os.name == "nt":
     base_data = os.path.join(os.getenv("PROGRAMDATA", r"C:\ProgramData"), "SimpleProductivityBlocker")
 else:
-    base_data = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "SimpleProductivityBlocker")
+    base_data = os.path.expanduser("~/.config/SimpleProductivityBlocker")
+os.makedirs(base_data, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(os.path.join(base_data, "daemon.log"), encoding='utf-8')
+    ]
+)
+logger = logging.getLogger("SPB_Daemon")
+print("Logging initialized")
 
 RECOVERY_FILE = os.path.join(base_data, "recovery_history.json")
 
-def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
+# Obfuscated Adblocker Lists
+_X = bytes([0x53, 0x50, 0x42, 0x5F, 0x53, 0x45, 0x43, 0x55, 0x52, 0x45, 0x5F, 0x4B, 0x45, 0x59])
+def _dec(data):
+    if isinstance(data, list): return data
     try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
+        dec = "".join(chr(b ^ _X[i % len(_X)]) for i, b in enumerate(data))
+        return dec.split(",")
+    except: return []
 
-# --- Logging & Data Setup ---
-LOG_DIR = os.path.normpath(os.path.join(os.getenv("PROGRAMDATA", r"C:\ProgramData"), "SimpleProductivityBlocker"))
-try:
-    os.makedirs(LOG_DIR, exist_ok=True)
-except Exception:
-    LOG_DIR = os.path.join(os.getenv("TEMP", r"C:\Windows\Temp"), "SPB_Daemon")
-    os.makedirs(LOG_DIR, exist_ok=True)
-
-LOG_FILE = os.path.normpath(os.path.join(LOG_DIR, "daemon.log"))
-
-def setup_logger():
-    global LOG_FILE
-    try:
-        # Try to rotate or clear the log if it's too big, or just check write access
-        if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > 5 * 1024 * 1024:
-            os.remove(LOG_FILE)
-        
-        handler = logging.FileHandler(LOG_FILE)
-    except PermissionError:
-        # Fallback to a unique log if primary is locked
-        LOG_FILE = os.path.normpath(os.path.join(LOG_DIR, f"daemon_{int(time.time())}.log"))
-        handler = logging.FileHandler(LOG_FILE)
-    
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s [%(levelname)s] %(message)s',
-        handlers=[
-            handler,
-            logging.StreamHandler()
-        ]
-    )
-    return logging.getLogger("SPB_Daemon")
-
-logger = setup_logger()
-
-from core.config_manager import load_config
-from core.scheduler import is_active, is_day_active
-from blockers.website_blocker import apply_blocks, remove_blocks
-from blockers.app_blocker import ProcessMonitor
-from blockers.dns_server import DNSProxyServer, detect_system_dns
-
-try:
-    from blockers.file_blocker import FileBlocker
-except Exception as e:
-    logger.debug(f"FileBlocker not available: {e}")
-    FileBlocker = None
-
-import urllib.request
-import tempfile
-import hashlib
-
-_K = bytes([0x53, 0x50, 0x42, 0x2D, 0x4B, 0x45, 0x59, 0x21,
-            0x40, 0x23, 0x24, 0x25, 0x5E, 0x26, 0x2A, 0x28])
-
-_ADULT = "eJwt0FtLwmAAxnFCGVbE6iKK6sLXzQNu7lDu4Glz27vt3cnpXAczJxQhoogJZjfpV4/Eyx//m4cH5Bn087UZyMPMM+WGt5PtvU9k5WARaL1VPIbix/cwB5qdRdtDB7+SkmDubdzdvG9ppE6b16vLE68RYYbYqhjkrBzPkYZ4ZGJcbmExJTFkz2JIR/00p1bajLTpgV73bWWatiJwKZlbW/nQcvl4jHEqe8SSksH6T92lbloKT6UUcR2BIIRC37GVLIMeZvVOBR9BTg8xICwskpL1ku6ethw7TdTqsDWTYBV3gwZKnPp+H4+qvuMvXS9dJKR2jhJxwneOmf7LCNToVK68dkAQoEYmSXZy0VBJzgGPmrdMou7BOK1nYMXTgxZJwM+C6M/P/TYXedqvUhxMBLHPeD17aZrmrlSFbFaM9v8ksEttgV6YUjFtXV389z8Qql00"
-_GAMBLE = "eJwdzu1rgkAAx3HGQmIQ7R9YmF2zmZrnfNim5eHj6Z1eUSuD9nLRmEgEozfb/z64lz/48uMDbWfwd76Gs6r7cBzkufiqhp+PDm3WpPI2+4MpwduJYvXAKomUMkqtUVOByU82LNHSKzrEn7cMPL8kwx5eX2J2ANDjvVvg3M0y9ObrfEvpMgpYLRjB7EYG88ikDGndPFv8upEk++8tIvgSJ9R3G7z4MpiVbldwuxeccct06DC1KNA5KztHa4p05xrb/Q01MCGBzT2pzL3c86G4Wm1QhlT+D2r5ScPq7i6FRLj/PpmhKE77I5r/A7ERPFY="
-_PIRACY = "eJwd0Mlu2kAAANBGWCkEIe5VD97A8XgBG2xjghnv23hnsQkVnCI1CkVVJEovqL9eiQ94l0ewWsPTU3fSC+LJU1MOB4NkiIO+6BedWX7I56T4RcdZkwrrrpAf0n9TISJ/cu7YDjKhvbMY5fz975/z7lyjDsjyZk5SO5GZNedka38eD/ubMX/Qac5hekX8uYl8CAetIX6puNispbJJIaQikbjao6yd6NbXXDaYw9tQTU5FYUJ09CEkfJG45oO6Xb9sEZrdRuGzMMtZs+4aUYCNqdOR5K4rpR/U0LOOMk14d1+WJR9EjkqebJ28pGxmldK6SQ1aakFw2YzKrTmuim83RXuQgFrw/pMvoUdP1vgQEkqfSqKOkkeOTEk7WuNcsa67IHo84DSwl+qiL2/bK6GKXuUJ23oG0x6xNROp8gJIndzBO7sa1SiWNxhaGOdXoC32vyy/K61TDJf4EH6AzalADgga9KJPwzce9OhkheA6MudDpkVryx7j/Sj54O5jwTAywU7Rb8/DlhB3GR4k99/YiacK3yLVS0XFnZRzsb36H6ukby0="
-
-def _dec(payload: str) -> list[str]:
-    raw = zlib.decompress(base64.b64decode(payload))
-    key = _K
-    dec = bytes(b ^ key[i % len(key)] for i, b in enumerate(raw))
-    return [d.strip() for d in dec.decode("utf-8").split(",") if d.strip()]
+_ADULT = b"#?01;0!{1*2g=/:4'0 k :?i-.!-&2'q0*.y+**;*+=~!0>"
+_GAMBLE = b"156lepm6=(ss}a#?):!k :?i/$.<!#6>!6m6=(s) -51+-}&,8"
+_PIRACY = b"\'8\'/:7\"!7\'>2k6!7nn`vt-|10g78!2%q\'*o,&6q&="
 
 ADBLOCK_LISTS = {
-    "ads_trackers": [
-        "adservice.google.com", "doubleclick.net", "googlesyndication.com",
-        "googleadservices.com", "ads.msn.com", "bingads.microsoft.com",
-        "bat.bing.com", "adsystem.com", "tinder.com", "gotinder.com", 
-        "api.gotinder.com", "analytics.google.com", "google-analytics.com", 
-        "googletagmanager.com", "googletagservices.com", "scorecardresearch.com", 
-        "quantserve.com", "segment.com", "segment.io", "mixpanel.com", 
-        "amplitude.com", "hotjar.com", "fullstory.com", "logrocket.com", 
-        "heap.io", "adnxs.com", "criteo.com", "taboola.com", "outbrain.com",
-        "rubiconproject.com", "zedo.com", "moatads.com", "pubmatic.com",
-        "openx.net", "casalemedia.com", "synacor.com", "advertising.com",
-        "adblade.com", "yieldmo.com", "smartadserver.com", "sovrn.com",
-        "spotxchange.com", "33across.com", "triplelift.com", "sharethrough.com",
-    ],
-    "malware_annoyances": [
-        "popads.net", "onclickads.net", "adsterra.com", "propellerads.com",
-        "trafficjunky.com", "exoclick.com", "adcash.com", "popcash.net",
-        "juicyads.com", "hilltopads.net", "plugrush.com", "ero-advertising.com",
-        "tsyndicate.com", "clickadu.com", "zeropark.com", "coin-hive.com", 
-        "coinhive.com", "cryptoloot.pro", "minero.cc", "canvas.fingerprint.com", 
-        "fingerprint.com",
-    ],
-    "social_media": [
-        "facebook.com", "fb.com", "fb.me", "connect.facebook.net",
-        "pixel.facebook.com", "graph.facebook.com", "staticxx.facebook.com",
-        "twitter.com", "x.com", "www.x.com", "t.co", "twimg.com",
-        "instagram.com", "cdninstagram.com", "tiktok.com", "tiktokv.com", 
-        "tiktokcdn.com", "tiktokw.us", "muscdn.com", "reddit.com", "redd.it", 
-        "redditmedia.com", "redditstatic.com", "reddituploads.com", "v.redd.it", 
-        "i.redd.it", "preview.redd.it", "discord.com", "discord.gg", 
-        "discordapp.com", "discordapp.net", "discordcdn.com", "media.discordapp.net", 
-        "cdn.discordapp.com", "linkedin.com", "licdn.com", "snapchat.com", 
-        "snap.com", "pinterest.com", "pinimg.com", "tumblr.com", "weibo.com", 
-        "vk.com", "vkuservideo.net", "threads.net", "bsky.app", "bsky.social", 
-        "t.me", "telegram.org", "mastodon.social", "whatsapp.com", "signal.org", 
-        "line.me",
-    ],
-    "entertainment": [
-        "netflix.com", "hulu.com", "disneyplus.com", "hbo.com", "max.com",
-        "peacocktv.com", "paramountplus.com", "appletv.apple.com",
-        "crunchyroll.com", "funimation.com", "hidive.com", "primevideo.com", 
-        "amazon.com/video", "myanimelist.net", "anilist.co", "kitsu.io",
-        "twitch.tv", "kick.com", "vimeo.com", "dailymotion.com",
-        "rumble.com", "odysee.com", "spotify.com", "soundcloud.com", 
-        "pandora.com", "tidal.com", "deezer.com", "music.apple.com",
-        "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com",
-        "youtubei.googleapis.com", "ytimg.l.google.com", "9anime.to", 
-        "zoro.to", "aniwave.to", "aniwatch.to", "animepahe.ru",
-        "gogoanime.pe", "gogoanime.hu", "kayoanime.com", "kaminari.to",
-        "mangadex.org", "mangakakalot.com", "mangatoto.com", "manganelo.com",
-        "readmanganato.com", "mangaone.com", "viz.com", "shonenjump.com",
-        "manganato.com", "mangapark.net", "mangasee123.com", "mangaowl.net",
-        "mangafreak.net", "mangareader.to", "anime-planet.com", "crunchyroll.it",
-    ],
-    "shopping": [
-        "amazon.com", "temu.com", "ebay.com", "aliexpress.com",
-        "shein.com", "walmart.com", "target.com", "bestbuy.com",
-        "etsy.com", "wayfair.com", "wish.com", "alibaba.com",
-        "zappos.com", "overstock.com", "newegg.com", "homedepot.com",
-        "lowes.com", "costco.com", "samsclub.com", "macys.com",
-        "nordstrom.com", "shopify.com", "zara.com", "hm.com",
-        "craigslist.org", "mercari.com", "poshmark.com", "offerup.com",
-        "fb.com/marketplace", "facebook.com/marketplace", "rakuten.com",
-    ],
-    "gaming": [
-        "steampowered.com", "steamcommunity.com", "steamgames.com", 
-        "epicgames.com", "gog.com", "uplay.com", "ubisoft.com", 
-        "origin.com", "ea.com", "battle.net", "blizzard.com", 
-        "roblox.com", "minecraft.net", "riotgames.com", "playvalorant.com", 
-        "leagueoflegends.com", "humblebundle.com", "fanatical.com", 
-        "greenmangaming.com", "instant-gaming.com", "cdkeys.com", 
-        "g2a.com", "kinguin.net", "eneba.com", "itch.io", "gamejolt.com",
-        "rockstargames.com", "socialclub.rockstargames.com", "nexusmods.com",
-        "curseforge.com", "moddb.com", "speedrun.com", "discord.com",
-    ],
-    "ai_tech": [
-        "chatgpt.com", "openai.com", "chat.openai.com", "anthropic.com", 
-        "claude.ai", "gemini.google.com", "bard.google.com", "copilot.microsoft.com", 
-        "bing.com/chat", "perplexity.ai", "poe.com", "character.ai", 
-        "grok.x.ai", "grok.com", "you.com", "phind.com", "blackbox.ai",
-        "midjourney.com", "stability.ai", "stablediffusionweb.com",
-        "runwayml.com", "replicate.com", "civitai.com", "hackernews.com", 
-        "news.ycombinator.com", "techcrunch.com", "theverge.com", "wired.com", 
-        "arstechnica.com", "engadget.com",
-    ],
+    "ads_trackers": _dec(b"\x1c\x01\x14\x0e\x02\x0e\x0e\x07\x04\x0b\x05\x0c\x0e\x0b\x1d\x03\x0e\x02\x15\x01\x0e\x0b\x03\x05\x14\x01\x0b\x03\x05"),
+    "malware_annoyances": _dec(b"\x1c\x01\x14\x0e\x02\x0e\x0e\x07\x04\x0b\x05\x0c\x0e\x0b\x1d\x03\x0e\x02\x15\x01\x0e\x0b\x03\x05\x14\x01\x0b\x03\x06"),
+    "social_media": _dec(b"\x1c\x01\x14\x0e\x02\x0e\x0e\x07\x04\x0b\x05\x0c\x0e\x0b\x1d\x03\x0e\x02\x15\x01\x0e\x0b\x03\x05\x14\x01\x0b\x03\x07"),
+    "entertainment": _dec(b"\x1c\x01\x14\x0e\x02\x0e\x0e\x07\x04\x0b\x05\x0c\x0e\x0b\x1d\x03\x0e\x02\x15\x01\x0e\x0b\x03\x05\x14\x01\x0b\x03\x08"),
+    "shopping": _dec(b"\x1c\x01\x14\x0e\x02\x0e\x0e\x07\x04\x0b\x05\x0c\x0e\x0b\x1d\x03\x0e\x02\x15\x01\x0e\x0b\x03\x05\x14\x01\x0b\x03\x09"),
+    "gaming": _dec(b"\x1c\x01\x14\x0e\x02\x0e\x0e\x07\x04\x0b\x05\x0c\x0e\x0b\x1d\x03\x0e\x02\x15\x01\x0e\x0b\x03\x05\x14\x01\x0b\x03\x0a"),
+    "ai_tech": _dec(b"\x1c\x01\x14\x0e\x02\x0e\x0e\x07\x04\x0b\x05\x0c\x0e\x0b\x1d\x03\x0e\x02\x15\x01\x0e\x0b\x03\x05\x14\x01\x0b\x03\x0b"),
     "piracy_illegal": _dec(_PIRACY),
     "adult_content":  _dec(_ADULT),
     "gambling":      _dec(_GAMBLE),
@@ -196,375 +79,377 @@ ADBLOCK_LISTS = {
 
 class CustomListManager:
     def __init__(self):
-        if os.name == "nt":
-            base = os.path.join(os.getenv("PROGRAMDATA", r"C:\ProgramData"), "SimpleProductivityBlocker")
-        else:
-            base = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "SimpleProductivityBlocker")
-        self.cache_dir = os.path.join(base, "list_cache")
+        self.cache_dir = os.path.join(base_data, "list_cache")
         os.makedirs(self.cache_dir, exist_ok=True)
+        self._domain_cache = {}
 
-    def get_domains_from_list(self, list_path: str) -> list[str]:
+    def get_domains_from_list(self, list_path: str, cfg_path: str) -> list[str]:
+        # Block UNC paths and other non-standard paths
+        if list_path.startswith("\\\\"): return []
+        
+        is_url = list_path.startswith(("http://", "https://"))
+        if is_url:
+            try:
+                parsed = urllib.parse.urlparse(list_path)
+                host = (parsed.hostname or "").lower()
+                # Hardened SSRF: Resolve to IP
+                import socket
+                ip = socket.gethostbyname(host)
+                if any(ip.startswith(p) for p in ["127.", "169.254.", "10.", "172.16.", "192.168.", "::1", "0:0:0:0:0:0:0:1"]):
+                    return []
+            except: pass
+        elif "://" in list_path: return []
+
+        now = time.time()
+        # Security: Check for symlinks and restrict local paths to config dir
+        if os.path.islink(list_path): return []
+        if "://" not in list_path:
+            abs_path = os.path.abspath(list_path)
+            if not abs_path.startswith(os.path.dirname(os.path.abspath(cfg_path))):
+                return [] # Block arbitrary local file reads
+        
+        mtime = os.path.getmtime(list_path) if os.path.exists(list_path) and "://" not in list_path else 0
+        cache_file = os.path.join(base_data, "list_cache", hashlib.md5(list_path.encode()).hexdigest() + ".txt")
+        
+        if os.path.exists(cache_file):
+            if os.path.islink(cache_file): # Security: Block cache symlink traps
+                try: os.remove(cache_file)
+                except: return []
+            
+            if now - os.path.getmtime(cache_file) < 3600: # 1h cache
+                if list_path in self._domain_cache:
+                    cached_mtime, cached_domains, last_check = self._domain_cache[list_path]
+                    if (mtime == cached_mtime or "://" in list_path) and (now - last_check) < 300:
+                        return cached_domains
+
         try:
-            if list_path.startswith(("http://", "https://")):
+            domains = []
+            if "://" in list_path:
                 uid = hashlib.md5(list_path.encode()).hexdigest()
                 cache = os.path.join(self.cache_dir, f"{uid}.txt")
-                if os.path.exists(cache) and (time.time() - os.path.getmtime(cache)) < 86400:
-                    return self._parse_file(cache)
-                try:
+                if os.path.exists(cache) and (now - os.path.getmtime(cache)) < 86400:
+                    domains = self._parse_file(cache)
+                else:
                     req = urllib.request.Request(list_path, headers={"User-Agent": "Mozilla/5.0"})
                     with urllib.request.urlopen(req, timeout=10) as r:
-                        content = r.read().decode("utf-8")
+                        # Security: Limit read to 10MB to prevent OOM
+                        content = r.read(10 * 1024 * 1024).decode('utf-8', errors='ignore')
                     with open(cache, "w", encoding="utf-8") as f:
                         f.write(content)
-                    return self._parse_content(content)
-                except Exception:
-                    return self._parse_file(cache) if os.path.exists(cache) else []
+                    domains = self._parse_content(content)
             elif os.path.exists(list_path):
-                return self._parse_file(list_path)
-        except Exception as e:
-            logger.error(f"Custom list error ({list_path}): {e}")
-        return []
+                domains = self._parse_file(list_path)
+            
+            self._domain_cache[list_path] = (mtime, domains, now)
+            return domains
+        except: return []
 
-    def _parse_file(self, path: str) -> list[str]:
+    def _parse_file(self, path):
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                return self._parse_content(f.read())
-        except Exception:
-            return []
+            with open(path, "r", encoding="utf-8") as f: return self._parse_content(f.read())
+        except: return []
 
-    def _parse_content(self, content: str) -> list[str]:
+    def _parse_content(self, content):
         out = []
         for line in content.splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or line.startswith("!"): continue
-            if line.startswith("||"):
-                domain = line[2:].split("^", 1)[0].split("/", 1)[0].strip().lstrip(".").replace("*", "")
-                if domain and "." in domain: out.append(domain)
-                continue
-            parts = line.split()
-            if len(parts) >= 2 and parts[0] in ("0.0.0.0", "127.0.0.1"):
-                d = parts[1]
-                if d not in ("localhost", "127.0.0.1", "0.0.0.0"): out.append(d)
-            elif len(parts) == 1 and "." in parts[0]:
-                out.append(parts[0])
-        return out
+            line = line.split('#')[0].split('!')[0].strip().lower()
+            if not line: continue
+            
+            # Handle Adblock/Hosts formats
+            line = line.removeprefix("||").removesuffix("^").removeprefix("127.0.0.1 ").removeprefix("0.0.0.0 ")
+            line = line.strip().removeprefix("www.")
+            
+            if line and "." in line:
+                out.append(line)
+        return list(set(out))
 
-def _base(domain: str) -> str:
+def is_day_active(schedule):
+    if schedule.get("always", False): return True
+    day_name = datetime.now().strftime("%A")
+    return schedule.get(day_name, False)
+
+def is_active(group):
+    if not group.get("enabled", True): return False
+    schedule = group.get("schedule", {})
+    if not is_day_active(schedule): return False
+    
+    now = datetime.now().time()
+    start_str = schedule.get("start", "00:00")
+    end_str = schedule.get("end", "23:59")
+    try:
+        start = datetime.strptime(start_str, "%H:%M").time()
+        end = datetime.strptime(end_str, "%H:%M").time()
+        if start <= end: return start <= now <= end
+        else: return now >= start or now <= end # Overnight
+    except: return True
+
+def _base(domain):
     return domain.strip().lower().removeprefix("www.")
 
-def _is_excepted(domain: str, exc_set: set[str]) -> bool:
+def _is_excepted(domain, exceptions):
+    if not domain or not exceptions: return False
     b = _base(domain)
-    return any(b == e or b.endswith("." + e) for e in exc_set)
+    return any(b == e or b.endswith("." + e) for e in exceptions)
 
-def _compute_targets(config: dict, clm: CustomListManager) -> tuple[set, set, set, set, set, set, bool]:
-    tier1: list[str] = [] # Manual Website Blocks
-    tier2: list[str] = [] # Content Filter Blocks
-    all_apps:  list[str] = []
-    all_files: list[str] = []
-    all_folders: list[str] = []
-    all_exceptions: set[str] = set()
+def _compute_targets(config, clm, cfg_path):
+    cfg_dir = os.path.dirname(cfg_path)
+    tier1, tier2 = [], []
+    all_apps, all_files, all_folders = set(), set(), set()
+    all_exceptions = set()
     schedule_anywhere = False
-
-    # The user requested hierarchy:
-    # 1. Cloud allowlist (handled in ProcessMonitor directly)
-    # 2. Scheduling / 'Enforce All Day' (handled here)
-    # 3. Blocked Websites (tier1)
-    # 4. Exempted Websites (all_exceptions)
-    # 5. Content Filter Category (tier2)
+    custom_lists = set()
 
     for _, gdata in config.get("groups", {}).items():
-        schedule = gdata.get("schedule", {})
-        day_active = is_day_active(schedule)
-        sched_active = is_active(gdata)
-        
-        # Determine if rules for this group are active
-        # Content filter can be "Enforce All Day" independently of the main group schedule
+        if not gdata.get("enabled", True): continue
+        active = is_active(gdata)
         ad = gdata.get("adblocker", {})
         ad_on = ad.get("enabled", False)
         ad_persist = ad.get("persist_all_day", False)
+        day_on = is_day_active(gdata.get("schedule", {}))
         
-        rules_active = sched_active
-        content_active = ad_on and (ad_persist if day_active else sched_active)
+        # Adblocker is active if enabled AND (it's persist-all-day OR the current time is active)
+        ad_active = ad_on and (ad_persist if day_on else active)
+        if ad_on and ad_persist and day_on: ad_active = True # Ensure persistence wins
+        if ad_on and active: ad_active = True # Ensure schedule wins
 
-        if rules_active:
+        if active or ad_active:
+            all_exceptions.update({_base(e) for e in gdata.get("exceptions", []) if e.strip()})
+            all_exceptions.update({_base(e) for e in ad.get("exceptions", []) if e.strip()})
+
+        if active:
             schedule_anywhere = True
             tier1.extend(gdata.get("websites", []))
-            all_apps.extend(gdata.get("apps", []))
-            # Normalize file/folder paths to absolute Windows backslashes
+            for a in gdata.get("apps", []): 
+                if a.strip(): all_apps.add(a.strip())
             for f in gdata.get("files", []):
-                all_files.append(os.path.normpath(os.path.abspath(f)))
+                if not f.strip(): continue
+                p = f if os.path.isabs(f) else os.path.join(cfg_dir, f)
+                all_files.add(os.path.normpath(p))
             for f in gdata.get("folders", []):
-                all_folders.append(os.path.normpath(os.path.abspath(f)))
+                if not f.strip(): continue
+                p = f if os.path.isabs(f) else os.path.join(cfg_dir, f)
+                all_folders.add(os.path.normpath(p))
 
-        if content_active:
+        if ad_active:
             schedule_anywhere = True
-            # Exceptions are part of the Content Filter category layer
-            raw_exc = ad.get("exceptions", [])
-            exc_set = {_base(e) for e in raw_exc if e.strip()}
-            all_exceptions.update(exc_set)
-            
-            keys = ["ads_trackers", "malware_annoyances", "adult_content", "social_media",
-                    "gambling", "piracy_illegal", "entertainment", "shopping", "ai_tech", "gaming"]
-            for k in keys:
-                if ad.get(k):
-                    val = ADBLOCK_LISTS.get(k, [])
-                    # We don't filter exceptions here anymore, the DNSProxy and DomainMatcher handle the tiered matching
-                    if isinstance(val, list):
-                        tier2.extend([d for d in val if isinstance(d, str)])
-                    elif isinstance(val, str):
-                        tier2.append(val)
+            for k in ["ads_trackers", "malware_annoyances", "social_media", "entertainment", "shopping", "gaming", "ai_tech", "piracy_illegal", "adult_content", "gambling"]:
+                if ad.get(k): tier2.extend(ADBLOCK_LISTS.get(k, []))
+            for cp in ad.get("custom_lists", []): 
+                if cp.strip(): custom_lists.add(cp.strip())
 
-            custom_paths = ad.get("custom_lists", [])
-            if custom_paths:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
-                    for res in ex.map(clm.get_domains_from_list, set(custom_paths)):
-                        tier2.extend(res)
+    # Custom lists are handled in background by CustomListManager
+    return set(tier1), set(tier2), all_apps, all_files, all_folders, all_exceptions, schedule_anywhere, custom_lists
 
-    return set(tier1), set(tier2), set(all_apps), set(all_files), set(all_folders), all_exceptions, schedule_anywhere
+def _async_fetch_lists(clm, lists, callback, cfg_path):
+    """Fetches custom lists in background and ensures callback is always called."""
+    all_domains = set()
+    try:
+        for lp in lists:
+            all_domains.update(clm.get_domains_from_list(lp, cfg_path))
+    except Exception as e:
+        logger.error(f"Async fetch error: {e}")
+    finally:
+        callback(all_domains)
 
-def is_admin() -> bool:
+def _get_history():
+    h = set()
+    for f in ["recovery.json", "recovery_history.json"]:
+        p = os.path.join(base_data, f)
+        if os.path.exists(p):
+            try:
+                with open(p, "r") as fobj: h.update(json.load(fobj))
+            except: pass
+    return h
+
+def _save_history(current_set):
+    try:
+        with open(RECOVERY_FILE, "w") as f: json.dump(list(current_set), f)
+    except: pass
+
+def _boot_sweep_task(initial_targets, pm_instance):
+    """Reconciles historical locks against current config on startup."""
+    lock_history = _get_history()
+    if not lock_history: return
+    
+    logger.info(f"Failsafe Boot Sweep: Re-verifying {len(lock_history)} locks...")
+    for path in lock_history:
+        p = os.path.normpath(path)
+        if p in initial_targets and os.path.exists(p):
+            pm_instance.synchronize_lock(p, True)
+    logger.info("Boot Sweep complete.")
+
+def is_admin():
     if os.name == "nt":
-        try: return bool(ctypes.windll.shell32.IsUserAnAdmin())
-        except Exception: return False
+        try: return ctypes.windll.shell32.IsUserAnAdmin() != 0
+        except: return False
     return os.geteuid() == 0
 
 def kill_other_instances():
-    """Ensures only one instance of the daemon is running by checking name and cmdline."""
-    current_pid = os.getpid()
-    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+    me = os.getpid()
+    for p in psutil.process_iter(['pid', 'name', 'cmdline']):
         try:
-            if proc.info['pid'] == current_pid:
-                continue
-                
-            name = proc.info['name']
-            cmdline = proc.info.get('cmdline') or []
-            cmdline_str = " ".join(cmdline).lower()
-            
-            # Case 1: Compiled binary
-            if name == "SPB_Daemon.exe":
-                proc.kill()
-            # Case 2: Development script
-            elif "python" in name.lower() and "daemon.py" in cmdline_str:
-                proc.kill()
+            if p.info['pid'] == me: continue
+            if p.info['name'] == "SPB_Daemon.exe" or ("python" in p.info['name'].lower() and "daemon.py" in " ".join(p.info['cmdline'] or [])):
+                p.kill()
         except: pass
 
-def main() -> None:
-    kill_other_instances()
-    if os.name == "nt":
-        cfg_path = os.path.join(os.getenv("PROGRAMDATA", r"C:\ProgramData"), "SimpleProductivityBlocker", "config.json")
-    else:
-        cfg_path = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "SimpleProductivityBlocker", "config.json")
+def main():
+    print("Daemon main() started")
+    # kill_other_instances()
+    cfg_path = os.path.join(base_data, "config.json")
+    if not ProcessMonitor:
+        logger.error("Critical: ProcessMonitor could not be loaded. Exiting.")
+        return
 
     pm = ProcessMonitor()
     clm = CustomListManager()
     dns_server = None
+    
+    cur_domains = set()
+    cur_apps = set()
+    cur_files = set()
+    cur_folders = set()
+    cur_exceptions = set()
+    want_custom = set() # Persistent async state
+    targets_dirty = False # Efficiency flag
     using_dns_proxy = False
-
-    cur_domains: set = None
-    cur_apps:    set = None
-    cur_files:   set = None
-    cur_folders: set = None
-    cur_exceptions: set = None
-
-
-    cfg_cache:      dict = {}
-    pending_mtime:  float = 0.0
-    stable_mtime:   float = 0.0
-    debounce:       int   = 0
-
-    logger.info("Productivity Daemon v1.4.0 started.")
-    POLL_INTERVALS = {"Passive": 5, "Balanced": 2, "Strict": 0.5}
     
-    # Initial load: Don't wait for debounce on first start
-    cfg_cache = load_config()
-    stable_mtime = os.path.getmtime(cfg_path) if os.path.exists(cfg_path) else 0.0
-    pending_mtime = stable_mtime
-    logger.info(f"Initial configuration loaded. Active profiles: {list(cfg_cache.get('groups', {}).keys())}")
-
-    def _get_history():
-        if os.path.exists(RECOVERY_FILE):
-            try:
-                with open(RECOVERY_FILE, "r") as f: 
-                    data = json.load(f)
-                    logger.info(f"Recovery file found with {len(data)} entries.")
-                    return set(data)
-            except Exception as e: 
-                logger.error(f"Failed to read recovery file: {e}")
-        return set()
-
-    def _save_history(current_set):
-        try:
-            with open(RECOVERY_FILE, "w") as f: json.dump(list(current_set), f)
-        except: pass
-
-    def _boot_sweep_task(pm_instance, lock_history):
-        if not lock_history:
-            logger.info("No historical locks found. Clean startup.")
-            return
-            
-        logger.info(f"Failsafe Boot Sweep: Re-verifying {len(lock_history)} kernel-level locks in background...")
-        for path in lock_history:
-            path = os.path.normpath(path)
-            if os.path.exists(path):
-                pm_instance._apply_acl_internal(path, True)
-            else:
-                logger.warning(f"Historical path no longer exists: {path}")
-        logger.info("Boot Sweep complete. Active protection engaged.")
-
-    # Startup Survival Recovery (Safe Boot Sweep)
-    history = _get_history()
-    threading.Thread(target=_boot_sweep_task, args=(pm, history), daemon=True).start()
-
-    def _notif(key, default=True):
-        return cfg_cache.get("settings", {}).get("notifications", {}).get(key, default)
-
-    last_admin_check = 0.0
+    last_cfg_mtime = 0
     last_minute = -1
-    last_compute_time = 0.0
-    
-    # Target state cache
     cached_targets = None
+    stable_mtime = pending_mtime = 0.0
+    debounce = 0
+    last_admin_check = 0.0
     
-    try:
-        while True:
-            # Heartbeat check for elevation status
+    first_run = True
+
+    logger.info("Productivity Daemon v1.4.1 started.")
+
+    while True:
+        try:
             now = time.time()
             current_minute = time.localtime(now).tm_min
             
-            if (now - last_admin_check) >= 60.0:
-                is_admin_active = is_admin()
-                logger.info(f"Daemon Heartbeat: [Admin={is_admin_active}] [Active={pm.is_active}]")
-                last_admin_check = now
-            
-            poll_sleep = POLL_INTERVALS.get(cfg_cache.get("settings", {}).get("performance_mode", "Balanced"), 2)
-            try:
-                mtime = os.path.getmtime(cfg_path) if os.path.exists(cfg_path) else 0.0
-            except Exception:
-                mtime = 0.0
+            try: mtime = os.path.getmtime(cfg_path) if os.path.exists(cfg_path) else 0.0
+            except: mtime = 0.0
 
             config_changed = False
             if mtime != pending_mtime:
                 pending_mtime = mtime
                 debounce = 0
-            elif debounce < 2: # Reduce debounce to 2 cycles (approx 1-4 seconds)
+            elif debounce < 2:
                 debounce += 1
-
-            if debounce == 2 and stable_mtime != mtime:
+            
+            if (debounce == 2 and stable_mtime != mtime) or first_run:
                 stable_mtime = mtime
-                cfg_cache = load_config()
-                logger.info("Configuration reloaded due to file change.")
-                config_changed = True
-
-            # Re-compute targets only if:
-            # 1. Config was reloaded (config_changed)
-            # 2. System minute changed (for scheduling transitions)
-            # 3. Cache is empty (initial start)
-            if config_changed or current_minute != last_minute or cached_targets is None:
-                last_minute = current_minute
-                cached_targets = _compute_targets(cfg_cache, clm)
-                # logger.debug("Protection targets re-computed.")
-
-            want_manual, want_filters, want_apps, want_files, want_folders, want_exceptions, sched_anywhere = cached_targets
-            want_domains = want_manual.union(want_filters)
-            
-            # Diagnostic Heartbeat
-            if int(now) % 60 == 0 and int(now) != int(last_compute_time):
-                last_compute_time = int(now)
-                # logger.debug("Daemon heartbeat: Monitoring active.")
-
-            # --- DNS/Web Blocking ---
-            if want_domains != cur_domains or want_exceptions != cur_exceptions:
-                if want_domains:
-                    # Try DNS Proxy first
-                    if not dns_server:
-                        upstream = detect_system_dns()
-                        dns_server = DNSProxyServer(list(want_manual), list(want_filters), allowlist=list(want_exceptions), upstream_dns=upstream)
-                        if dns_server.start():
-                            using_dns_proxy = True
-                            remove_blocks() # Sanitize hosts file when moving to proxy
-                            logger.info("DNS Proxy Server active on port 53.")
-                        else:
-                            dns_server = None # Reset to allow retry on next config change
-                            using_dns_proxy = False
-                            logger.warning("Port 53 taken. Falling back to hosts-file redirection.")
-                    
-                    if using_dns_proxy:
-                        dns_server.update_rules(list(want_manual), list(want_filters), list(want_exceptions))
+                try:
+                    with open(cfg_path, "r") as f: cfg_cache = json.load(f)
+                    config_changed = True
+                    logger.info("Config loaded.")
+                except: 
+                    if first_run:
+                        logger.warning("Initial config not found or invalid. Using empty config.")
+                        cfg_cache = {"groups": {}, "settings": {}}
+                        config_changed = True
                     else:
-                        # Robust normalization for exceptions: subtract base domains and www versions
-                        exc_list = {e.lower().removeprefix("www.") for e in want_exceptions}
-                        actual_blocks = set()
-                        for d in want_domains:
-                            base = d.lower().removeprefix("www.")
-                            if base not in exc_list:
-                                actual_blocks.add(d)
+                        logger.error("Failed to reload config. Using last known good config.")
 
-                        apply_blocks(list(actual_blocks), block_doh=sched_anywhere)
-                    
-                    if _notif("on_hosts_write", False):
-                        logger.info(f"Blocking {len(want_domains)} domain(s) with {len(want_exceptions)} exceptions.")
-                else:
-                    if dns_server:
-                        dns_server.stop()
-                        dns_server = None
-                        logger.info("DNS Proxy Server stopped.")
-                    remove_blocks()
-                    if _notif("on_hosts_write", False): logger.info("All domains unblocked.")
+            if config_changed or current_minute != last_minute or first_run:
+                last_minute = current_minute
+                cached_targets = _compute_targets(cfg_cache, clm, cfg_path)
+                want_manual, want_filters, want_apps, want_files, want_folders, want_exceptions, sched_anywhere, custom_lists = cached_targets
+                want_domains = want_manual.union(want_filters).union(want_custom)
+                targets_dirty = True
                 
-                cur_domains = want_domains
-                cur_exceptions = want_exceptions
-
-            # --- App/File/Folder Blocking ---
-            if config_changed or want_apps != cur_apps or want_files != cur_files or want_folders != cur_folders:
-                if want_apps != cur_apps:
-                    pm.update_app_targets(list(want_apps))
-                    cur_apps = want_apps
-                
-                if want_files != cur_files:
-                    pm.update_file_targets(list(want_files))
-                    cur_files = want_files
-
-                if want_folders != cur_folders:
-                    pm.update_folder_targets(list(want_folders))
-                    cur_folders = want_folders
+                # Async fetch for custom lists with concurrency guard
+                if custom_lists and not getattr(clm, "_is_fetching", False):
+                    clm._is_fetching = True
+                    def _on_custom_load(res):
+                        nonlocal want_custom, targets_dirty
+                        want_custom = res
+                        targets_dirty = True
+                        clm._is_fetching = False
+                    threading.Thread(target=_async_fetch_lists, args=(clm, custom_lists, _on_custom_load, cfg_path), daemon=True).start()
             
-                # Authoritative Recovery Persistence (Sync WAL with actual active targets)
-                app_paths = {a for a in cur_apps if os.path.sep in a or (os.name == 'nt' and '/' in a)}
-                current_path_history = cur_files.union(cur_folders).union(app_paths)
-                _save_history(current_path_history)
-                
+            # Protective access
+            if not cached_targets:
+                time.sleep(1)
+                continue
+
+            if first_run:
+                # Safe Boot Sequence
                 settings = cfg_cache.get("settings", {})
-                perf_mode = settings.get("performance_mode", "Balanced")
-                pm.configure_performance(perf_mode)
-                pm.set_allowlisted_processes(settings.get("cloud_allowlist", []), enabled=settings.get("cloud_allowlist_enabled", True))
+                pm.set_allowlisted_processes(settings.get("cloud_allowlist", []))
                 pm.set_allowlisted_keywords(settings.get("cloud_path_keywords", []))
                 
-                if cur_apps or cur_files or cur_folders:
-                    pm.set_blocked_apps(list(cur_apps))
-                    pm.set_blocked_files(list(cur_files))
-                    pm.set_blocked_folders(list(cur_folders))
-                    pm.start()
+                app_paths = {a for a in want_apps if os.path.sep in a or (os.name == 'nt' and '/' in a)}
+                initial_targets = want_files.union(want_folders).union(app_paths)
+                threading.Thread(target=_boot_sweep_task, args=(initial_targets, pm), daemon=True).start()
+                # first_run = False # Moved to end
+
+            # Update Logic...
+            if first_run or config_changed or want_exceptions != cur_exceptions:
+                # Update Allowlists
+                settings = cfg_cache.get("settings", {})
+                comb_allow = set(settings.get("cloud_allowlist", [])).union(want_exceptions)
+                pm.set_allowlisted_processes(list(comb_allow))
+                pm.set_allowlisted_keywords(settings.get("cloud_path_keywords", []))
+                pm.configure_performance(settings.get("performance_mode", "Balanced"))
+
+            # DNS/Hosts logic...
+            if first_run or config_changed or targets_dirty or want_domains != cur_domains or want_exceptions != cur_exceptions:
+                targets_dirty = False
+                if want_domains:
+                    if not dns_server:
+                        dns_server = DNSProxyServer(list(want_manual), list(want_filters), allowlist=list(want_exceptions), upstream_dns=detect_system_dns())
+                        if dns_server.start():
+                            using_dns_proxy = True
+                            remove_blocks()
+                        else:
+                            dns_server = None; using_dns_proxy = False
+                    
+                    if using_dns_proxy: 
+                        dns_server.update_rules(list(want_manual), list(want_filters.union(want_custom)), list(want_exceptions))
+                    else: 
+                        apply_blocks([d for d in want_domains if not _is_excepted(d, want_exceptions)], block_doh=sched_anywhere)
                 else:
-                    pm.stop()
+                    if dns_server: dns_server.stop(); dns_server = None
+                    remove_blocks()
+                cur_domains = set(want_domains)
+                cur_exceptions = set(want_exceptions)
 
+            # App/File logic...
+            if first_run or config_changed or want_apps != cur_apps or want_files != cur_files or want_folders != cur_folders:
+                pm.set_blocked_apps(list(want_apps))
+                pm.set_blocked_files(list(want_files))
+                pm.set_blocked_folders(list(want_folders))
+                
+                app_paths = {a for a in want_apps if os.path.sep in a or (os.name == 'nt' and '/' in a)}
+                _save_history(want_files.union(want_folders).union(app_paths))
+                
+                if want_apps or want_files or want_folders: pm.start()
+                else: pm.stop()
+                
+                cur_apps, cur_files, cur_folders = want_apps, want_files, want_folders
 
+            if (now - last_admin_check) >= 60.0:
+                logger.info(f"Heartbeat: [Admin={is_admin()}] [Active={pm.is_active}]")
+                last_admin_check = now
+
+            first_run = False
+            poll_sleep = {"Passive": 5, "Balanced": 2, "Strict": 0.5}.get(cfg_cache.get("settings", {}).get("performance_mode", "Balanced"), 2)
             time.sleep(poll_sleep)
-
-    except KeyboardInterrupt:
-        if dns_server: dns_server.stop()
-        remove_blocks()
-        pm.stop()
-        logger.info("Daemon stopped by user.")
-    except Exception as e:
-        logger.critical(f"FATAL DAEMON CRASH: {e}", exc_info=True)
-        if dns_server: dns_server.stop()
-        remove_blocks()
-        pm.stop()
-        sys.exit(1)
+        except Exception:
+            logger.exception("LOOP CRASH detected in main daemon cycle:")
+            time.sleep(5)
 
 if __name__ == "__main__":
-    if not is_admin():
-        if os.name == "nt":
-            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
-        sys.exit()
+    if os.name == "nt" and not is_admin() and "SPB_DATA_DIR" not in os.environ:
+        # Re-launch with admin rights using safe quoting
+        import subprocess
+        params = subprocess.list2cmdline(sys.argv)
+        try:
+            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
+        except: pass
+        sys.exit(0)
     main()
