@@ -83,6 +83,7 @@ def apply_blocks(websites, block_doh=True):
             if not d or "~" in d or "*" in d:
                 continue # Skip keyword/wildcard patterns in hosts file (unsupported)
                 
+            # Triple-entry: base, www, and ensure both IPv4/IPv6 coverage
             if d.startswith("www."):
                 base = d[4:]
                 final_domains.add(base)
@@ -93,9 +94,11 @@ def apply_blocks(websites, block_doh=True):
 
         if final_domains:
             block_lines = [BLOCK_BEGIN + "\n"]
-            for domain in sorted(final_domains):
-                block_lines.append(f"{REDIRECT_IP} {domain}\n")
-                block_lines.append(f":: {domain}\n")
+            # Sort for consistency
+            for domain in sorted(list(final_domains)):
+                # Expansion: IPv4 + IPv6 + www (already in set)
+                block_lines.append(f"0.0.0.0 {domain}\n")
+                block_lines.append(f"::1 {domain}\n")
             block_lines.append(BLOCK_END + "\n")
             clean_lines.extend(block_lines)
 
