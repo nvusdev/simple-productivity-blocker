@@ -200,7 +200,7 @@ def cleanup_acls():
             print(f"Warning: Could not clear all physical blocks: {e}")
 
 def main():
-    print("Simple Productivity Blocker v1.4.0 Uninstaller")
+    print("Simple Productivity Blocker v1.4.1 Uninstaller")
     print("-------------------------------------------------------")
     
     if not is_admin():

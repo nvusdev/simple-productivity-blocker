@@ -12,7 +12,7 @@ import copy
 from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, get_config_dir, export_config, import_config
 from core.persistence import set_startup, is_startup_enabled
 
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 
 def resource_path(relative_path):
     try:
