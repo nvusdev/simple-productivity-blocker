@@ -10,7 +10,7 @@
 :root {
   --background: #09090b; /* Zinc-950 */
   --foreground: #f4f4f5; /* Zinc-100 */
-  --accent: #10b981;    /* Emerald-500 */
+  --accent: #3b82f6;    /* Blue-500 */
 }
 
 body {
@@ -22,6 +22,6 @@ body {
 }
 
 ::selection {
-  background-color: rgba(16, 185, 129, 0.3);
-  color: #10b981;
+  background-color: rgba(59, 130, 246, 0.3);
+  color: #3b82f6;
 }

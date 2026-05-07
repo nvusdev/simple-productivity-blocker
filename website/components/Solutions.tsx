@@ -23,7 +23,7 @@ const solutions = [
     description: "Block 'doomscrolling' at the source. Lock in for deep work sessions that actually move the needle.",
     icon: Briefcase,
     className: "md:col-span-1 md:row-span-1",
-    color: "bg-emerald-500/10 border-emerald-500/20 text-emerald-500",
+    color: "bg-blue-500/10 border-blue-500/20 text-blue-500",
   },
   {
     title: "ADHD & Personal",
@@ -35,17 +35,17 @@ const solutions = [
 ];
 
 const features = [
-  { icon: Globe, text: "Advanced Website Filtering" },
-  { icon: AppWindow, text: "Application Termination" },
-  { icon: FolderLock, text: "Hardened File Access" },
-  { icon: Zap, text: "Passive Battery Efficiency" },
+  { icon: Globe, title: "DNS-Level Website Filtering", text: "Blocks connections before they happen." },
+  { icon: AppWindow, title: "Strict Process Termination", text: "Forces distractive apps to close." },
+  { icon: FolderLock, title: "NTFS Hardened Access", text: "Restricts access to specific folders." },
+  { icon: Zap, title: "Battery-Aware", text: "Zero-drain background operation." },
 ];
 
 export default function Solutions() {
   return (
-    <section className="py-32 bg-zinc-950">
-      <div className="container mx-auto px-6">
-        <div className="flex flex-col md:flex-row justify-between items-end mb-16 gap-8">
+    <section className="py-24 bg-zinc-950">
+      <div className="max-w-7xl mx-auto px-8">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-16 gap-12">
           <div className="max-w-2xl">
             <h2 className="text-4xl md:text-5xl font-bold mb-6">Built for Every Goal.</h2>
             <p className="text-zinc-400 text-lg">
@@ -53,11 +53,14 @@ export default function Solutions() {
               <strong> entrepreneurial focus</strong>, SPB adapts to your mission.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
              {features.map((f, i) => (
-               <div key={i} className="flex items-center gap-2 text-sm text-zinc-500 font-medium">
-                 <f.icon size={16} className="text-emerald-500" />
-                 {f.text}
+               <div key={i} className="flex items-start gap-3 text-sm text-zinc-500 font-medium">
+                 <f.icon size={20} className="text-blue-500 shrink-0 mt-0.5" />
+                 <div>
+                   <span className="text-zinc-300 block mb-0.5">{f.title}</span>
+                   <span className="text-xs text-zinc-500">{f.text}</span>
+                 </div>
                </div>
              ))}
           </div>
@@ -93,3 +96,4 @@ export default function Solutions() {
     </section>
   );
 }
+
