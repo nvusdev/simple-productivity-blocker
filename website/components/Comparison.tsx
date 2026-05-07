@@ -37,7 +37,7 @@ const comparisonData = [
 
 export default function Comparison() {
   return (
-    <section id="comparison" className="py-24 bg-zinc-950/50 relative overflow-hidden">
+    <section id="comparison" className="py-20 bg-zinc-950">
       <div className="max-w-6xl mx-auto px-8">
         <div className="text-center mb-20">
           <h2 className="text-4xl md:text-5xl font-bold mb-6">The Focus Reality.</h2>

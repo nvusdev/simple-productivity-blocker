@@ -37,11 +37,11 @@ export default function Hero() {
   };
 
   return (
-    <section className="relative pt-20 pb-24 overflow-hidden bg-zinc-950">
+    <section className="relative pt-20 pb-20 overflow-hidden bg-zinc-950">
       {/* Background Glow */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.05),transparent_70%)] pointer-events-none" />
 
-      <div className="max-w-6xl mx-auto px-8 grid grid-cols-1 md:grid-cols-2 gap-12 items-center relative z-10">
+      <div className="max-w-6xl mx-auto px-8 grid grid-cols-1 md:grid-cols-2 gap-8 items-center relative z-10">
         <div className="text-left">
           <motion.div
             initial={{ opacity: 0, x: -20 }}

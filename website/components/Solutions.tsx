@@ -43,8 +43,8 @@ const features = [
 
 export default function Solutions() {
   return (
-    <section className="py-24 bg-zinc-950">
-      <div className="max-w-7xl mx-auto px-8">
+    <section className="py-20 bg-zinc-950 relative overflow-hidden">
+      <div className="max-w-6xl mx-auto px-8 relative z-10">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-16 gap-12">
           <div className="max-w-2xl">
             <h2 className="text-4xl md:text-5xl font-bold mb-6">Built for Every Goal.</h2>
