@@ -9,14 +9,18 @@ const outfit = Outfit({
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://nvusdev.github.io/simple-productivity-blocker/'),
   title: "Simple Productivity Blocker | Absolute Focus for ADHD & Students",
   description: "A hardened, kernel-level Windows productivity blocker. Secure your focus with the Triple-Lock suite. Perfect for students, ADHD, and deep work.",
   keywords: ["productivity blocker", "windows app blocker", "ADHD focus tool", "hardened focus software", "kernel-level blocker", "website filter for windows"],
+  alternates: {
+    canonical: '/',
+  },
   openGraph: {
     title: "Simple Productivity Blocker",
     description: "Secure your focus when willpower isn't enough. System-level enforcement for absolute concentration.",
     type: "website",
-    url: "https://spb-landing.run.app",
+    url: "/",
     siteName: "SPB",
   },
   twitter: {
