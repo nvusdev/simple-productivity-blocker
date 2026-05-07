@@ -30,6 +30,8 @@ jobs:
         run: cd website && npm install
       - name: Build
         run: cd website && npm run build
+        env:
+          NEXT_PUBLIC_BASE_PATH: /simple-productivity-blocker
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

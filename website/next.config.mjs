@@ -1,10 +1,7 @@
 /** @type {import('next').NextConfig} */
-const isGithubActions = process.env.GITHUB_ACTIONS || false;
-
 const nextConfig = {
   output: 'export',
-  basePath: isGithubActions ? '/simple-productivity-blocker' : '',
-  assetPrefix: isGithubActions ? '/simple-productivity-blocker/' : '',
+  basePath: process.env.NEXT_PUBLIC_BASE_PATH || '',
   images: {
     unoptimized: true,
   },
