@@ -17,7 +17,7 @@ def send_queries(port, count):
     start = time.time()
     
     for i in range(count):
-        q = DNSRecord.question("google.com")
+        q = DNSRecord.question("badsite.com")
         sock.sendto(q.pack(), ("127.0.0.1", port))
         try:
             data, _ = sock.recvfrom(1024)
@@ -33,7 +33,7 @@ def send_queries(port, count):
 
 def run_load_test():
     print("--- Phase B: Proxy Load Test ---")
-    server = DNSProxyServer(manual_list=["*badsite*"], filter_list=[], port=5353)
+    server = DNSProxyServer(manual_list=["*badsite*"], filter_list=[], port=53535)
     
     thread = threading.Thread(target=server.start, daemon=True)
     thread.start()
@@ -46,8 +46,8 @@ def run_load_test():
     process = psutil.Process(os.getpid())
     start_mem = process.memory_info().rss / (1024 * 1024)
     
-    print(f"Blasting 5,000 queries to localhost:5353...")
-    success_count, duration = send_queries(5353, 5000)
+    print(f"Blasting 5,000 queries to localhost:53535...")
+    success_count, duration = send_queries(53535, 5000)
     
     end_mem = process.memory_info().rss / (1024 * 1024)
     mem_growth = end_mem - start_mem

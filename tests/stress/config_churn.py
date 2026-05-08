@@ -13,7 +13,7 @@ def churn_rules(server, duration):
     updates = 0
     while time.time() < end_time:
         new_rules = [f"site{random.randint(1, 1000)}.com" for _ in range(100)]
-        server.update_rules(new_rules, [], [])
+        server.update_rules(new_rules, [], [], [])
         updates += 1
         time.sleep(0.01) # 100 updates/sec
     return updates

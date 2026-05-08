@@ -3,6 +3,12 @@
 
 Write-Host "Building Simple Productivity Blocker for Windows..."
 
+# Check if running as Admin (for cleanup/kill, though build itself doesn't need it)
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if ($isAdmin) {
+    Write-Host "Note: Running as Administrator. PyInstaller 7.0 will require non-admin builds." -ForegroundColor Yellow
+}
+
 # Clean previous builds
 Write-Host "Cleaning previous build artifacts and terminating running instances..."
 Get-Process "SimpleProductivityBlocker" -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -51,23 +57,31 @@ python -m PyInstaller --noconfirm --onedir --windowed --uac-admin `
     --icon="$tempIco" `
     --add-data "newlogo.png;." `
     --add-data "icon.ico;." `
-    --collect-all pywin32 `
     --hidden-import=pywintypes `
     --hidden-import=pythoncom `
     --hidden-import=win32com `
+    --hidden-import=win32api `
+    --hidden-import=win32file `
+    --hidden-import=win32con `
+    --hidden-import=win32event `
     --exclude-module redis `
     --exclude-module opentelemetry `
     --name "SimpleProductivityBlocker" main.py
 
-# Build the daemon
+# Build the daemon (Stripped of Tkinter/UI for 15MB+ savings)
 Write-Host "Building SPB_Daemon.exe..."
 python -m PyInstaller --noconfirm --onefile --windowed `
     --icon="$tempIco" `
-    --collect-all pywin32 `
     --collect-all dnslib `
     --hidden-import=pywintypes `
     --hidden-import=pythoncom `
     --hidden-import=win32com `
+    --hidden-import=win32api `
+    --hidden-import=win32file `
+    --hidden-import=win32con `
+    --hidden-import=win32event `
+    --exclude-module tkinter `
+    --exclude-module _tkinter `
     --exclude-module redis `
     --exclude-module opentelemetry `
     --name "SPB_Daemon" daemon.py
@@ -81,35 +95,52 @@ Copy-Item "dist\SPB_Daemon.exe" -Destination "$pkgDir\"
 # Build installer (Bundles the app as payload)
 Write-Host "Building spb_installer.exe..."
 python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
-    --collect-all pywin32 `
     --add-data "dist/SimpleProductivityBlocker/*;." `
     --hidden-import=pywintypes `
     --hidden-import=pythoncom `
     --hidden-import=win32com `
+    --hidden-import=win32api `
+    --hidden-import=win32file `
+    --hidden-import=win32con `
+    --hidden-import=win32event `
     --name "spb_installer" spb_installer.py
 
 # Build uninstaller (Logic only, NO payload)
 Write-Host "Building spb_uninstaller.exe..."
 python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
-    --collect-all pywin32 `
     --hidden-import=pywintypes `
     --hidden-import=pythoncom `
     --hidden-import=win32com `
+    --hidden-import=win32api `
+    --hidden-import=win32file `
+    --hidden-import=win32con `
+    --hidden-import=win32event `
     --name "spb_uninstaller" spb_uninstaller.py
+
+# Build emergency recovery helper (Logic only, NO payload)
+Write-Host "Building recovery_uplift.exe..."
+python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
+    --name "recovery_uplift" recovery_uplift.py
 
 # Final Assembly: Copy installer and uninstaller into the package directory
 Write-Host "Finalizing distribution package..."
 Copy-Item "dist\spb_installer.exe" -Destination "$pkgDir\"
 Copy-Item "dist\spb_uninstaller.exe" -Destination "$pkgDir\"
+Copy-Item "dist\recovery_uplift.exe" -Destination "$pkgDir\"
 
-# Explicitly bundle pywin32 system DLLs to ensure Folder Monitoring works
+# Explicitly bundle pywin32 system DLLs dynamically to ensure Folder Monitoring works
 Write-Host "Bundling pywin32 system components..."
-$pywin32SysDir = "C:\Users\You\AppData\Roaming\Python\Python314\site-packages\pywin32_system32"
+$pywin32SysDir = python -c "import os, win32api; print(os.path.dirname(win32api.__file__))"
 if (Test-Path $pywin32SysDir) {
-    Copy-Item "$pywin32SysDir\*.dll" -Destination "$pkgDir\"
-    Write-Host "COM Drivers bundled successfully."
-} else {
-    Write-Host "Warning: Could not find pywin32_system32. Folder monitoring may be limited."
+    # We need the DLLs from the pywin32_system32 folder which is usually adjacent to win32
+    $baseSite = Split-Path $pywin32SysDir -Parent
+    $dllDir = Join-Path $baseSite "pywin32_system32"
+    if (Test-Path $dllDir) {
+        Copy-Item "$dllDir\*.dll" -Destination "$pkgDir\"
+        Write-Host "COM Drivers (pywin32) bundled successfully from $dllDir."
+    } else {
+        Write-Host "Warning: Could not find pywin32_system32. Folder monitoring may be limited." -ForegroundColor Yellow
+    }
 }
 
 # Copy Documentation
