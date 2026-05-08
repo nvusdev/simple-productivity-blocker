@@ -483,3 +483,10 @@ class ProcessMonitor:
         elif os.path.isdir(path):
             new_list = list(set(self.blocked_folder_roots).union({path}))
             self.set_blocked_folders(new_list)
+    def synchronize_all(self, apps, files, folders):
+        """Reconcile the entire process monitor state with a new set of targets.
+        Used by the daemon's main loop to ensure all vectors stay consistent.
+        """
+        self.set_blocked_apps(apps)
+        self.set_blocked_files(files)
+        self.set_blocked_folders(folders)
