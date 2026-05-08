@@ -20,6 +20,8 @@ from typing import List, Optional, Set, Any, Dict, Tuple, Union
 
 # Local imports
 from security import ADBLOCK_LISTS, CustomListManager
+from core.config_manager import load_config
+from core.scheduler import is_active, is_day_active
 
 # Define internal fallbacks with explicit defaults to prevent startup NameErrors
 _INTERNAL_HOSTS_FILE = r"C:\Windows\System32\drivers\etc\hosts" if os.name == 'nt' else "/etc/hosts"
@@ -92,57 +94,6 @@ RECOVERY_FILE = os.path.join(base_data, "recovery_history.json")
 # Security & Lists initialized in security.py
 clm = CustomListManager(base_data)
 
-def is_day_active(schedule, date_context=None):
-    if not schedule.get("enabled", False): return True
-    if schedule.get("always", False): return True
-    dt = date_context or datetime.now()
-    day_name = dt.strftime("%A")
-    days = schedule.get("days", [])
-    if isinstance(days, list) and day_name in days:
-        return True
-    return schedule.get(day_name, False)
-
-def is_active(group):
-    if not group.get("enabled", True): return False
-    schedule = group.get("schedule", {})
-    if not schedule.get("enabled", False): return True
-    
-    if schedule.get("persist_all_day", False): return True
-    
-    now_dt = datetime.now()
-    now_time = now_dt.time()
-    start_str = schedule.get("start_time", schedule.get("start", "00:00"))
-    end_str = schedule.get("end_time", schedule.get("end", "23:59"))
-    
-    try:
-        start = datetime.strptime(start_str, "%H:%M").time()
-        end = datetime.strptime(end_str, "%H:%M").time()
-        
-        in_window = False
-        if start <= end:
-            in_window = start <= now_time <= end
-        else:
-            # Wrap-around window (e.g., 22:00 to 04:00)
-            in_window = now_time >= start or now_time <= end
-            
-        active = False
-        if in_window:
-            # If we are in the 'late' part of a wrap-around (e.g., 01:00 in 22:00-04:00 window),
-            # we need to check if YESTERDAY was an active day for this schedule.
-            if start > end and now_time <= end:
-                from datetime import timedelta
-                if is_day_active(schedule, date_context=now_dt - timedelta(days=1)):
-                    active = True
-            
-            # Otherwise, if we are in the 'early' part or a normal window, check today.
-            if not active and is_day_active(schedule, date_context=now_dt):
-                active = True
-        
-        return active
-    except Exception as e:
-        logger.error(f"Schedule error: {e}")
-        return True
-
 def _base(domain):
     return domain.strip().lower().removeprefix("www.")
 
@@ -178,7 +129,9 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
     all_apps: Set[str] = set()
     all_files: Set[str] = set()
     all_folders: Set[str] = set()
-    cloud_allowlist: Set[str] = set(config.get("settings", {}).get("cloud_allowlist", []))
+    settings = config.get("settings", {})
+    cloud_allowlist_enabled = settings.get("cloud_allowlist_enabled", True)
+    cloud_allowlist: Set[str] = set(settings.get("cloud_allowlist", [])) if cloud_allowlist_enabled else set()
     filter_exceptions: Set[str] = set()
     all_app_exceptions: Set[str] = set()
 
@@ -254,10 +207,44 @@ def _get_history():
             except: pass
     return h
 
-def _save_history(current_set):
+def _save_history(new_paths):
+    """Accumulates paths into history instead of overwriting.
+    Ensures that metadata for locked files is never lost until successfully unlocked.
+    """
     try:
-        with open(RECOVERY_FILE, "w") as f: json.dump(list(current_set), f)
-    except: pass
+        existing = _get_history()
+        # Only add to history, never remove here (Removal happens in _on_acl_operation_complete)
+        updated = existing.union(set(new_paths))
+        with open(RECOVERY_FILE, "w") as f:
+            json.dump(list(updated), f)
+    except Exception as e:
+        logger.error(f"Failed to save history: {e}")
+
+def _on_acl_operation_complete(path, locked, success):
+    """Callback from ProcessMonitor when an ACL operation finishes.
+    If an unlock was successful, we can finally remove it from the persistent history.
+    """
+    if not success:
+        return
+        
+    if not locked: # This was an UNLOCK operation
+        try:
+            history = _get_history()
+            path_norm = os.path.normpath(path)
+            # Find and remove (case-insensitive on Windows)
+            to_remove = None
+            for p in history:
+                if os.path.normpath(p).lower() == path_norm.lower():
+                    to_remove = p
+                    break
+            
+            if to_remove:
+                history.remove(to_remove)
+                with open(RECOVERY_FILE, "w") as f:
+                    json.dump(list(history), f)
+                logger.info(f"Verified Uplift: Removed {path} from recovery history.")
+        except Exception as e:
+            logger.error(f"Failed to update history after unlock: {e}")
 
 def _boot_sweep_task(initial_targets: set[str], pm_instance):
     """Reconciles historical locks against current config on startup.
@@ -301,7 +288,7 @@ class ConfigManager:
     """Handles configuration loading, debouncing, and target computation."""
     def __init__(self, cfg_path: str):
         self.cfg_path = cfg_path
-        self.cache: Dict[str, Any] = {"groups": {}, "settings": {}}
+        self.cache: Dict[str, Any] = load_config(cfg_path)
         self.stable_mtime = 0.0
         self.pending_mtime = 0.0
         self.debounce_counter = 0
@@ -325,11 +312,10 @@ class ConfigManager:
         if self.stable_mtime != mtime:
             self.stable_mtime = mtime
             try:
-                with open(self.cfg_path, "r") as f:
-                    self.cache = json.load(f)
+                self.cache = load_config(self.cfg_path)
                 return True
-            except:
-                logger.error("Failed to load config.json")
+            except Exception:
+                logger.error("Failed to load config.json", exc_info=True)
         return False
 
     def compute_context(self) -> BlockingContext:
@@ -370,6 +356,12 @@ class SubsystemOrchestrator:
             # Only update rules if server already existed (re-creation does it in __init__)
             if self.using_dns_proxy:
                 self.dns_server.update_rules(list(manual_domains), list(filter_keywords), list(cloud_allowlist), list(filter_exceptions))
+
+        if self.using_dns_proxy and self.dns_server and not self.dns_server.is_healthy():
+            logger.error("DNS Proxy health check failed. Restoring adapter DNS and falling back to hosts-file protection.")
+            self.dns_server.stop()
+            self.dns_server = None
+            self.using_dns_proxy = False
         
         # In hosts file mode, we must still respect the hierarchy:
         # 1. Start with manual blocks (they only respect cloud_allowlist)
@@ -382,6 +374,17 @@ class SubsystemOrchestrator:
         active_domains = set(manual_active).union(set(filter_active))
         sync_website_protection(list(active_domains), active=True, using_dns_proxy=self.using_dns_proxy)
         return True
+
+    def watchdog_dns(self, active_domains):
+        if not self.using_dns_proxy or not self.dns_server:
+            return
+        if self.dns_server.is_healthy():
+            return
+        logger.error("DNS watchdog detected an unhealthy proxy. Restoring DNS and switching to hosts fallback.")
+        self.dns_server.stop()
+        self.dns_server = None
+        self.using_dns_proxy = False
+        sync_website_protection(list(active_domains), active=True, using_dns_proxy=False)
 
     def sync_processes(self, processes, files, folders, first_run):
         if self.pm:
@@ -445,10 +448,13 @@ class DaemonOrchestrator:
         # Update PM Settings
         settings = self.cfg.cache.get("settings", {})
         if self.subsystems.pm:
-            comb_allow = set(settings.get("cloud_allowlist", [])).union(ctx.app_exceptions)
-            self.subsystems.pm.set_allowlisted_processes(list(comb_allow))
-            self.subsystems.pm.set_allowlisted_keywords(settings.get("cloud_path_keywords", []))
+            global_allow = set(settings.get("cloud_allowlist", [])) if settings.get("cloud_allowlist_enabled", True) else set()
+            comb_allow = global_allow.union(ctx.app_exceptions)
+            self.subsystems.pm.set_allowlisted_processes(list(comb_allow), enabled=bool(comb_allow))
+            self.subsystems.pm.set_allowlisted_keywords(settings.get("cloud_path_keywords", []) if global_allow else [])
             self.subsystems.pm.configure_performance(settings.get("performance_mode", "Balanced"))
+            # Register the history callback
+            self.subsystems.pm._acl_callback = _on_acl_operation_complete
 
         # Update Subsystems
         total_filter = ctx.filter_keywords.union(self.want_custom)
@@ -477,6 +483,7 @@ class DaemonOrchestrator:
                 self.sync()
                 now = time.time()
                 if now - self.last_heartbeat >= 60.0:
+                    self.subsystems.watchdog_dns(self.cur_domains)
                     dns_status = "Active" if self.subsystems.using_dns_proxy else ("Fallback" if self.cur_domains else "None")
                     logger.info(f"Heartbeat: [Admin={is_admin()}] [Protection={'Active' if self.subsystems.pm and self.subsystems.pm.is_active else 'Off'}] [DNS={dns_status}]")
                     if os.name == 'nt' and self.subsystems.pm and self.subsystems.pm.is_active:

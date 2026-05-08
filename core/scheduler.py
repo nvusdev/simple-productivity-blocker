@@ -1,11 +1,11 @@
 import datetime
 
-def is_day_active(schedule):
+def is_day_active(schedule, date_context=None):
     if not schedule.get("enabled", False):
         return True
     if schedule.get("always", False):
         return True
-    now = datetime.datetime.now()
+    now = date_context or datetime.datetime.now()
     current_day = now.strftime("%A")
     
     # Handle list format (used by GUI)
@@ -16,7 +16,7 @@ def is_day_active(schedule):
     # Handle boolean keys format (fallback)
     return schedule.get(current_day, False)
 
-def is_active(config):
+def is_active(config, date_context=None):
     if not config.get("enabled", True):
         return False
         
@@ -24,22 +24,26 @@ def is_active(config):
     if not schedule.get("enabled", False):
         return True # If schedule is not enabled, blocks are always active
 
-    if not is_day_active(schedule):
-        return False
-
     if schedule.get("persist_all_day", False):
-        return True
+        return is_day_active(schedule, date_context=date_context)
 
-    start_time_str = schedule.get("start_time", "00:00")
-    end_time_str = schedule.get("end_time", "23:59")
+    start_time_str = schedule.get("start_time", schedule.get("start", "00:00"))
+    end_time_str = schedule.get("end_time", schedule.get("end", "23:59"))
 
     try:
         start_time = datetime.datetime.strptime(start_time_str, "%H:%M").time()
         end_time = datetime.datetime.strptime(end_time_str, "%H:%M").time()
-        current_time = datetime.datetime.now().time()
+        now = date_context or datetime.datetime.now()
+        current_time = now.time()
 
         if start_time <= end_time:
-            return start_time <= current_time <= end_time
-        return current_time >= start_time or current_time <= end_time
+            return is_day_active(schedule, date_context=now) and start_time <= current_time <= end_time
+
+        if current_time >= start_time:
+            return is_day_active(schedule, date_context=now)
+        if current_time <= end_time:
+            yesterday = now - datetime.timedelta(days=1)
+            return is_day_active(schedule, date_context=yesterday)
+        return False
     except ValueError:
         return False

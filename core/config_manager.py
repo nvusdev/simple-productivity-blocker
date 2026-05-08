@@ -3,6 +3,8 @@ import os
 import threading
 import copy
 import base64
+import shutil
+from datetime import datetime
 
 def get_config_dir():
     if os.name == 'nt':
@@ -12,6 +14,7 @@ def get_config_dir():
         return os.path.join(config_home, 'SimpleProductivityBlocker')
 
 CONFIG_FILE = os.path.join(get_config_dir(), 'config.json')
+CONFIG_SCHEMA_VERSION = 2
 
 _lock = threading.Lock()
 
@@ -78,6 +81,9 @@ DEFAULT_SETTINGS = {
 }
 
 DEFAULT_CONFIG = {
+    "schema_version": CONFIG_SCHEMA_VERSION,
+    "normalized_at": None,
+    "migration_warnings": [],
     "groups": {
         "Default Profile": copy.deepcopy(DEFAULT_GROUP_CONFIG)
     },
@@ -96,6 +102,12 @@ def _deep_merge_defaults(target, defaults):
                 target[key] = copy.deepcopy(value)
 
 def _normalize_group(group_data):
+    schedule = group_data.get("schedule", {})
+    if isinstance(schedule, dict):
+        if "start_time" not in schedule and "start" in schedule:
+            schedule["start_time"] = schedule.get("start")
+        if "end_time" not in schedule and "end" in schedule:
+            schedule["end_time"] = schedule.get("end")
     _deep_merge_defaults(group_data, DEFAULT_GROUP_CONFIG)
     if "exceptions" in group_data:
         legacy = group_data.get("exceptions") or []
@@ -113,37 +125,75 @@ def _normalize_settings(config_data):
         return
     _deep_merge_defaults(settings, DEFAULT_SETTINGS)
 
-def load_config():
+def normalize_config(data):
+    warnings = []
+    if not isinstance(data, dict):
+        warnings.append("Config root was not an object; defaults loaded.")
+        data = {}
+
+    if "groups" not in data or not isinstance(data.get("groups"), dict):
+        migrated = copy.deepcopy(DEFAULT_CONFIG)
+        group_data = {
+            "websites": data.get("websites", []),
+            "apps": data.get("apps", []),
+            "files": data.get("files", []),
+            "folders": data.get("folders", []),
+            "adblocker": data.get("adblocker", {}),
+            "schedule": data.get("schedule", {}),
+            "security": data.get("security", {}),
+            "exceptions": data.get("exceptions", []),
+        }
+        _normalize_group(group_data)
+        migrated["groups"]["Default Profile"] = group_data
+        if "settings" in data:
+            migrated["settings"] = data.get("settings", {})
+        data = migrated
+        warnings.append("Legacy flat config migrated into Default Profile.")
+
+    _deep_merge_defaults(data, DEFAULT_CONFIG)
+
+    for group_name, group_data in list(data.get("groups", {}).items()):
+        if not isinstance(group_data, dict):
+            data["groups"][group_name] = copy.deepcopy(DEFAULT_GROUP_CONFIG)
+            warnings.append(f"Invalid group '{group_name}' replaced with defaults.")
+        else:
+            _normalize_group(group_data)
+
+    _normalize_settings(data)
+    data["schema_version"] = CONFIG_SCHEMA_VERSION
+    data["normalized_at"] = datetime.now().isoformat(timespec="seconds")
+    existing = data.get("migration_warnings", [])
+    if not isinstance(existing, list):
+        existing = []
+    data["migration_warnings"] = list(dict.fromkeys(existing + warnings))
+    return data
+
+def _quarantine_bad_config(path):
+    try:
+        if os.path.exists(path):
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            quarantine = f"{path}.bad-{ts}"
+            shutil.copy2(path, quarantine)
+            return quarantine
+    except Exception:
+        return None
+    return None
+
+def load_config(path=None):
+    cfg_file = path or CONFIG_FILE
     with _lock:
-        if not os.path.exists(CONFIG_FILE):
-            return copy.deepcopy(DEFAULT_CONFIG)
+        if not os.path.exists(cfg_file):
+            return normalize_config(copy.deepcopy(DEFAULT_CONFIG))
         try:
-            with open(CONFIG_FILE, 'r') as f:
+            with open(cfg_file, 'r') as f:
                 data = json.load(f)
-                if "groups" not in data:
-                    migrated = copy.deepcopy(DEFAULT_CONFIG)
-                    group_data = {
-                        "websites": data.get("websites", []),
-                        "apps": data.get("apps", []),
-                        "files": data.get("files", []),
-                        "folders": data.get("folders", []),
-                        "adblocker": data.get("adblocker", {}),
-                        "schedule": data.get("schedule", {}),
-                        "security": data.get("security", {}),
-                        "exceptions": data.get("exceptions", []),
-                    }
-                    _normalize_group(group_data)
-                    migrated["groups"]["Default Profile"] = group_data
-                    if "settings" in data:
-                        migrated["settings"] = data.get("settings", {})
-                        _normalize_settings(migrated)
-                    return migrated
-                for group_name, group_data in data["groups"].items():
-                    _normalize_group(group_data)
-                _normalize_settings(data)
-                return data
+                return normalize_config(data)
         except Exception:
-            return copy.deepcopy(DEFAULT_CONFIG)
+            fallback = normalize_config(copy.deepcopy(DEFAULT_CONFIG))
+            quarantine = _quarantine_bad_config(cfg_file)
+            if quarantine:
+                fallback["migration_warnings"].append(f"Invalid config quarantined at {quarantine}.")
+            return fallback
 
 import time
 
@@ -185,15 +235,16 @@ def import_config(path, current_config=None, merge=True):
         decoded = base64.b64decode(encoded).decode()
         new_data = json.loads(decoded)
         
+        new_data = normalize_config(new_data)
         if not merge or not current_config:
             return new_data
             
-        merged = copy.deepcopy(current_config)
+        merged = normalize_config(copy.deepcopy(current_config))
         if "groups" in new_data:
             for g_name, g_data in new_data["groups"].items():
                 merged["groups"][g_name] = g_data
         if "settings" in new_data:
             merged["settings"].update(new_data["settings"])
-        return merged
+        return normalize_config(merged)
     except Exception:
         return None

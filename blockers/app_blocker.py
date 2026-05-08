@@ -45,6 +45,7 @@ class ProcessMonitor:
         self.logger = logging.getLogger("SPB_AppBlocker")
         
         self._acl_worker = None
+        self._acl_callback = None
 
     def configure_performance(self, mode: str):
         """Standardized performance profiles:
@@ -117,6 +118,7 @@ class ProcessMonitor:
         return False
 
     def set_blocked_apps(self, apps):
+        old_paths = set(self.blocked_app_paths)
         self.blocked_app_names.clear()
         self.blocked_app_paths.clear()
         for app in (apps or []):
@@ -134,6 +136,8 @@ class ProcessMonitor:
         if self.is_active:
             self._apply_disallow_run() # Vector 1: Registry
             self._apply_file_locks()   # Vector 2: Handles
+            for path in old_paths - self.blocked_app_paths:
+                self._set_acl_lock(path, False)
             for path in self.blocked_app_paths:
                 self._set_acl_lock(path, True) # Vector 3: ACLs
 
@@ -217,8 +221,10 @@ class ProcessMonitor:
         while not self._stop_event.is_set():
             try:
                 task = self._acl_queue.get(timeout=1)
-                path, lock = task
-                self._apply_acl_internal(path, lock)
+                path, lock, callback = task
+                success = self._apply_acl_internal(path, lock)
+                if callback:
+                    callback(path, lock, success)
                 self._acl_queue.task_done()
             except queue.Empty: continue
             except Exception as e:
@@ -285,19 +291,26 @@ class ProcessMonitor:
             res = subprocess.run(args, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
             if res.returncode != 0:
                 self.logger.error(f"ACL Failure for {path}: {res.stderr.strip()}")
+                return False
             else:
                 self.logger.info(f"ACL {'Locked' if lock else 'Restored'} for {path}")
+                with self._acl_sync_lock:
+                    if lock: self._current_acl_paths.add(path)
+                    elif path in self._current_acl_paths: self._current_acl_paths.remove(path)
+                return True
 
             with self._acl_sync_lock:
                 if lock: self._current_acl_paths.add(path)
                 elif path in self._current_acl_paths: self._current_acl_paths.remove(path)
         except Exception as e:
             self.logger.error(f"ACL Exception for {path}: {e}")
+            return False
 
-    def _set_acl_lock(self, path, should_lock):
+    def _set_acl_lock(self, path, should_lock, callback=None):
         """Asynchronous ACL locking via background queue."""
         if not path: return
-        self._acl_queue.put((path, should_lock))
+        cb = callback or self._acl_callback
+        self._acl_queue.put((path, should_lock, cb))
 
     def _clear_all_acls(self):
         with self._acl_sync_lock:
@@ -310,7 +323,7 @@ class ProcessMonitor:
         if os.name != 'nt': return
         try:
             policy_key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer")
-            winreg.SetValueEx(policy_key, "DisallowRun", 0, winreg.REG_DWORD, 1)
+            winreg.SetValueEx(policy_key, "DisallowRun", 0, winreg.REG_DWORD, 1 if self.blocked_app_names else 0)
             list_key = winreg.CreateKey(policy_key, "DisallowRun")
             try:
                 while True:
@@ -474,7 +487,7 @@ class ProcessMonitor:
             elif os.path.isdir(path):
                 new_list = [p for p in self.blocked_folder_roots if p != path]
                 self.set_blocked_folders(new_list)
-            return
+            return True # Successfully queued
 
         # Additive blocking
         if os.path.isfile(path):
@@ -487,6 +500,24 @@ class ProcessMonitor:
         """Reconcile the entire process monitor state with a new set of targets.
         Used by the daemon's main loop to ensure all vectors stay consistent.
         """
+        apps = list(apps or [])
+        files = list(files or [])
+        folders = list(folders or [])
+        should_run = bool(apps or files or folders)
+
         self.set_blocked_apps(apps)
         self.set_blocked_files(files)
         self.set_blocked_folders(folders)
+
+        if should_run and not self.is_active:
+            self.logger.info(
+                f"ProcessMonitor target sync requires enforcement: {len(apps)} apps, {len(files)} files, {len(folders)} folders."
+            )
+            self.start()
+        elif not should_run and self.is_active:
+            self.logger.info("ProcessMonitor target sync is empty; stopping enforcement and clearing locks.")
+            self.stop()
+        else:
+            self.logger.info(
+                f"ProcessMonitor synchronized: active={self.is_active}, {len(apps)} apps, {len(files)} files, {len(folders)} folders."
+            )

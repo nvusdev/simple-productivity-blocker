@@ -7,11 +7,30 @@ import time
 import subprocess
 import psutil
 import traceback
+import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional, Set, Any, Dict
 from dnslib import DNSRecord, QTYPE, RR, A, AAAA, DNSHeader
 
 logger = logging.getLogger("SPB_Daemon")
+DNS_STATE_FILE = os.path.join(
+    os.getenv("PROGRAMDATA", r"C:\ProgramData"),
+    "SimpleProductivityBlocker",
+    "dns_state.json"
+) if os.name == 'nt' else os.path.expanduser("~/.config/SimpleProductivityBlocker/dns_state.json")
+
+LOOPBACK_DNS = {"127.0.0.1", "::1"}
+PROTECTED_ADAPTER_KEYWORDS = (
+    "tailscale", "wintun", "wireguard", "openvpn", "zerotier", "vpn",
+    "portmaster", "proton", "mullvad", "nord", "zscaler", "globalprotect",
+    "anyconnect", "fortinet", "forti", "cloudflare", "adguard", "nextdns"
+)
+CONFLICT_SERVICE_KEYWORDS = (
+    "Portmaster", "VPN", "WireGuard", "OpenVPN", "Tailscale", "ZeroTier",
+    "Wintun", "Nord", "Mullvad", "Cisco", "AnyConnect", "Zscaler",
+    "GlobalProtect", "Forti", "Cloudflare", "Proton", "Surfshark",
+    "ExpressVPN", "AdGuard", "NextDNS", "YogaDNS", "Acrylic", "Dnscrypt", "Stubby"
+)
 
 # Robust Import Hardening for flush_dns and HOSTS_FILE
 HOSTS_FILE = r"C:\Windows\System32\drivers\etc\hosts" if os.name == 'nt' else "/etc/hosts"
@@ -34,6 +53,203 @@ try:
 except Exception as e:
     # Use debug logging to capture potential resolution issues without flooding console
     logger.debug(f"Module resolution fallback for website_blocker: {e}")
+
+def _ensure_state_dir(path: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+def _run_powershell_json(script: str):
+    res = subprocess.run(
+        ["powershell", "-NoProfile", "-Command", script],
+        capture_output=True,
+        text=True,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+    )
+    if res.returncode != 0:
+        raise RuntimeError(res.stderr.strip() or "PowerShell command failed")
+    text = res.stdout.strip()
+    if not text:
+        return []
+    data = json.loads(text)
+    return data if isinstance(data, list) else [data]
+
+def _as_list(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v) for v in value if str(v).strip()]
+    return [str(value)] if str(value).strip() else []
+
+def _is_loopback_only(addresses) -> bool:
+    addresses = set(_as_list(addresses))
+    return bool(addresses) and addresses.issubset(LOOPBACK_DNS)
+
+def _has_non_loopback(addresses) -> bool:
+    return any(a not in LOOPBACK_DNS for a in _as_list(addresses))
+
+def _is_protected_adapter(adapter: Dict[str, Any]) -> bool:
+    haystack = " ".join([
+        str(adapter.get("alias", "")),
+        str(adapter.get("description", "")),
+    ]).lower()
+    return any(k in haystack for k in PROTECTED_ADAPTER_KEYWORDS)
+
+def snapshot_dns_state(adapters=None, state_path=DNS_STATE_FILE):
+    """Capture active adapter DNS state and mark which adapters are safe to redirect."""
+    if os.name != 'nt':
+        return {"version": 1, "platform": os.name, "adapters": [], "eligible": [], "warnings": ["DNS snapshots are Windows-only."]}
+
+    if adapters is None:
+        script = r"""
+$items = Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | ForEach-Object {
+  $idx = $_.ifIndex
+  $v4 = @(Get-DnsClientServerAddress -InterfaceIndex $idx -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ServerAddresses)
+  $v6 = @(Get-DnsClientServerAddress -InterfaceIndex $idx -AddressFamily IPv6 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ServerAddresses)
+  [pscustomobject]@{
+    alias = $_.Name
+    description = $_.InterfaceDescription
+    index = $idx
+    status = $_.Status
+    ipv4 = $v4
+    ipv6 = $v6
+  }
+}
+$items | ConvertTo-Json -Depth 4
+"""
+        adapters = _run_powershell_json(script)
+
+    warnings = []
+    normalized = []
+    eligible = []
+    for item in adapters:
+        adapter = {
+            "alias": str(item.get("alias", item.get("Name", ""))),
+            "description": str(item.get("description", item.get("InterfaceDescription", ""))),
+            "index": int(item.get("index", item.get("InterfaceIndex", 0))),
+            "status": str(item.get("status", item.get("Status", ""))),
+            "ipv4": _as_list(item.get("ipv4", item.get("IPv4", []))),
+            "ipv6": _as_list(item.get("ipv6", item.get("IPv6", []))),
+        }
+        adapter["protected"] = _is_protected_adapter(adapter)
+        adapter["has_existing_dns"] = _has_non_loopback(adapter["ipv4"] + adapter["ipv6"])
+        adapter["stale_loopback_dns"] = _is_loopback_only(adapter["ipv4"] + adapter["ipv6"])
+        adapter["eligible"] = (
+            adapter["index"] > 0
+            and not adapter["protected"]
+            and not adapter["has_existing_dns"]
+        )
+        if adapter["protected"]:
+            warnings.append(f"Skipping protected adapter: {adapter['alias']}")
+        elif adapter["has_existing_dns"]:
+            warnings.append(f"Skipping adapter with existing DNS: {adapter['alias']}")
+        elif adapter["eligible"]:
+            eligible.append(adapter["index"])
+        normalized.append(adapter)
+
+    state = {
+        "version": 1,
+        "platform": os.name,
+        "captured_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "state_path": state_path,
+        "adapters": normalized,
+        "eligible": eligible,
+        "warnings": list(dict.fromkeys(warnings)),
+    }
+    return state
+
+def _save_dns_state(state, state_path=DNS_STATE_FILE):
+    _ensure_state_dir(state_path)
+    with open(state_path, "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2)
+
+def _load_dns_state(state_path=DNS_STATE_FILE):
+    if not os.path.exists(state_path):
+        return None
+    with open(state_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def _set_adapter_dns(index: int, servers: List[str]) -> bool:
+    if servers:
+        quoted = ", ".join("'" + s.replace("'", "''") + "'" for s in servers)
+        script = f"Set-DnsClientServerAddress -InterfaceIndex {int(index)} -ServerAddresses @({quoted})"
+    else:
+        script = f"Set-DnsClientServerAddress -InterfaceIndex {int(index)} -ResetServerAddresses"
+    res = subprocess.run(
+        ["powershell", "-NoProfile", "-Command", script],
+        capture_output=True,
+        text=True,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+    )
+    if res.returncode != 0:
+        logger.error(f"PowerShell DNS Error for interface {index}: {res.stderr.strip()}")
+        return False
+    return True
+
+def apply_local_dns(state, ipv4="127.0.0.1", ipv6="::1", state_path=DNS_STATE_FILE) -> bool:
+    """Persist a snapshot, then point only eligible adapters at the local DNS proxy."""
+    if os.name != 'nt':
+        return False
+    eligible = set(state.get("eligible", []))
+    if not eligible:
+        logger.warning("DNS safety: no adapters eligible for local DNS redirection.")
+        return False
+    _save_dns_state(state, state_path)
+    ok = True
+    for adapter in state.get("adapters", []):
+        if adapter.get("index") not in eligible:
+            continue
+        if not _set_adapter_dns(adapter["index"], [ipv4, ipv6]):
+            ok = False
+    return ok
+
+def restore_dns_state(state=None, state_path=DNS_STATE_FILE) -> bool:
+    """Restore previously captured adapter DNS state."""
+    if os.name != 'nt':
+        return False
+    if state is None:
+        state = _load_dns_state(state_path)
+    if not state:
+        return False
+    ok = True
+    for adapter in state.get("adapters", []):
+        if adapter.get("index") not in set(state.get("eligible", [])):
+            continue
+        original = _as_list(adapter.get("ipv4", [])) + _as_list(adapter.get("ipv6", []))
+        if not _set_adapter_dns(adapter["index"], original):
+            ok = False
+    if ok:
+        try:
+            os.remove(state_path)
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logger.debug(f"DNS state cleanup failed: {e}")
+    return ok
+
+def audit_dns_safety(state_path=DNS_STATE_FILE):
+    state = snapshot_dns_state(state_path=state_path)
+    stale = [
+        a["alias"] for a in state.get("adapters", [])
+        if a.get("stale_loopback_dns") and not a.get("eligible")
+    ]
+    conflicts = []
+    if os.name == 'nt':
+        pattern = "|".join(CONFLICT_SERVICE_KEYWORDS)
+        script = (
+            "Get-Service | Where-Object {$_.Name -match '" + pattern + "' -or $_.DisplayName -match '" + pattern + "'} "
+            "| Select-Object Name,DisplayName,Status,StartType | ConvertTo-Json -Depth 3"
+        )
+        try:
+            conflicts = _run_powershell_json(script)
+        except Exception as e:
+            state.setdefault("warnings", []).append(f"Service audit failed: {e}")
+    return {
+        "adapters": state.get("adapters", []),
+        "eligible": state.get("eligible", []),
+        "warnings": state.get("warnings", []),
+        "stale_loopback_adapters": stale,
+        "conflicting_services": conflicts,
+        "stored_state_exists": os.path.exists(state_path),
+    }
 
 class DomainMatcher:
     def __init__(self, patterns):
@@ -61,35 +277,41 @@ class DomainMatcher:
             self.regex_pattern = re.compile("|".join(regex_parts), re.IGNORECASE)
 
     def compile_pattern_str(self, p: str) -> str:
-        """Returns the regex string for a pattern (without compiling)."""
-        # 1. Wildcard Domain (*.domain.com)
+        """Returns the regex string for a pattern (without compiling).
+        Handles:
+        - *.domain.com: All subdomains
+        - word*: Label prefix
+        - *word: Label suffix
+        - keyword: Any label starting with keyword
+        - a*b: Wildcard within label
+        """
+        p = p.lower().strip()
+        
+        # 1. Special Case: Domain Wildcard (*.domain.com)
         if p.startswith("*."):
             base = re.escape(p[2:])
             return f"(?:^|.*\\.){base}$"
 
-        # 2. Prefix match (word*)
-        if p.endswith("*") and not p.startswith("*"):
-            prefix = re.escape(p[:-1])
-            return f"^{prefix}.*"
+        # 2. Convert glob-style pattern to label-aware regex
+        # We want '*' to match anything within a label (not crossing dots)
+        # and the overall pattern to match a sequence of labels.
+        
+        # Escape everything except '*'
+        parts = p.split('*')
+        escaped_parts = [re.escape(part) for part in parts]
+        
+        # Join with [^.]* which matches anything except a dot
+        # This keeps the wildcard within the scope of a label
+        core_regex = "[^.]*".join(escaped_parts)
+        
+        # If it's a plain keyword (no dots, no wildcards), allow it to match as a label prefix
+        # This matches user expectation: 'youtube' matches 'youtube-extra.com'
+        if "." not in p and "*" not in p:
+            core_regex = f"{core_regex}[^.]*"
 
-        # 3. Suffix match (*word)
-        if p.startswith("*") and not p.endswith("*"):
-            suffix = re.escape(p[1:])
-            return f".*{suffix}$"
-
-        # 4. Explicit Wildcard anywhere else (a*b)
-        if "*" in p:
-            return f"^{re.escape(p).replace(r'\*', '.*')}$"
-
-        # 5. Keyword (no dots) -> Boundary-aware Substring match
-        if "." not in p:
-            # Matches keyword as a full label OR as a prefix of a label
-            # e.g., 'youtube' matches 'youtube.com' and 'www.youtube.com' and 'music.youtube.com'
-            return f"(?:^|\\.){re.escape(p)}[^.]*(?:\\.|$)"
-
-        # 6. Absolute domain match (matches domain and all its subdomains)
-        safe = re.escape(p)
-        return f"(?:^|.*\\.){safe}$"
+        # Anchor to label boundaries (start of string or after a dot)
+        # and end of label (end of string or before a dot)
+        return f"(?:^|\\.){core_regex}(?:\\.|$)"
 
     def matches(self, domain: str) -> bool:
         if not domain: return False
@@ -105,7 +327,7 @@ class DomainMatcher:
         return False
 
 class DNSProxyServer:
-    def __init__(self, manual_list, filter_list, cloud_list=None, filter_exceptions=None, upstream_dns=None, port=53):
+    def __init__(self, manual_list, filter_list, cloud_list=None, filter_exceptions=None, upstream_dns=None, port=53, state_path=DNS_STATE_FILE):
         self.manual_matcher = DomainMatcher(manual_list)
         self.filter_matcher = DomainMatcher(filter_list)
         self.cloud_matcher = DomainMatcher(cloud_list if cloud_list else [])
@@ -116,6 +338,10 @@ class DNSProxyServer:
         self.host = '127.0.0.1'
         self.running = False
         self._sock = None
+        self._sock6 = None
+        self._state_path = state_path
+        self._dns_state = None
+        self._threads = []
         self._executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="DNSHandler")
 
     def update_rules(self, manual_list, filter_list, cloud_list, filter_exceptions):
@@ -151,12 +377,19 @@ class DNSProxyServer:
                 self._sock6 = None
 
             self.running = True
-            threading.Thread(target=self._serve, args=(self._sock,), daemon=True, name="DNS4ServeLoop").start()
+            t4 = threading.Thread(target=self._serve, args=(self._sock,), daemon=True, name="DNS4ServeLoop")
+            t4.start()
+            self._threads = [t4]
             if self._sock6:
-                threading.Thread(target=self._serve, args=(self._sock6,), daemon=True, name="DNS6ServeLoop").start()
+                t6 = threading.Thread(target=self._serve, args=(self._sock6,), daemon=True, name="DNS6ServeLoop")
+                t6.start()
+                self._threads.append(t6)
             
-            # Direct system DNS to local proxy
-            if os.name == 'nt':
+            # Direct system DNS to local proxy only for the real system DNS port.
+            # Tests and high-port diagnostics must never rewrite real adapters.
+            if os.name == 'nt' and self.port == 53:
+                restore_dns_state(state_path=self._state_path)
+                self._dns_state = snapshot_dns_state(state_path=self._state_path)
                 res = self._redirect_system_dns(True)
                 if not res:
                     logger.error("DNS Proxy started but failed to redirect system DNS. Protection is BYPASSED.")
@@ -192,32 +425,46 @@ class DNSProxyServer:
 
     def stop(self):
         self.running = False
-        if os.name == 'nt':
+        if os.name == 'nt' and self.port == 53:
             self._redirect_system_dns(False)
         for s in [self._sock, self._sock6]:
             if s:
                 try: s.close()
                 except: pass
+        self._threads = []
 
     def _redirect_system_dns(self, activate):
         """Forces the system to use our local proxy for all active adapters."""
         try:
             if activate:
-                # Set DNS to 127.0.0.1 (IPv4) and ::1 (IPv6) for all active network adapters
-                # This prevents bypass via IPv6 DNS priority in Windows
-                cmd = 'powershell -Command "Get-NetAdapter | Where-Object {$_.Status -eq \'Up\'} | ForEach-Object { ' \
-                      'Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses (\'127.0.0.1\', \'::1\') }"'
+                state = self._dns_state or snapshot_dns_state(state_path=self._state_path)
+                if state.get("warnings"):
+                    for warning in state["warnings"]:
+                        logger.warning(f"DNS safety: {warning}")
+                return apply_local_dns(state, state_path=self._state_path)
             else:
-                # Reset DNS to DHCP (Automatic)
-                cmd = 'powershell -Command "Get-NetAdapter | Where-Object {$_.Status -eq \'Up\'} | ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ResetServerAddresses }"'
-            
-            res = subprocess.run(cmd, shell=True, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            if res.returncode != 0:
-                logger.error(f"PowerShell DNS Error: {res.stderr}")
-                return False
-            return True
+                return restore_dns_state(state_path=self._state_path)
         except Exception as e:
             logger.error(f"Failed to modify system DNS: {e}")
+            return False
+
+    def is_healthy(self) -> bool:
+        if not self.running:
+            return False
+        if not any(t.is_alive() for t in self._threads):
+            return False
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.settimeout(0.75)
+                q = DNSRecord.question("spb-healthcheck.local")
+                s.sendto(q.pack(), ("127.0.0.1", self.port))
+                # A timeout is acceptable if upstream is unavailable; this check mainly verifies socket send path.
+                try:
+                    s.recvfrom(512)
+                except socket.timeout:
+                    pass
+            return True
+        except Exception:
             return False
 
     def _serve(self, sock) -> None:
@@ -322,3 +569,5 @@ def detect_system_dns():
     dns_servers = list(dict.fromkeys(dns_servers)) 
     return dns_servers if dns_servers else ["8.8.8.8", "1.1.1.1"]
 
+if __name__ == "__main__":
+    print(json.dumps(audit_dns_safety(), indent=2))

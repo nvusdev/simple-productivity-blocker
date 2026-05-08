@@ -44,18 +44,20 @@ def get_program_files_path():
 
 SPB_BEGIN = "# SPB BEGIN"
 SPB_END = "# SPB END"
+SPB_BLOCK_BEGIN = "# --- SPB Block Begin ---"
+SPB_BLOCK_END = "# --- SPB Block End ---"
 
 def _strip_spb_block(lines):
     begin_idx = None
     end_idx = None
     for idx, line in enumerate(lines):
-        if line.strip() == SPB_BEGIN:
+        if line.strip() in (SPB_BEGIN, SPB_BLOCK_BEGIN):
             begin_idx = idx
             break
 
     if begin_idx is not None:
         for idx in range(begin_idx + 1, len(lines)):
-            if lines[idx].strip() == SPB_END:
+            if lines[idx].strip() in (SPB_END, SPB_BLOCK_END):
                 end_idx = idx
                 break
 
@@ -65,7 +67,7 @@ def _strip_spb_block(lines):
         cleaned = list(lines)
 
     cleaned = [line for line in cleaned if not line.strip().endswith("# SPB")]
-    cleaned = [line for line in cleaned if line.strip() not in (SPB_BEGIN, SPB_END)]
+    cleaned = [line for line in cleaned if line.strip() not in (SPB_BEGIN, SPB_END, SPB_BLOCK_BEGIN, SPB_BLOCK_END)]
     return cleaned
 
 def is_admin():
@@ -154,6 +156,37 @@ def restore_hosts():
     print("Flushing DNS...")
     subprocess.run(["ipconfig", "/flushdns"], capture_output=True, creationflags=0x08000000)
 
+def restore_dns_state():
+    print("Restoring adapter DNS state...")
+    config_dir = os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
+    state_path = os.path.join(config_dir, "dns_state.json")
+    if not os.path.exists(state_path):
+        print("No SPB DNS state file found.")
+        return
+    try:
+        import json
+        with open(state_path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+        eligible = set(state.get("eligible", []))
+        for adapter in state.get("adapters", []):
+            idx = adapter.get("index")
+            if idx not in eligible:
+                continue
+            servers = list(adapter.get("ipv4", []) or []) + list(adapter.get("ipv6", []) or [])
+            if servers:
+                quoted = ", ".join("'" + str(s).replace("'", "''") + "'" for s in servers)
+                ps = f"Set-DnsClientServerAddress -InterfaceIndex {int(idx)} -ServerAddresses @({quoted})"
+            else:
+                ps = f"Set-DnsClientServerAddress -InterfaceIndex {int(idx)} -ResetServerAddresses"
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, creationflags=0x08000000)
+        try:
+            os.remove(state_path)
+        except:
+            pass
+        print("Adapter DNS state restored.")
+    except Exception as e:
+        print(f"Failed to restore adapter DNS state: {e}")
+
 def _manual_clean_hosts(hosts_path):
     try:
         if os.path.exists(hosts_path):
@@ -198,9 +231,11 @@ def cleanup_acls():
     print("Releasing all physical file/folder blocks...")
     config_dir = os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
     
-    # Support both current and legacy recovery files
+    # Support current, legacy, and daemon-specific recovery files
     paths = set()
-    for fname in ["recovery.json", "recovery_history.json"]:
+    history_files = ["recovery.json", "recovery_history.json", "recovery_v142.json"]
+    
+    for fname in history_files:
         h_file = os.path.join(config_dir, fname)
         if os.path.exists(h_file):
             try:
@@ -211,7 +246,7 @@ def cleanup_acls():
                         paths.update(data)
             except: pass
 
-    # Always add the hosts file to the cleanup set just in case
+    # Always add the hosts file to the cleanup set
     hosts_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'drivers', 'etc', 'hosts')
     paths.add(hosts_path)
 
@@ -220,17 +255,20 @@ def cleanup_acls():
         path = os.path.normpath(path)
         if os.path.exists(path):
             try:
-                # 1. Take ownership if we are locked out (The Sledgehammer)
+                # 1. Take ownership (The Sledgehammer)
                 subprocess.run(['takeown', '/f', path, '/a'], capture_output=True, creationflags=0x08000000)
                 
                 # 2. Grant Administrators full control
                 subprocess.run(['icacls', path, '/grant', 'Administrators:(F)', '/c', '/q'], capture_output=True, creationflags=0x08000000)
 
-                # 3. Re-enable inheritance and remove our Deny rule
-                subprocess.run(['icacls', path, '/reset', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+                # 3. Restore inheritance (Critical for UI access)
+                subprocess.run(['icacls', path, '/inheritance:e', '/c', '/q'], capture_output=True, creationflags=0x08000000)
                 
-                # 4. Explicitly remove everyone-deny just in case reset wasn't enough
+                # 4. Explicitly remove everyone-deny
                 subprocess.run(['icacls', path, '/remove:d', target, '/c', '/q'], capture_output=True, creationflags=0x08000000)
+                
+                # 5. Reset to default state if possible
+                subprocess.run(['icacls', path, '/reset', '/c', '/q'], capture_output=True, creationflags=0x08000000)
             except: pass
     
     print("Physical blocks released successfully.")
@@ -252,6 +290,7 @@ def main():
         
     kill_processes()
     cleanup_persistence()
+    restore_dns_state()
     restore_hosts()
     cleanup_acls() # Essential before deleting history and files
     remove_files()
