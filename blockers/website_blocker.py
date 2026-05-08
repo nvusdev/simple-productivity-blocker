@@ -5,9 +5,16 @@ import shutil
 if os.name == 'nt':
     HOSTS_FILE = r"C:\Windows\System32\drivers\etc\hosts"
     BACKUP_FILE = r"C:\Windows\System32\drivers\etc\hosts.backup"
+    import msvcrt
+    import winreg
+    import logging
+    logger = logging.getLogger("SPB_Daemon")
 else:
     HOSTS_FILE = "/etc/hosts"
     BACKUP_FILE = "/etc/hosts.backup"
+    logger = None
+
+_locked_hosts_handle = None
 
 REDIRECT_IP = "0.0.0.0"
 BLOCK_BEGIN = "# --- SPB Block Begin ---"
@@ -22,7 +29,9 @@ DOH_PROVIDERS = [
     "doh.cleanbrowsing.org", "doh.mullvad.net",
     "dns.nextdns.io", "dns.controld.com",
     "family-filter.cleanbrowsing.org", "dns.google.com",
-    "mozilla.cloudflare-dns.com", "firefox.dns.google"
+    "mozilla.cloudflare-dns.com", "firefox.dns.google",
+    "dns.alidns.com", "doh.pub", "dot.pub",
+    "dns.tuna.tsinghua.edu.cn", "doh.li", "dns.switch.ch"
 ]
 
 def flush_dns():
@@ -39,6 +48,123 @@ def flush_dns():
                     pass
     except Exception:
         pass
+
+def expand_keyword_list(websites):
+    """Expands dot-less keywords into common domain variations for hosts-file fallback."""
+    expanded = []
+    # Pruned TLD list for performance
+    # Expanded TLD list for better coverage
+    COMMON_TLDS = [
+        ".com", ".net", ".org", ".io", ".tv", ".me", ".info", ".biz", ".co", 
+        ".uk", ".co.uk", ".de", ".ca", ".fr", ".jp", ".ru", ".site", ".online", ".xyz",
+        ".app", ".dev", ".studio", ".shop", ".blog", ".news", ".tech", ".be", ".ly"
+    ]
+    # Expanded subdomains to cover common patterns
+    COMMON_SUBDOMAINS = ["", "www.", "m.", "music.", "api.", "mobile.", "en.", "login.", "static."]
+
+    for d in websites:
+        d = d.strip().lower()
+        if d.startswith("*."):
+            d = d[2:]
+        d = d.lstrip("*").lstrip(".")
+        
+        if not d: continue
+        
+        # Strip legacy keyword prefixes
+        if d.startswith("~"):
+            d = d[1:]
+        
+        if "." not in d:
+            # Expand keyword to common TLDs and their subdomains
+            for tld in COMMON_TLDS:
+                base_domain = d + tld
+                for sub in COMMON_SUBDOMAINS:
+                    expanded.append(sub + base_domain)
+        else:
+            # For already-dotted domains, ensure common subdomains are covered
+            base_d = d
+            if d.startswith("www."):
+                base_d = d[4:]
+            
+            for sub in COMMON_SUBDOMAINS:
+                if sub: # Avoid adding base twice if sub is empty
+                    expanded.append(sub + base_d)
+                else:
+                    expanded.append(base_d)
+    return list(set(expanded))
+
+def _apply_file_lock():
+    """Vector 1: Hold an exclusive handle on the hosts file."""
+    global _locked_hosts_handle
+    if os.name != 'nt' or _locked_hosts_handle: return
+    try:
+        _locked_hosts_handle = open(HOSTS_FILE, "r")
+        # Lock the entire file range (max 32-bit offset) to prevent any modifications
+        msvcrt.locking(_locked_hosts_handle.fileno(), msvcrt.LK_NBLCK, 0x7FFFFFFF)
+        if logger: logger.info("Hosts file locked (Vector 1)")
+    except Exception as e:
+        if logger: logger.debug(f"Failed to lock hosts file: {e}")
+        if _locked_hosts_handle:
+            _locked_hosts_handle.close()
+            _locked_hosts_handle = None
+
+def _clear_file_lock():
+    global _locked_hosts_handle
+    if _locked_hosts_handle:
+        try:
+            _locked_hosts_handle.close()
+        except: pass
+        _locked_hosts_handle = None
+        if logger: logger.info("Hosts file handle released.")
+
+def _apply_acl_lock(lock=True):
+    """Vector 2: NTFS ACL Denial for Everyone."""
+    if os.name != 'nt': return
+    target = "*S-1-1-0" # Everyone
+    try:
+        if lock:
+            # Deny write/modify to everyone, grant full to System/Admins
+            args = ["icacls", HOSTS_FILE, "/inheritance:r", 
+                    "/grant:r", "System:(F)", "/grant:r", "Administrators:(F)",
+                    "/deny", f"{target}:(W,M)", "/c", "/q"]
+        else:
+            # 1. Take ownership first to ensure we can reset permissions
+            subprocess.run(["takeown", "/f", HOSTS_FILE, "/a"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            # 2. Grant Admins full control
+            subprocess.run(["icacls", HOSTS_FILE, "/grant", "Administrators:(F)", "/c", "/q"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            # 3. Restore inheritance and remove Deny
+            args = ["icacls", HOSTS_FILE, "/inheritance:e", "/remove:d", target, "/c", "/q"]
+        
+        res = subprocess.run(args, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        if res.returncode == 0:
+            if logger: logger.info(f"Hosts ACL {'Locked' if lock else 'Restored'} (Vector 2)")
+    except Exception as e:
+        if logger: logger.debug(f"ACL error: {e}")
+
+def apply_browser_policies(activate=True):
+    """Vector 3: Disable DNS-over-HTTPS (DoH) via Registry for Chrome, Edge, and Firefox."""
+    if os.name != 'nt': return
+    policies = [
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Google\Chrome", "DnsOverHttpsMode", "off", winreg.REG_SZ),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Edge", "DnsOverHttpsMode", "off", winreg.REG_SZ),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Mozilla\Firefox\DNSOverHTTPS", "Enabled", 0, winreg.REG_DWORD)
+    ]
+    
+    for root, path, name, value, vtype in policies:
+        try:
+            if activate:
+                key = winreg.CreateKeyEx(root, path, 0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key, name, 0, vtype, value)
+                winreg.CloseKey(key)
+            else:
+                try:
+                    key = winreg.OpenKey(root, path, 0, winreg.KEY_SET_VALUE)
+                    winreg.DeleteValue(key, name)
+                    winreg.CloseKey(key)
+                except FileNotFoundError: pass
+        except Exception as e:
+            if logger: logger.debug(f"Registry policy error for {path}: {e}")
+    if logger: logger.info(f"Browser DoH Policies {'Enforced' if activate else 'Cleared'} (Vector 3)")
 
 def _strip_spb_entries(lines):
     """Remove both old per-line # SPB comments and new block-marker sections."""
@@ -62,6 +188,10 @@ def _strip_spb_entries(lines):
 
 def apply_blocks(websites, block_doh=True):
     try:
+        # Pre-execution: Clear existing locks to allow writing
+        _clear_file_lock()
+        _apply_acl_lock(False)
+        
         if not os.path.exists(BACKUP_FILE) and os.path.exists(HOSTS_FILE):
             shutil.copy2(HOSTS_FILE, BACKUP_FILE)
             
@@ -75,15 +205,19 @@ def apply_blocks(websites, block_doh=True):
             clean_lines[-1] += '\n'
         
         # Build the domain set
-        domains_to_block = list(websites)
+        domains_to_block = expand_keyword_list(websites)
+
         if block_doh:
             domains_to_block.extend(DOH_PROVIDERS)
             
         final_domains = set()
         for domain in domains_to_block:
             d = domain.strip().lower()
-            if not d or "~" in d or "*" in d:
-                continue # Skip keyword/wildcard patterns in hosts file (unsupported)
+            if not d:
+                continue 
+            
+            # Note: Hosts file doesn't support wildcards (*), but we've stripped them 
+            # in expand_keyword_list to at least block the base domain.
                 
             # Triple-entry: base, www, and ensure both IPv4/IPv6 coverage
             if d.startswith("www."):
@@ -107,13 +241,29 @@ def apply_blocks(websites, block_doh=True):
         with open(HOSTS_FILE, 'w') as f:
             f.writelines(clean_lines)
             
+        # Post-execution: Re-apply Triple-Lock
+        if final_domains:
+            _apply_file_lock()
+            _apply_acl_lock(True)
+            if block_doh:
+                apply_browser_policies(True)
+                
         flush_dns()
             
     except PermissionError:
-        print("Permission denied: Cannot write to hosts file.")
+        if logger: logger.error("Permission denied: Cannot write to hosts file.")
+    except Exception as e:
+        if logger: logger.exception(f"Unexpected error in apply_blocks: {e}")
 
-def remove_blocks():
+def remove_blocks(keep_policies=False):
     try:
+        _clear_file_lock()
+        _apply_acl_lock(False)
+        if not keep_policies:
+            apply_browser_policies(False)
+        
+        if not os.path.exists(HOSTS_FILE): return
+        
         with open(HOSTS_FILE, 'r') as f:
             lines = f.readlines()
             
@@ -123,5 +273,23 @@ def remove_blocks():
             f.writelines(clean_lines)
             
         flush_dns()
-    except PermissionError:
-        pass
+    except Exception as e:
+        if logger: logger.debug(f"Error in remove_blocks: {e}")
+
+def sync_website_protection(websites, active=True, using_dns_proxy=False):
+    """
+    High-level entry point to synchronize website blocking state.
+    Handles switching between DNS Proxy and Hosts-file fallback automatically.
+    """
+    if not active:
+        remove_blocks(keep_policies=False)
+        return
+
+    if using_dns_proxy:
+        # If using DNS proxy, we remove hosts blocks (to avoid conflicts)
+        # but KEEP the browser policies to prevent DoH bypass.
+        remove_blocks(keep_policies=True)
+        apply_browser_policies(True)
+    else:
+        # Fallback to hosts file
+        apply_blocks(websites, block_doh=True)
