@@ -125,26 +125,46 @@ def restore_hosts():
     hosts_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'drivers', 'etc', 'hosts')
     backup_path = hosts_path + '.backup'
     
+    # --- HARDENING: Force-clear ACLs before any operation ---
+    if os.name == 'nt':
+        try:
+            # 1. Take ownership if we are locked out
+            subprocess.run(['takeown', '/f', hosts_path, '/a'], capture_output=True, creationflags=0x08000000)
+            # 2. Grant full access to Administrators
+            subprocess.run(['icacls', hosts_path, '/grant', 'Administrators:(F)', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+            # 3. Reset inheritance and remove all deny rules
+            subprocess.run(['icacls', hosts_path, '/reset', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+        except: pass
+
     if os.path.exists(backup_path):
         try:
+            # Attempt to unlock backup too if it exists
+            if os.name == 'nt':
+                subprocess.run(['icacls', backup_path, '/reset', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+            
             shutil.copy2(backup_path, hosts_path)
             print("Hosts file restored from backup.")
         except Exception as e:
-            print(f"Failed to restore hosts file: {e}")
+            print(f"Failed to restore hosts file from backup: {e}")
+            # Fallback to manual cleaning if copy fails
+            _manual_clean_hosts(hosts_path)
     else:
-        try:
-            if os.path.exists(hosts_path):
-                with open(hosts_path, 'r') as f:
-                    lines = f.readlines()
-                cleaned = _strip_spb_block(lines)
-                with open(hosts_path, 'w') as f:
-                    f.writelines(cleaned)
-                print("Removed SPB entries from hosts file.")
-        except Exception as e:
-            print(f"Failed to clean hosts file: {e}")
+        _manual_clean_hosts(hosts_path)
             
     print("Flushing DNS...")
-    subprocess.run(["ipconfig", "/flushdns"], capture_output=True)
+    subprocess.run(["ipconfig", "/flushdns"], capture_output=True, creationflags=0x08000000)
+
+def _manual_clean_hosts(hosts_path):
+    try:
+        if os.path.exists(hosts_path):
+            with open(hosts_path, 'r') as f:
+                lines = f.readlines()
+            cleaned = _strip_spb_block(lines)
+            with open(hosts_path, 'w') as f:
+                f.writelines(cleaned)
+            print("Removed SPB entries from hosts file.")
+    except Exception as e:
+        print(f"Failed to clean hosts file: {e}")
 
 def remove_files():
     base_prog_files = get_program_files_path()
@@ -177,30 +197,46 @@ def cleanup_acls():
     """Removes all NTFS ACL blocks before uninstallation to prevent permanent lockouts."""
     print("Releasing all physical file/folder blocks...")
     config_dir = os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
-    history_file = os.path.join(config_dir, "recovery.json")
     
-    if os.path.exists(history_file):
-        try:
-            import json
-            with open(history_file, 'r') as f:
-                paths = json.load(f)
-            
-            target = "*S-1-1-0" # Everyone
-            for path in paths:
-                path = os.path.normpath(path)
-                if os.path.exists(path):
-                    # SLEDGEHAMMER RESTORE: Re-enable inheritance and remove our Deny rule
-                    args = ['icacls', path, '/inheritance:e', '/remove:d', target, '/c', '/q']
-                    if os.path.isdir(path):
-                        args.insert(2, '/t') # Add recursive for folders
-                        
-                    subprocess.run(args, capture_output=True, creationflags=0x08000000)
-            print("Physical blocks released successfully.")
-        except Exception as e:
-            print(f"Warning: Could not clear all physical blocks: {e}")
+    # Support both current and legacy recovery files
+    paths = set()
+    for fname in ["recovery.json", "recovery_history.json"]:
+        h_file = os.path.join(config_dir, fname)
+        if os.path.exists(h_file):
+            try:
+                import json
+                with open(h_file, 'r') as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        paths.update(data)
+            except: pass
+
+    # Always add the hosts file to the cleanup set just in case
+    hosts_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'drivers', 'etc', 'hosts')
+    paths.add(hosts_path)
+
+    target = "*S-1-1-0" # Everyone
+    for path in paths:
+        path = os.path.normpath(path)
+        if os.path.exists(path):
+            try:
+                # 1. Take ownership if we are locked out (The Sledgehammer)
+                subprocess.run(['takeown', '/f', path, '/a'], capture_output=True, creationflags=0x08000000)
+                
+                # 2. Grant Administrators full control
+                subprocess.run(['icacls', path, '/grant', 'Administrators:(F)', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+
+                # 3. Re-enable inheritance and remove our Deny rule
+                subprocess.run(['icacls', path, '/reset', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+                
+                # 4. Explicitly remove everyone-deny just in case reset wasn't enough
+                subprocess.run(['icacls', path, '/remove:d', target, '/c', '/q'], capture_output=True, creationflags=0x08000000)
+            except: pass
+    
+    print("Physical blocks released successfully.")
 
 def main():
-    print("Simple Productivity Blocker v1.4.1 Uninstaller")
+    print("Simple Productivity Blocker v1.4.2 Uninstaller")
     print("-------------------------------------------------------")
     
     if not is_admin():

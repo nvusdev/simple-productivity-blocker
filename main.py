@@ -12,7 +12,7 @@ import copy
 from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, get_config_dir, export_config, import_config
 from core.persistence import set_startup, is_startup_enabled
 
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 
 def resource_path(relative_path):
     try:
@@ -130,7 +130,7 @@ class InputListFrame(ctk.CTkFrame):
         self.app.trigger_save()
 
 class ContentFilterTab(ctk.CTkFrame):
-    def __init__(self, master, app, group_name):
+    def __init__(self, master: any, app: any, group_name: str):
         super().__init__(master, fg_color="transparent")
         self.app = app
         self.group_name = group_name
@@ -142,6 +142,8 @@ class ContentFilterTab(ctk.CTkFrame):
         
         self.enabled_var = ctk.BooleanVar(value=self.ad.get("enabled", False))
         ctk.CTkSwitch(self.container, text="Enable Content Filter", variable=self.enabled_var, command=self.save, font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", padx=25, pady=(20, 8))
+        
+        ctk.CTkLabel(self.container, text="Advanced filtering supports keywords (word), wildcards (*.domain.com), prefixes (word*), and suffixes (*word.com). Applies to exceptions and custom lists.", text_color="gray", font=ctk.CTkFont(size=11), justify="left", wraplength=550).pack(anchor="w", padx=25, pady=(0, 10))
         
         self.persist_var = ctk.BooleanVar(value=self.ad.get("persist_all_day", False))
         ctk.CTkSwitch(self.container, text="Enforce All Day (Bypass Schedule)", variable=self.persist_var, command=self.save).pack(anchor="w", padx=25, pady=8)
@@ -171,7 +173,7 @@ class ContentFilterTab(ctk.CTkFrame):
         ctk.CTkLabel(self.container, text="Custom Blocklists (URL or Local Path):", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=25, pady=(20, 0))
         self.custom_list = self.app._inline_list(self.container, self.ad.get("custom_lists", []), self.save, "e.g. https://example.com/blocklist.txt")
 
-    def save(self, *args):
+    def save(self, *args: any) -> None:
         self.ad["enabled"] = self.enabled_var.get()
         self.ad["persist_all_day"] = self.persist_var.get()
         for key, var in self.cat_vars.items(): self.ad[key] = var.get()
@@ -338,7 +340,7 @@ class ProductivityApp(ctk.CTk):
         def validate_web(val):
             if "http" in val: return False, "Do not include http:// or https://"
             return True, ""
-        dns_msg = "Blocks absolute domains, wildcards (*.site.com), and keywords (~amazon). Path-level blocking (site.com/path) is not supported at the DNS level. Changes apply after a 3s cooldown."
+        dns_msg = "Supports keywords (word), wildcards (*.domain.com), prefixes (word*), and suffixes (*word.com). Path-level blocking (site.com/path) is not supported at the DNS level."
         self.list_web = InputListFrame(t_web, self, "websites", "Enter URL or Pattern", validation_fn=validate_web, info_tooltip=dns_msg)
         self.list_web.pack(fill="both", expand=True, padx=10, pady=10)
         self.list_apps = InputListFrame(t_apps, self, "apps", "Enter App Name (e.g. notepad.exe)", browse_mode="app")
