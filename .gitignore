@@ -10,6 +10,14 @@ __pycache__/
 *.log
 *.zip
 *.spec
+*.tmp
+*.bak
+*.bad-*
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -21,6 +29,9 @@ tools/encode_sensitive_lists.py
 # Local configuration and state
 config.json
 recovery_history.json
+recovery.json
+recovery_v*.json
+dns_state.json
 *.local
 .env
 
@@ -33,6 +44,7 @@ recovery_history.json
 # Scratch and Diagnostics
 scratch/
 test_*.py
+!tests/test_reliability_safety.py
 scratch_*.py
 Stress_Test_*/
 QA_Sandbox/
@@ -45,7 +57,9 @@ install.bat
 legacy/
 
 # Sandbox and Agent Clutter
+.agent/
+.code-review-graph/
+.kluster/
 sandbox/
 docs/superpowers/
 RELEASE_NOTES_v*.md
-

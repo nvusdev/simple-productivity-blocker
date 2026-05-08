@@ -2,75 +2,119 @@
 
 A system-level focus and time management suite for Windows.
 
-Simple Productivity Blocker is designed for people who need absolute focus. Browser extensions are too easy to turn off. Basic app blockers can be bypassed or closed. SPB operates directly at the Windows operating system level to ensure that when you decide to lock in and work, your computer enforces that decision. 
+Simple Productivity Blocker is built for people who need their computer to enforce a focus decision after they make it. Browser extensions can be disabled, ordinary app blockers can be closed, and hosts-file edits alone are easy to bypass. SPB combines website blocking, app termination, file and folder access controls, profile schedules, and recovery tooling into one desktop application.
 
-It combines advanced website filtering, application termination, and strict file access controls into one clean interface.
+SPB modifies operating system settings by design. It should be used carefully, tested on your own machine before wider use, and removed only through the provided recovery or uninstall tools.
 
-## Why use SPB?
+## Current capabilities
 
-* **System-Level Enforcement:** Instead of just asking you to stop scrolling, SPB uses a "Triple-Lock" suite (Registry + File Handles + NTFS ACLs) to lock down files and folders. During a focus session, the operating system itself denies access to your distractions at the kernel level.
-* **Smart DNS Interception:** SPB catches website requests before they leave your computer. You can block specific sites, use wildcards to block entire networks, or apply our curated filters for categories like Social Media, Gaming, and Adult Content.
-* **Schedule Your Focus:** Create different profiles for different needs. Set SPB to lock down your gaming folders during work hours or block entertainment websites all day.
-* **Crash-Proof Recovery:** SPB logs every permission change to a recovery history. If your computer loses power or crashes, the background service performs a surgical "Safe-Boot" sweep on the next startup to reconcile and restore your normal access.
-* **Battery-Aware Performance:** The background service uses intelligent caching and performance profiles (Passive, Balanced, Strict) to minimize CPU wake-ups. On battery mode, the system dynamically adjusts its scanning frequency to save power.
+* **profile-based blocking:** create multiple groups of blocked websites, apps, files, and folders.
+* **per-group schedules:** each group can run all the time, only on selected days, inside a time window, or all day on selected days.
+* **website and dns blocking:** block domains, keywords, wildcard patterns, and curated content categories.
+* **app blocking:** terminate blocked processes by executable name or path.
+* **file and folder blocking:** apply file handles and NTFS ACL rules so protected files or folders cannot be opened during an active block.
+* **folder navigation control:** close File Explorer windows that try to browse into blocked folders.
+* **global safety settings:** keep cloud sync tools, developer tools, and critical system processes protected from broad blocks.
+* **network fail-safes:** audit adapters, skip risky dns rewrites, preserve original dns state, and fall back to hosts-file blocking when local dns interception is unsafe.
+* **recovery tooling:** restore file permissions, hosts entries, dns settings, browser dns-over-https policies, and scheduled task state.
 
-## The Enforcement Engine (Under the Hood)
+## How enforcement works
 
-SPB is built to eliminate the "willpower gap" by removing any easy bypasses. Here is how it secures your focus behind the scenes:
+SPB has two main pieces:
 
-* **The Triple-Lock Suite:** SPB does not just look for running apps and close them. It registers blocked applications with the Windows `DisallowRun` policy, applies exclusive `msvcrt` file handle locks, and modifies NTFS ACLs (`icacls`) to ensure that blocked exes cannot be launched, renamed, or read.
-* **Deep Process Scanning:** You cannot bypass a block by simply renaming an executable or moving it to a new folder. SPB scans the full file path, the current working directory, and the command-line arguments of every launched process.
-* **Active Window Interception:** If a user tries to circumvent file blocks by manually navigating through Windows File Explorer, SPB detects and instantly terminates any Explorer windows attempting to view restricted directories.
-* **Dual-Layer Network Traps:** SPB intercepts network requests using a local DNS proxy, but it also automatically manages your system `hosts` file as a fallback layer. If a request somehow bypasses the proxy, the hosts file catches the traffic and drops it.
-* **SSRF & Path Hardening:** For custom blocklists, SPB resolves remote hostnames to IPs and blocks any access to private or reserved network ranges (SSRF protection). Local lists are restricted to the application configuration directory to prevent unauthorized system file access.
-* **Encrypted Vulnerability Lists:** For sensitive categories like Adult Content or Gambling, the blocklists are XOR-encrypted directly into the application, preventing users from opening configuration files and deleting domains during a moment of weakness.
+1. **dashboard:** the CustomTkinter interface that edits profiles, schedules, global settings, and safety options.
+2. **daemon:** the background protection engine that reads the saved configuration and enforces active blocks.
 
-## Core Capabilities
+The daemon evaluates every group independently. A group only contributes websites, apps, files, folders, and adblock categories when that group is enabled and its schedule is active. Global settings sit above the groups and control safety behavior such as performance mode, cloud allowlisting, cloud path keywords, startup behavior, and notifications.
 
-### Website and Network Control
-* Block specific domains or use keywords to catch related sites.
-* Apply pre-built filters for common distractions (Streaming, Shopping, Ads, etc.).
-* Add specific exceptions for sites you still need to access within a blocked category.
+For local app and file protection, SPB combines process scanning, Windows policy entries, file locks, and NTFS ACL changes. For websites, SPB prefers a local dns proxy when the network environment is safe, then falls back to managed hosts-file entries when dns interception is unavailable or unsafe.
 
-### Application and File Locking
-* Instantly close any program by its name or file path.
-* Block entire directories. SPB will stop any application from opening files inside a protected folder.
-* Prevent Windows File Explorer from opening or viewing blocked folders.
+## Network safety model
 
-### Customization and Safety
-* Set your "Performance Mode" to control how aggressively the blocker checks for running programs.
-* Maintain a "Cloud Allowlist" to ensure critical work applications (like OneDrive, Git, or your code editor) are never accidentally blocked by broad folder rules.
+SPB is intentionally conservative around network changes.
+
+Before redirecting system dns, the daemon captures adapter state in `dns_state.json`. It skips adapters that already have explicit dns servers, look like VPN or security adapters, or belong to tools such as Tailscale, Portmaster, ProtonVPN, WireGuard, Wintun, Zscaler, GlobalProtect, AdGuard, or NextDNS. If no adapter is safe to rewrite, SPB uses hosts-file protection instead of forcing dns changes.
+
+The dns proxy also has a watchdog. If the proxy becomes unhealthy, SPB restores stored adapter dns state and switches to hosts-file fallback.
+
+You can run a read-only audit from source:
+
+```powershell
+python blockers\dns_server.py
+```
+
+The audit reports active adapters, skipped adapters, stale loopback dns, stored dns state, and known VPN or dns security services. It does not change adapter settings.
 
 ## Installation
 
-Because SPB modifies system permissions and network files to do its job, it requires Administrator rights.
+SPB is currently built for Windows.
 
-1. Download the latest release zip file from the Releases page.
-2. Extract the downloaded archive to a folder on your computer.
-3. Right-click `spb_installer.exe` and select "Run as Administrator".
-4. Once installed, use the new desktop shortcut to open the dashboard and configure your first profile.
+1. Download the latest release zip.
+2. Extract the archive.
+3. Right-click `spb_installer.exe` and choose `run as administrator`.
+4. Open the installed dashboard from the desktop shortcut.
+5. Create one or more groups, configure their schedules, and add the websites, apps, files, or folders you want blocked.
 
-## Safe Uninstallation
+Administrator rights are required because SPB manages Windows permissions, scheduled tasks, browser policy keys, dns settings, and the hosts file.
 
-SPB takes system modifications seriously. If you ever need to remove the software, please use the provided uninstaller rather than deleting files manually.
+## Recovery and uninstall
 
-Run `spb_uninstaller.exe` located in the installation directory (usually `C:\Program Files\Simple Productivity Blocker`). The uninstaller will safely restore all Windows file permissions, reset your network settings, and clean up background tasks before completely removing the application.
+Use the provided tools instead of deleting installed files manually.
 
-## For Developers
+`spb_uninstaller.exe` performs a full uninstall. It stops SPB processes, removes startup persistence, restores stored dns state, cleans SPB hosts-file entries, releases ACL blocks, and removes installed files.
 
-SPB is built with Python and utilizes a decoupled architecture to separate the interface from the enforcement engine.
+`recovery_uplift.exe` is the emergency recovery helper. Use it when you need to restore access or connectivity without doing a full uninstall, or when an install state is broken. It can restore stored adapter dns, clear browser dns-over-https policies, remove the daemon scheduled task, clean hosts entries, unlock paths from recovery history, and manually force-unlock a path you enter.
 
-1. **The Dashboard:** A user interface built with CustomTkinter that edits your configuration state.
-2. **The Daemon:** A hardened background service that monitors the system, manages the local DNS proxy, and enforces the rules.
+## Build from source
 
-To build the project from source, ensure you have Python installed along with the required dependencies, then run the provided PowerShell build script.
+Install Python dependencies first:
 
 ```powershell
 pip install -r requirements.txt
+```
+
+Run the build script from a non-administrator PowerShell terminal when possible:
+
+```powershell
 .\build.ps1
 ```
 
+The build output is written to:
+
+```text
+dist\SimpleProductivityBlocker
+```
+
+The packaged folder contains the dashboard executable, daemon executable, installer, uninstaller, emergency recovery helper, changelog, and bundled pywin32 components.
+
+## Development checks
+
+Run the unit tests:
+
+```powershell
+python -m unittest discover tests
+```
+
+Run the stress suite:
+
+```powershell
+python tests\stress\run_suite.py
+```
+
+Compile-check the main modules:
+
+```powershell
+python -m compileall core blockers daemon.py spb_uninstaller.py recovery_uplift.py
+```
+
+The dns stress tests use high ports and should not rewrite system adapter dns.
+
+## Repository notes
+
+Generated build output belongs in `dist/` and `build/`, both of which are ignored. Local state such as `config.json`, recovery history, dns snapshots, logs, coverage reports, PyInstaller specs, local agent indexes, and scratch diagnostics should not be committed.
+
+The release package should be made from `dist\SimpleProductivityBlocker` after a clean build.
 
 ## Disclaimer
 
-This software modifies Windows security descriptors and the system hosts file. While we have built extensive recovery and safety mechanisms into the code, please use this tool responsibly and maintain backups of your critical work.
+SPB modifies Windows security descriptors, scheduled tasks, browser policy keys, dns settings, and the system hosts file. The project includes recovery mechanisms, but you should still keep backups of important work and test carefully before relying on strict blocking rules.
