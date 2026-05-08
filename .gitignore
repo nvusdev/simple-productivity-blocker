@@ -44,3 +44,8 @@ install.sh
 install.bat
 legacy/
 
+# Sandbox and Agent Clutter
+sandbox/
+docs/superpowers/
+RELEASE_NOTES_v*.md
+

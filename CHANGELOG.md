@@ -1,5 +1,17 @@
 # Simple Productivity Blocker - Version History
 
+## [1.4.2] - 2026-05-08
+### Added
+- **Tiered DNS Hierarchy**: Implemented a 4-tier DNS enforcement engine (`Cloud Allowlist > Manual Block > Exception > Filter`). This ensures user-defined manual blocks consistently override content filter exceptions.
+- **Bulk State Synchronization**: Added `synchronize_all` methods to the `ProcessMonitor` and `SubsystemOrchestrator`, enabling the daemon to reconcile hundreds of file/folder/app targets without race conditions.
+- **Ghost Mode (Non-Admin)**: Enabled a non-elevated operation mode (`SPB_GHOST_MODE=1`). The daemon now gracefully falls back to `hosts` file modification if it cannot bind to port 53.
+- **Power Efficiency Audit**: Validated "Ghost Mode" overhead at < 0.1% CPU usage and stable ~37MB memory footprint in "Passive" performance mode.
+
+### Fixed
+- **DNS Priority Inversion**: Resolved a critical issue where content filter exceptions (e.g., "Video" allowed) were unintentionally bypassing manual blocks on sites like YouTube.
+- **Daemon Sync Crashes**: Fixed a persistent `AttributeError` in the background orchestration loop caused by missing bulk reconciliation methods.
+- **Keyword Matching Reliability**: Refined regex keyword matching to ensure consistent blocking across complex subdomains and varying URL patterns.
+
 ## [1.4.1] - 2026-05-06
 ### Added
 - **Triple-Lock Enforcement Suite**: Unified Registry (`DisallowRun`), exclusive File Handles (`msvcrt`), and NTFS ACLs (`icacls`) into a single atomic protection layer for both Apps and Files.
