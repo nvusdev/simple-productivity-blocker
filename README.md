@@ -116,7 +116,17 @@ Useful development checks:
 
 ```powershell
 python -m unittest discover tests
+```
+
+Run the stress suite:
+
+```powershell
 python tests\stress\run_suite.py
+```
+
+Compile-check the main modules:
+
+```powershell
 python -m compileall core blockers daemon.py spb_uninstaller.py recovery_uplift.py
 ```
 
