@@ -56,6 +56,21 @@ install.sh
 install.bat
 legacy/
 
+# Agent Task Tracking
+tasks/
+
+# Persistence & State
+dns_cache.json
+last_run.state
+
+# Ensure core stress tests ARE committed despite the test_*.py ignore
+!test_stress_logic.py
+!test_hierarchy.py
+
+# Binaries & Packaging
+*.exe
+*.msi
+
 # Sandbox and Agent Clutter
 .agent/
 .code-review-graph/
