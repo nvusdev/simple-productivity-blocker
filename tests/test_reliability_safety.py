@@ -11,7 +11,8 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from blockers.app_blocker import ProcessMonitor
-from blockers.dns_server import apply_local_dns, restore_dns_state, snapshot_dns_state
+from blockers.dns_server import DNSProxyServer, apply_local_dns, restore_dns_state, snapshot_dns_state
+from dnslib import DNSRecord
 from core.config_manager import load_config, normalize_config
 from core.scheduler import is_active
 import daemon
@@ -161,6 +162,84 @@ class TestGroupTargetsAndGlobalSettings(unittest.TestCase):
         ctx = daemon._compute_targets(config, None, os.path.abspath("config.json"))
         self.assertEqual(ctx.cloud_allowlist, set())
 
+    def test_hosts_fallback_preserves_dns_priority_order(self):
+        resolved = daemon._resolve_hosts_fallback_domains(
+            manual_domains={"manual.example", "cloud.example"},
+            filter_keywords={"ads.example", "allowed-filter.example", "cloud-filter.example"},
+            cloud_allowlist={"cloud.example", "cloud-filter.example"},
+            filter_exceptions={"allowed-filter.example", "manual.example"},
+        )
+
+        self.assertIn("manual.example", resolved)
+        self.assertIn("ads.example", resolved)
+        self.assertNotIn("cloud.example", resolved)
+        self.assertNotIn("allowed-filter.example", resolved)
+        self.assertNotIn("cloud-filter.example", resolved)
+
+
+class TestDnsPriorityHierarchy(unittest.TestCase):
+    class FakeSocket:
+        def __init__(self):
+            self.sent = []
+
+        def sendto(self, data, addr):
+            self.sent.append((data, addr))
+
+    def _decision_payload(self, server, domain):
+        sock = self.FakeSocket()
+        query = DNSRecord.question(domain)
+        server._forward_query = lambda data: b"FORWARDED"
+        server._handle_packet(sock, query.pack(), ("127.0.0.1", 53000))
+        return sock.sent[0][0]
+
+    def test_cloud_allowlist_overrides_manual_and_filter_blocks(self):
+        server = DNSProxyServer(
+            manual_list=["critical.example"],
+            filter_list=["critical.example"],
+            cloud_list=["critical.example"],
+            filter_exceptions=[],
+            port=53535,
+        )
+
+        self.assertEqual(self._decision_payload(server, "critical.example"), b"FORWARDED")
+
+    def test_manual_block_overrides_filter_exception(self):
+        server = DNSProxyServer(
+            manual_list=["manual.example"],
+            filter_list=["manual.example"],
+            cloud_list=[],
+            filter_exceptions=["manual.example"],
+            port=53535,
+        )
+
+        payload = self._decision_payload(server, "manual.example")
+        response = DNSRecord.parse(payload)
+        self.assertEqual(str(response.rr[0].rdata), "0.0.0.0")
+
+    def test_filter_exception_overrides_content_filter(self):
+        server = DNSProxyServer(
+            manual_list=[],
+            filter_list=["ads.example"],
+            cloud_list=[],
+            filter_exceptions=["ads.example"],
+            port=53535,
+        )
+
+        self.assertEqual(self._decision_payload(server, "ads.example"), b"FORWARDED")
+
+    def test_content_filter_blocks_when_no_higher_priority_rule_matches(self):
+        server = DNSProxyServer(
+            manual_list=[],
+            filter_list=["ads.example"],
+            cloud_list=[],
+            filter_exceptions=[],
+            port=53535,
+        )
+
+        payload = self._decision_payload(server, "ads.example")
+        response = DNSRecord.parse(payload)
+        self.assertEqual(str(response.rr[0].rdata), "0.0.0.0")
+
 
 class TestDnsStateSafety(unittest.TestCase):
     def test_snapshot_skips_protected_and_existing_dns_adapters(self):
@@ -171,8 +250,8 @@ class TestDnsStateSafety(unittest.TestCase):
         ]
 
         state = snapshot_dns_state(adapters=copy.deepcopy(adapters))
-        self.assertEqual(state["eligible"], [4])
-        self.assertTrue(any("existing DNS" in w for w in state["warnings"]))
+        self.assertEqual(sorted(state["eligible"]), [2, 4])
+        self.assertTrue(any("custom DNS" in w for w in state["warnings"]))
         self.assertTrue(any("protected adapter" in w for w in state["warnings"]))
 
     @patch("blockers.dns_server.os.name", "nt")
