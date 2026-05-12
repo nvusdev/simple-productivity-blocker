@@ -197,6 +197,36 @@ def _async_fetch_lists(clm, lists, callback, cfg_path):
     finally:
         callback(all_domains)
 
+def _pattern_matches(patterns: Set[str], domain: str) -> bool:
+    try:
+        from blockers.dns_server import DomainMatcher
+        return DomainMatcher(patterns).matches(domain)
+    except Exception:
+        domain = _base(str(domain))
+        return domain in {_base(str(p)) for p in patterns if str(p).strip()}
+
+def _resolve_hosts_fallback_domains(
+    manual_domains: Set[str],
+    filter_keywords: Set[str],
+    cloud_allowlist: Set[str],
+    filter_exceptions: Set[str],
+) -> Set[str]:
+    """Approximate DNS proxy priority when falling back to static hosts entries."""
+    resolved: Set[str] = set()
+
+    for domain in manual_domains:
+        if not _pattern_matches(cloud_allowlist, domain):
+            resolved.add(domain)
+
+    for domain in filter_keywords:
+        if _pattern_matches(cloud_allowlist, domain):
+            continue
+        if _pattern_matches(filter_exceptions, domain):
+            continue
+        resolved.add(domain)
+
+    return resolved
+
 def _get_history():
     h = set()
     for f in ["recovery.json", "recovery_history.json"]:
@@ -363,15 +393,12 @@ class SubsystemOrchestrator:
             self.dns_server = None
             self.using_dns_proxy = False
         
-        # In hosts file mode, we must still respect the hierarchy:
-        # 1. Start with manual blocks (they only respect cloud_allowlist)
-        manual_active = [d for d in manual_domains if not _is_excepted(d, cloud_allowlist)]
-        
-        # 2. Filter keywords must respect BOTH cloud_allowlist and filter_exceptions
-        all_except = cloud_allowlist.union(filter_exceptions)
-        filter_active = [d for d in filter_keywords if not _is_excepted(d, all_except)]
-        
-        active_domains = set(manual_active).union(set(filter_active))
+        active_domains = _resolve_hosts_fallback_domains(
+            manual_domains,
+            filter_keywords,
+            cloud_allowlist,
+            filter_exceptions,
+        )
         sync_website_protection(list(active_domains), active=True, using_dns_proxy=self.using_dns_proxy)
         return True
 
@@ -449,9 +476,10 @@ class DaemonOrchestrator:
         settings = self.cfg.cache.get("settings", {})
         if self.subsystems.pm:
             global_allow = set(settings.get("cloud_allowlist", [])) if settings.get("cloud_allowlist_enabled", True) else set()
-            comb_allow = global_allow.union(ctx.app_exceptions)
-            self.subsystems.pm.set_allowlisted_processes(list(comb_allow), enabled=bool(comb_allow))
-            self.subsystems.pm.set_allowlisted_keywords(settings.get("cloud_path_keywords", []) if global_allow else [])
+            global_kws = settings.get("cloud_path_keywords", []) if settings.get("cloud_allowlist_enabled", True) else []
+            self.subsystems.pm.set_global_allowlist(list(global_allow), global_kws)
+            self.subsystems.pm.set_allowlisted_processes(list(ctx.app_exceptions), enabled=bool(ctx.app_exceptions))
+            self.subsystems.pm.set_allowlisted_keywords(list(ctx.path_exceptions) if hasattr(ctx, 'path_exceptions') else [])
             self.subsystems.pm.configure_performance(settings.get("performance_mode", "Balanced"))
             # Register the history callback
             self.subsystems.pm._acl_callback = _on_acl_operation_complete

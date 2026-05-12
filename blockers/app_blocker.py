@@ -35,6 +35,8 @@ class ProcessMonitor:
         self._shell_interval = 2.0
         self._allowlisted_processes = set()
         self._allowlisted_keywords = set()
+        self._global_allowlisted_processes = set()
+        self._global_allowlisted_keywords = set()
         self._allowlist_enabled = True
         self._locked_files = []
         self._current_acl_paths = set()
@@ -68,6 +70,14 @@ class ProcessMonitor:
 
     def set_allowlisted_keywords(self, keywords):
         self._allowlisted_keywords = {
+            str(k).strip().lower() for k in (keywords or []) if str(k).strip()
+        }
+
+    def set_global_allowlist(self, processes, keywords):
+        self._global_allowlisted_processes = {
+            str(p).strip().lower() for p in (processes or []) if str(p).strip()
+        }
+        self._global_allowlisted_keywords = {
             str(k).strip().lower() for k in (keywords or []) if str(k).strip()
         }
 
@@ -255,21 +265,60 @@ class ProcessMonitor:
         path = os.path.normpath(os.path.abspath(path))
         path_lower = path.lower()
 
-        # Hierarchy Check: Allowlist (Exceptions) overrides everything
-        if lock and self._allowlist_enabled:
-            is_exempt = False
-            # Check by filename
-            if os.path.basename(path_lower) in self._allowlisted_processes:
-                is_exempt = True
-                reason = "Process Exempted"
-            # Check by path keywords
-            elif any(kw in path_lower for kw in self._allowlisted_keywords):
-                is_exempt = True
-                reason = "Path Keyword Exempted"
-            
-            if is_exempt:
-                self.logger.info(f"Allowlist Override: Unlocking {path} ({reason})")
-                lock = False # Force unlock if allowlisted
+        # 1. Global Allowlist Check
+        is_global_exempt = False
+        if os.path.basename(path_lower) in self._global_allowlisted_processes:
+            is_global_exempt = True
+        else:
+            if self._global_allowlisted_keywords:
+                import re
+                for kw in self._global_allowlisted_keywords:
+                    try:
+                        if re.search(kw, path_lower, re.IGNORECASE):
+                            is_global_exempt = True
+                            break
+                    except re.error:
+                        if kw in path_lower:
+                            is_global_exempt = True
+                            break
+                            
+        if is_global_exempt:
+            self.logger.info(f"Global Allowlist Override: Unlocking {path}")
+            lock = False
+
+        # 2. Group Exceptions Check: Allowlist overrides Folder Blocks, but NOT Explicit App/File Blocks
+        elif lock and self._allowlist_enabled:
+            # Check if it's an explicit block
+            is_explicit_block = False
+            if path_lower in self.blocked_app_paths or path_lower in self.blocked_file_paths:
+                is_explicit_block = True
+            elif os.path.basename(path_lower) in self.blocked_app_names or os.path.basename(path_lower) in self.blocked_file_names:
+                is_explicit_block = True
+                
+            if not is_explicit_block:
+                is_exempt = False
+                # Check by filename
+                if os.path.basename(path_lower) in self._allowlisted_processes:
+                    is_exempt = True
+                    reason = "Process Exempted"
+                # Check by path keywords (with regex support)
+                else:
+                    import re
+                    for kw in self._allowlisted_keywords:
+                        try:
+                            if re.search(kw, path_lower, re.IGNORECASE):
+                                is_exempt = True
+                                reason = "Path Keyword Exempted (Regex)"
+                                break
+                        except re.error:
+                            if kw in path_lower:
+                                is_exempt = True
+                                reason = "Path Keyword Exempted"
+                                break
+                
+                if is_exempt:
+                    self.logger.info(f"Allowlist Override: Unlocking {path} ({reason})")
+                    lock = False # Force unlock if allowlisted
 
         if lock and self._is_critical_path(path):
             self.logger.error(f"CRITICAL PATH VIOLATION: Refusing to lock system-critical path: {path}")
@@ -398,13 +447,18 @@ class ProcessMonitor:
             if "target_app" in name_lower or "target_app" in exe:
                 pass
 
-            if self._allowlist_enabled:
-                if name_lower in self._allowlisted_processes: return False
-                if self._allowlisted_keywords:
-                    search = exe + " " + " ".join(str(a).lower() for a in cmdline)
-                    if any(kw in search for kw in self._allowlisted_keywords): return False
+            # 0. Global Allowlist (Cloud Allowlist) - OVERRIDES ALL
+            if name_lower in self._global_allowlisted_processes: return False
+            if self._global_allowlisted_keywords:
+                search = exe + " " + " ".join(str(a).lower() for a in cmdline)
+                import re
+                for kw in self._global_allowlisted_keywords:
+                    try:
+                        if re.search(kw, search, re.IGNORECASE): return False
+                    except re.error:
+                        if kw in search: return False
 
-            # App Name Check
+            # 1. Explicit App/File Blocks (Override Allowlist)
             if name_lower in self.blocked_app_names:
                 self.logger.info(f"TERMINATING: {name_lower} (App Name Blocked)")
                 return True
@@ -414,6 +468,30 @@ class ProcessMonitor:
                 if exe_norm in self.blocked_app_paths:
                     self.logger.info(f"TERMINATING: {name_lower} (App Path Blocked: {exe_norm})")
                     return True
+
+            if cmdline:
+                cmdline_str = " ".join(str(a).lower() for a in cmdline)
+                for bp in self.blocked_file_paths:
+                    if bp.lower() in cmdline_str:
+                        for arg in cmdline:
+                            if bp.lower() in str(arg).lower():
+                                self.logger.info(f"TERMINATING: {name_lower} (Blocked File in Cmdline: {bp})")
+                                return True
+
+            # 2. Allowlist Exceptions (Group Level)
+            if self._allowlist_enabled:
+                if name_lower in self._allowlisted_processes: return False
+                if self._allowlisted_keywords:
+                    search = exe + " " + " ".join(str(a).lower() for a in cmdline)
+                    import re
+                    for kw in self._allowlisted_keywords:
+                        try:
+                            if re.search(kw, search, re.IGNORECASE): return False
+                        except re.error:
+                            if kw in search: return False
+
+            # 3. Folder Blocks (Can be bypassed by Allowlist)
+            if exe:
                 if self._is_in_blocked_folder(exe_norm):
                     self.logger.info(f"TERMINATING: {name_lower} (App in Blocked Folder: {exe_norm})")
                     return True
@@ -426,15 +504,6 @@ class ProcessMonitor:
                         self.logger.info(f"TERMINATING: {name_lower} (CWD in Blocked Folder: {cwd_norm})")
                         return True
             except: pass
-
-            if cmdline:
-                cmdline_str = " ".join(str(a).lower() for a in cmdline)
-                for bp in self.blocked_file_paths:
-                    if bp.lower() in cmdline_str:
-                        for arg in cmdline:
-                            if bp.lower() in str(arg).lower():
-                                self.logger.info(f"TERMINATING: {name_lower} (Blocked File in Cmdline: {bp})")
-                                return True
 
             if self.blocked_file_paths and (now - last_handle_check) >= 10.0:
                 if name_lower not in ("svchost.exe", "system", "idle", "searchindexer.exe"):
