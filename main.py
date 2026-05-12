@@ -340,7 +340,7 @@ class ProductivityApp(ctk.CTk):
         def validate_web(val):
             if "http" in val: return False, "Do not include http:// or https://"
             return True, ""
-        dns_msg = "Supports keywords (word), wildcards (*.domain.com), prefixes (word*), and suffixes (*word.com). Path-level blocking (site.com/path) is not supported at the DNS level."
+        dns_msg = "Supports keywords (word), wildcards (*.domain.com), prefixes (word*), and suffixes (*word.com). Path-level blocking (site.com/path) is not supported at the DNS level.\n\nNote: If the DNS proxy is bypassed by another app (e.g. Portmaster), a fallback to the Windows hosts file occurs. In fallback mode, entering a domain like x.com will block both x.com and www.x.com on IPv4 (0.0.0.0) and IPv6 (::1). Wildcards/keywords will be expanded to common extensions."
         self.list_web = InputListFrame(t_web, self, "websites", "Enter URL or Pattern", validation_fn=validate_web, info_tooltip=dns_msg)
         self.list_web.pack(fill="both", expand=True, padx=10, pady=10)
         self.list_apps = InputListFrame(t_apps, self, "apps", "Enter App Name (e.g. notepad.exe)", browse_mode="app")
