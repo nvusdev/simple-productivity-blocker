@@ -7,11 +7,11 @@
 ### Improved
 - **Hierarchy Enforcement Logic**: Hardened the 4-tier enforcement engine to strictly guarantee priority: `Cloud Allowlist > Manual Block > Group Exception > Content Filter`.
 - **Hosts-File Fallback Transparency**: Updated the UI with explicit documentation for the hosts-file fallback mechanism, clarifying dual-stack IPv4/IPv6 and `www.` expansion.
-- **Verification Infrastructure**: Introduced `test_stress_logic.py` for comprehensive, automated validation of hierarchy prioritization and regex edge cases.
+- **Verification Infrastructure**: Introduced `tests/test_stress_logic.py` for comprehensive, automated validation of hierarchy prioritization and regex edge cases.
 
 *Verified by Antigravity Agent - 2026-05-12*
 
-## 🧪 Hierarchy & Logic Stress Test (`test_stress_logic.py`)
+## 🧪 Hierarchy & Logic Stress Test (`tests/test_stress_logic.py`)
 **Date:** 2026-05-12
 **Result:** **100% PASS**
 

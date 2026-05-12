@@ -44,7 +44,8 @@ dns_state.json
 # Scratch and Diagnostics
 scratch/
 test_*.py
-!tests/test_reliability_safety.py
+!tests/test_*.py
+!tests/*.py
 scratch_*.py
 Stress_Test_*/
 QA_Sandbox/
@@ -63,10 +64,6 @@ tasks/
 dns_cache.json
 last_run.state
 
-# Ensure core stress tests ARE committed despite the test_*.py ignore
-!test_stress_logic.py
-!test_hierarchy.py
-
 # Binaries & Packaging
 *.exe
 *.msi
@@ -78,3 +75,5 @@ last_run.state
 sandbox/
 docs/superpowers/
 RELEASE_NOTES_v*.md
+.gemini/
+.antigravity/
