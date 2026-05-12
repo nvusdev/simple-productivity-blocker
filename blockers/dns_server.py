@@ -252,6 +252,7 @@ def audit_dns_safety(state_path=DNS_STATE_FILE):
 
 class DomainMatcher:
     def __init__(self, patterns):
+        self.exact_set = set()
         self.regex_pattern = None
         regex_parts = []
         
@@ -264,7 +265,12 @@ class DomainMatcher:
             if p.startswith("~"):
                 p = p[1:]
                 
-            regex_parts.append(self.compile_pattern_str(p))
+            if "*" not in p and "." in p:
+                self.exact_set.add(p)
+                # Still add to regex for subdomain matching if it's a base domain
+                regex_parts.append(self.compile_pattern_str(p))
+            else:
+                regex_parts.append(self.compile_pattern_str(p))
         
         if regex_parts:
             # Join all patterns with OR to leverage optimized regex engine
@@ -310,8 +316,12 @@ class DomainMatcher:
     def matches(self, domain: str) -> bool:
         if not domain: return False
         domain = domain.lower().rstrip('.')
+        
+        # 1. Fast Set Lookup (O(1))
+        if domain in self.exact_set:
+            return True
             
-        # Optimized Combined Regex Match
+        # 2. Optimized Combined Regex Match
         if self.regex_pattern and self.regex_pattern.search(domain):
             return True
         return False
