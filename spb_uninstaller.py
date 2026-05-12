@@ -274,7 +274,7 @@ def cleanup_acls():
     print("Physical blocks released successfully.")
 
 def main():
-    print("Simple Productivity Blocker v1.4.2 Uninstaller")
+    print("Simple Productivity Blocker v1.4.3 Uninstaller")
     print("-------------------------------------------------------")
     
     if not is_admin():

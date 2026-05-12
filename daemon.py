@@ -525,7 +525,7 @@ class DaemonOrchestrator:
                 time.sleep(5)
 
 def main():
-    logger.info("Productivity Daemon v1.4.2 started.")
+    logger.info("Productivity Daemon v1.4.3 started.")
     cfg_path = os.path.join(base_data, "config.json")
     orchestrator = DaemonOrchestrator(cfg_path)
     orchestrator.run()

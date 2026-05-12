@@ -14,7 +14,7 @@ def run_test(script_path):
 
 def main():
     print("==========================================")
-    print("   SPB v1.4.2 GOLD MASTER STRESS SUITE   ")
+    print("   SPB v1.4.3 GOLD MASTER STRESS SUITE   ")
     print("==========================================")
     
     tests = [

@@ -1,4 +1,4 @@
-# Simple Productivity Blocker v1.4.2 - Performance & Stability Referral
+# Simple Productivity Blocker v1.4.3 - Performance & Stability Referral
 
 ## 🚀 Performance Benchmarks (Logic Engine)
 **Date:** 2026-05-08
@@ -62,7 +62,7 @@
 | **Hierarchy** | Cloud > Manual > Exception > Content | ✅ PASS |
 | **Hosts Expansion** | IPv4/IPv6 dual-stack + `www.` auto-permutation | ✅ PASS |
 
-## 📦 Build Integrity (v1.4.2 Gold Master)
+## 📦 Build Integrity (v1.4.3 Gold Master)
 **Date:** 2026-05-12
 **Suite:** `build.ps1`
 
