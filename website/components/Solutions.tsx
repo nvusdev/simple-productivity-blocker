@@ -41,7 +41,11 @@ const features = [
   { icon: Zap, title: "Battery-Aware", text: "Zero-drain background operation." },
 ];
 
-export default function Solutions() {
+interface SolutionsProps {
+  highlightTitle?: string;
+}
+
+export default function Solutions({ highlightTitle }: SolutionsProps) {
   return (
     <section className="py-20 bg-zinc-950 relative overflow-hidden">
       <div className="max-w-6xl mx-auto px-8 relative z-10">
@@ -67,30 +71,41 @@ export default function Solutions() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 auto-rows-[240px]">
-          {solutions.map((s, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              viewport={{ once: true }}
-              className={cn(
-                "group relative rounded-3xl border border-zinc-800 bg-zinc-900/40 p-8 overflow-hidden hover:border-zinc-700 transition-colors",
-                s.className
-              )}
-            >
-              <div className={cn("inline-flex p-3 rounded-2xl mb-6 border", s.color)}>
-                <s.icon size={24} />
-              </div>
-              <h3 className="text-2xl font-bold mb-3">{s.title}</h3>
-              <p className="text-zinc-400 leading-relaxed text-sm max-w-[280px] md:max-w-none">
-                {s.description}
-              </p>
-              
-              {/* Decorative Corner Glow */}
-              <div className={cn("absolute -bottom-8 -right-8 w-24 h-24 blur-[40px] opacity-0 group-hover:opacity-20 transition-opacity", s.color)} />
-            </motion.div>
-          ))}
+          {solutions.map((s, i) => {
+            const isHighlighted = s.title.toLowerCase().includes(highlightTitle?.toLowerCase() || "");
+            
+            return (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.1 }}
+                viewport={{ once: true }}
+                className={cn(
+                  "group relative rounded-3xl border p-8 overflow-hidden transition-all duration-500",
+                  isHighlighted 
+                    ? "border-blue-500/50 bg-blue-500/5 shadow-[0_0_30px_rgba(59,130,246,0.1)] ring-1 ring-blue-500/20" 
+                    : "border-zinc-800 bg-zinc-900/40 hover:border-zinc-700",
+                  s.className
+                )}
+              >
+                <div className={cn("inline-flex p-3 rounded-2xl mb-6 border", s.color)}>
+                  <s.icon size={24} />
+                </div>
+                <h3 className="text-2xl font-bold mb-3">{s.title}</h3>
+                <p className="text-zinc-400 leading-relaxed text-sm max-w-[280px] md:max-w-none">
+                  {s.description}
+                </p>
+                
+                {/* Decorative Corner Glow */}
+                <div className={cn(
+                  "absolute -bottom-8 -right-8 w-24 h-24 blur-[40px] transition-opacity", 
+                  isHighlighted ? "opacity-30" : "opacity-0 group-hover:opacity-20",
+                  s.color
+                )} />
+              </motion.div>
+            );
+          })}
         </div>
       </div>
     </section>

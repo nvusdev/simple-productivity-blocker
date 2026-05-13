@@ -3,7 +3,23 @@ import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { Download, ShieldCheck } from "lucide-react";
 import React from "react";
 
-export default function Hero() {
+interface HeroProps {
+  badge?: string;
+  title?: string;
+  highlight?: string;
+  description?: React.ReactNode;
+}
+
+export default function Hero({
+  badge = "System-Level Protection",
+  title = "Secure Your",
+  highlight = "Focus.",
+  description = (
+    <>
+      They <strong>ask</strong> you to be strong every second. We provide the hardened support you need when willpower isn't enough.
+    </>
+  ),
+}: HeroProps) {
   const x = useMotionValue(0);
   const y = useMotionValue(0);
 
@@ -33,7 +49,10 @@ export default function Hero() {
   };
 
   const scrollToSection = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth" });
+    }
   };
 
   return (
@@ -48,16 +67,16 @@ export default function Hero() {
             animate={{ opacity: 1, x: 0 }}
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-blue-500/20 bg-blue-500/5 text-blue-500 text-xs font-semibold mb-6"
           >
-            <ShieldCheck size={14} /> System-Level Protection
+            <ShieldCheck size={14} /> {badge}
           </motion.div>
           
           <motion.h1 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-5xl md:text-7xl lg:text-8xl font-bold tracking-tight mb-8 leading-[1.1]"
+            className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-8 leading-[1.1]"
           >
-            Secure Your <br />
-            <span className="text-blue-500">Focus.</span>
+            {title} <br />
+            <span className="text-blue-500">{highlight}</span>
           </motion.h1>
 
           <motion.p 
@@ -66,7 +85,7 @@ export default function Hero() {
             transition={{ delay: 0.1 }}
             className="text-lg md:text-xl text-zinc-400 mb-10 max-w-lg leading-relaxed"
           >
-            They <strong>ask</strong> you to be strong every second. We provide the hardened support you need when willpower isn't enough.
+            {description}
           </motion.p>
 
           <div className="flex flex-col sm:flex-row gap-4">
