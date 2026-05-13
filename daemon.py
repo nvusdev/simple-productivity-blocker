@@ -325,7 +325,7 @@ def _on_acl_operation_complete(path, locked, success):
         try:
             history = _get_history()
             path_norm = os.path.normpath(path)
-            # Find and remove (case-insensitive on Windows)
+            # Find and remove (ignoring case on Windows)
             to_remove = None
             for p in history:
                 if os.path.normpath(p).lower() == path_norm.lower():
@@ -348,7 +348,7 @@ def _boot_sweep_task(initial_targets: set[str], pm_instance):
     if not lock_history: return
     
     logger.info(f"Failsafe Boot Sweep: Re-verifying {len(lock_history)} locks...")
-    # Normalize initial targets for consistent comparison (case-insensitive on Windows)
+    # Normalize initial targets for consistent comparison (ignoring case on Windows)
     norm_targets = {os.path.normcase(os.path.normpath(p)) for p in initial_targets}
     
     for path in lock_history:
