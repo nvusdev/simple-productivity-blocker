@@ -1,13 +1,19 @@
 # Simple Productivity Blocker - Version History
 
-## [1.4.3] - 2026-05-12
-### Fixed
-- **Domain Matcher Glob Logic**: Fixed an edge case in the `DomainMatcher` where glob-style suffix patterns were overly aggressive; improved test coverage for regex boundaries.
+## [1.4.3] - 2026-05-13
+### Added
+- **Gold Master Stress Suite**: Centralized laboratory test runner with 100% functional coverage, including automated config corruption and DNS contention testing.
+- **WMI/COM Recovery**: Automatic re-attachment to `Shell.Application` after Explorer crashes or restarts, ensuring folder-blocking persistence.
+- **Safe-Mode Enforcement Audit**: Verified kernel-level NTFS ACL persistence for tamper-proof blocking that survives minimal safe-mode boots.
+- **Zero-Trust Hardening**: Explicit removal of `CREATOR OWNER` and standard user write access to the `ProgramData` config directory.
+- **Logging Resilience**: Permission-aware logging fallback to `%TEMP%` for restricted sessions, preventing startup crashes.
+- **Advanced Wildcards**: Cloud-level path keyword and broad boundary-aware regex support for robust allowlisting.
 
-### Improved
-- **Hierarchy Enforcement Logic**: Hardened the 4-tier enforcement engine to strictly guarantee priority: `Cloud Allowlist > Manual Block > Group Exception > Content Filter`.
-- **Hosts-File Fallback Transparency**: Updated the UI with explicit documentation for the hosts-file fallback mechanism, clarifying dual-stack IPv4/IPv6 and `www.` expansion.
-- **Verification Infrastructure**: Introduced `tests/test_stress_logic.py` for comprehensive, automated validation of hierarchy prioritization and regex edge cases.
+### Fixed
+- Resolved `PermissionError` crash during daemon initialization in non-admin mode.
+- Fixed path resolution failures in integration test scripts by normalizing `sys.path`.
+- Hardened runtime paths in frozen binaries to prevent DLL/module hijacking.
+- Resolved a discrepancy where DNS contention tests were skipped in the automated suite.
 
 *Verified by Antigravity Agent - 2026-05-12*
 

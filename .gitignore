@@ -59,6 +59,10 @@ legacy/
 
 # Agent Task Tracking
 tasks/
+temp_*/
+test_venv/
+PERFORMANCE_LOGS.md
+newlogo.png
 
 # Persistence & State
 dns_cache.json
