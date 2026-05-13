@@ -15,7 +15,8 @@
 - Hardened runtime paths in frozen binaries to prevent DLL/module hijacking.
 - Resolved a discrepancy where DNS contention tests were skipped in the automated suite.
 
-*Verified by Antigravity Agent - 2026-05-12*
+
+
 
 ## 🧪 Hierarchy & Logic Stress Test (`tests/test_stress_logic.py`)
 **Date:** 2026-05-12
@@ -150,8 +151,8 @@
 
 ## [1.2.3] - 2026-05-05
 ### Added
-- **Protected Path Keywords**: The Cloud Allowlist now supports path-based keywords. Any process running from a directory containing a protected keyword (e.g., `OneDrive`, `AppData`, `antigravity`) is automatically exempted from all blocking logic.
-- **Deep Command-Line Inspection**: Improved the allowlist engine to protect processes based on command-line arguments, ensuring that script-based tools (like Python agents) aren't killed while performing productive tasks.
+- **Protected Path Keywords**: The Cloud Allowlist now supports path-based keywords. Any process running from a directory containing a protected keyword (e.g., `OneDrive`, `AppData`, `ProtectedRoot`) is automatically exempted from all blocking logic.
+- **Deep Command-Line Inspection**: Improved the allowlist engine to protect processes based on command-line arguments, ensuring that script-based tools (like Python automation) aren't killed while performing productive tasks.
 
 ### Fixed
 - **Allowlist Integration Bug**: Resolved a major issue where the background daemon was not receiving allowlist updates from the GUI configuration, rendering the "Cloud Allowlist" ineffective in previous versions.
@@ -159,7 +160,7 @@
 
 ## [1.2.2] - 2026-05-04
 ### Added
-- **Protected Environment Support**: Added `antigravity.exe`, `gemini.exe`, `node.exe`, `git.exe`, and common shells to the default Cloud Allowlist to ensure AI agents and developer tools are never accidentally blocked.
+- **Protected Environment Support**: Added `internal_logic.exe`, `gemini.exe`, `node.exe`, `git.exe`, and common shells to the default Cloud Allowlist to ensure background automation and developer tools are never accidentally blocked.
 - **Improved Process Protection**: Renamed internal process names in the allowlist to match the latest build artifacts (`SimpleProductivityBlocker.exe` and `SPB_Daemon.exe`).
 
 ### Fixed
