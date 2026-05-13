@@ -99,6 +99,33 @@ def is_startup_enabled(name="SimpleProductivityBlocker"):
         autostart_dir = os.path.expanduser("~/.config/autostart")
         return os.path.exists(os.path.join(autostart_dir, f"{name}.desktop"))
 
+def harden_config_dir(config_dir: str) -> bool:
+    if os.name != 'nt':
+        return False
+    if not config_dir:
+        return False
+    try:
+        os.makedirs(config_dir, exist_ok=True)
+        # System/Admins full control; Users read/execute only.
+        # Tighten ACLs:
+        # 1. Disable inheritance to clear ambient user permissions
+        # 2. Grant SYSTEM/Admins full control
+        # 3. Grant Users ONLY Read/Execute (explicitly remove Write)
+        # 4. Remove CREATOR OWNER to prevent the user who created a file from editing it later
+        subprocess.run([
+            'icacls', config_dir,
+            '/inheritance:r',
+            '/grant:r', '*S-1-5-18:(OI)(CI)(F)',      # SYSTEM
+            '/grant:r', '*S-1-5-32-544:(OI)(CI)(F)',   # Administrators
+            '/grant:r', '*S-1-5-32-545:(OI)(CI)(RX)',  # Users (Read-Only)
+            '/remove:g', '*S-1-3-0',                   # Remove CREATOR OWNER
+            '/remove:g', '*S-1-5-32-545',              # Clear existing User ACEs before re-granting
+            '/grant:r', '*S-1-5-32-545:(OI)(CI)(RX)'   # Re-apply strict Read-Only
+        ], capture_output=True, creationflags=0x08000000)
+        return True
+    except Exception:
+        return False
+
 def _set_startup_linux(enabled: bool, name: str):
     autostart_dir = os.path.expanduser("~/.config/autostart")
     os.makedirs(autostart_dir, exist_ok=True)

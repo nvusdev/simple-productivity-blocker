@@ -15,6 +15,7 @@ import urllib.request
 import urllib.parse
 import traceback
 import dataclasses
+import site
 from datetime import datetime
 from typing import List, Optional, Set, Any, Dict, Tuple, Union
 
@@ -22,6 +23,21 @@ from typing import List, Optional, Set, Any, Dict, Tuple, Union
 from security import ADBLOCK_LISTS, CustomListManager
 from core.config_manager import load_config
 from core.scheduler import is_active, is_day_active
+
+def _harden_runtime_paths():
+    if not getattr(sys, "frozen", False):
+        return
+    try:
+        user_site = site.getusersitepackages()
+        if user_site in sys.path:
+            sys.path.remove(user_site)
+    except Exception:
+        pass
+    for entry in ("", ".", os.getcwd()):
+        while entry in sys.path:
+            sys.path.remove(entry)
+
+_harden_runtime_paths()
 
 # Define internal fallbacks with explicit defaults to prevent startup NameErrors
 _INTERNAL_HOSTS_FILE = r"C:\Windows\System32\drivers\etc\hosts" if os.name == 'nt' else "/etc/hosts"
@@ -75,8 +91,14 @@ log_file = os.path.join(base_data, "daemon.log")
 try:
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
 except PermissionError:
-    log_file = os.path.join(base_data, "daemon_v142.log")
-    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    try:
+        # Fallback to temp directory if ProgramData is read-only for this user
+        import tempfile
+        log_file = os.path.join(tempfile.gettempdir(), "spb_daemon_fallback.log")
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    except Exception:
+        # If even temp fails, use null handler to prevent crash
+        file_handler = logging.NullHandler()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -87,7 +109,7 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("SPB_Daemon")
-print("Logging initialized")
+logger.info(f"Logging initialized (Target: {log_file})")
 
 RECOVERY_FILE = os.path.join(base_data, "recovery_history.json")
 
@@ -114,8 +136,10 @@ class BlockingContext:
     manual_domains: Set[str]
     filter_keywords: Set[str]
     cloud_allowlist: Set[str]
+    cloud_path_keywords: List[str]
     filter_exceptions: Set[str]
     app_exceptions: Set[str]
+    path_exceptions: Set[str]
     adblock_enabled: bool
     processes: Set[str]
     files: Set[str]
@@ -130,10 +154,34 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
     all_files: Set[str] = set()
     all_folders: Set[str] = set()
     settings = config.get("settings", {})
-    cloud_allowlist_enabled = settings.get("cloud_allowlist_enabled", True)
-    cloud_allowlist: Set[str] = set(settings.get("cloud_allowlist", [])) if cloud_allowlist_enabled else set()
+    cloud_enabled = settings.get("cloud_allowlist_enabled", True)
+    cloud_list = set(settings.get("cloud_allowlist", [])) if cloud_enabled else set()
+    cloud_kws = [k.lower() for k in settings.get("cloud_path_keywords", [])] if cloud_enabled else []
+    
     filter_exceptions: Set[str] = set()
     all_app_exceptions: Set[str] = set()
+    all_path_exceptions: Set[str] = set()
+
+    def is_cloud_allowed(val: str) -> bool:
+        if not val or not cloud_enabled: return False
+        v_low = val.lower()
+        
+        # 1. Exact or Wildcard Match (using DomainMatcher which handles *.domain.com and glob-style)
+        if _pattern_matches(cloud_list, v_low):
+            return True
+            
+        # 2. Path Keyword Matching (e.g., "appdata\roaming")
+        # For paths, we also check if any allowed keyword is a parent directory
+        for kw in cloud_kws:
+            if kw in v_low:
+                return True
+        
+        # 3. Robust App/File Matching: If a base filename is in cloud_list, allow it
+        basename = os.path.basename(val).lower()
+        if basename in {p.lower() for p in cloud_list}:
+            return True
+
+        return False
 
     for _, gdata in config.get("groups", {}).items():
         if not gdata.get("enabled", True): continue
@@ -143,42 +191,58 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
         ad_persist = ad.get("persist_all_day", False)
         day_on = is_day_active(gdata.get("schedule", {}))
         
-        # Adblocker is active if enabled AND (it's the active day AND (persist-all-day OR current time is active))
         ad_active = ad_on and day_on and (ad_persist or active)
 
         if active or ad_active:
-            # Separate app exceptions from domain exceptions
             for e in gdata.get("exceptions", []) + ad.get("exceptions", []):
                 e_str = str(e).strip().lower()
                 if not e_str: continue
                 if e_str.startswith("app:"):
                     all_app_exceptions.add(e_str[4:])
+                elif e_str.startswith("path:"):
+                    all_path_exceptions.add(e_str[5:])
                 else:
                     filter_exceptions.add(_base(e_str))
 
         if active:
-            tier1.extend(gdata.get("websites", []))
-            for a in gdata.get("apps", []): 
-                if a.strip(): all_apps.add(a.strip())
+            for w in gdata.get("websites", []):
+                if not is_cloud_allowed(w):
+                    tier1.append(w)
+            
+            for a in gdata.get("apps", []):
+                a_clean = a.strip()
+                if a_clean and not is_cloud_allowed(a_clean):
+                    all_apps.add(a_clean)
+                    
             for f in gdata.get("files", []):
                 if not f.strip(): continue
                 p = f if os.path.isabs(f) else os.path.join(cfg_dir, f)
-                all_files.add(os.path.normpath(p))
+                p_norm = os.path.normpath(p)
+                if not is_cloud_allowed(p_norm):
+                    all_files.add(p_norm)
+                    
             for f in gdata.get("folders", []):
                 if not f.strip(): continue
                 p = f if os.path.isabs(f) else os.path.join(cfg_dir, f)
-                all_folders.add(os.path.normpath(p))
+                p_norm = os.path.normpath(p)
+                if not is_cloud_allowed(p_norm):
+                    all_folders.add(p_norm)
 
         if ad_active:
             for k in ["ads_trackers", "malware_annoyances", "social_media", "entertainment", "shopping", "gaming", "ai_tech", "piracy_illegal", "adult_content", "gambling"]:
-                if ad.get(k): tier2.extend(ADBLOCK_LISTS.get(k, []))
+                if ad.get(k): 
+                    for domain in ADBLOCK_LISTS.get(k, []):
+                        if not is_cloud_allowed(domain):
+                            tier2.append(domain)
 
     return BlockingContext(
         manual_domains=set(tier1),
         filter_keywords=set(tier2),
-        cloud_allowlist=cloud_allowlist,
+        cloud_allowlist=cloud_list,
+        cloud_path_keywords=cloud_kws,
         filter_exceptions=filter_exceptions,
         app_exceptions=all_app_exceptions,
+        path_exceptions=all_path_exceptions,
         adblock_enabled=any(g.get("adblocker", {}).get("enabled") for g in config.get("groups", {}).values()),
         processes=all_apps,
         files=all_files,
@@ -415,9 +479,9 @@ class SubsystemOrchestrator:
 
     def sync_processes(self, processes, files, folders, first_run):
         if self.pm:
-            self.pm.synchronize_all(list(processes), list(files), list(folders))
             app_paths = {a for a in processes if os.path.sep in a or (os.name == 'nt' and '/' in a)}
             _save_history(files.union(folders).union(app_paths).union({HOSTS_FILE}))
+            self.pm.synchronize_all(list(processes), list(files), list(folders))
 
 class DaemonOrchestrator:
     def __init__(self, cfg_path: str):
@@ -479,7 +543,7 @@ class DaemonOrchestrator:
             global_kws = settings.get("cloud_path_keywords", []) if settings.get("cloud_allowlist_enabled", True) else []
             self.subsystems.pm.set_global_allowlist(list(global_allow), global_kws)
             self.subsystems.pm.set_allowlisted_processes(list(ctx.app_exceptions), enabled=bool(ctx.app_exceptions))
-            self.subsystems.pm.set_allowlisted_keywords(list(ctx.path_exceptions) if hasattr(ctx, 'path_exceptions') else [])
+            self.subsystems.pm.set_allowlisted_keywords(list(ctx.path_exceptions))
             self.subsystems.pm.configure_performance(settings.get("performance_mode", "Balanced"))
             # Register the history callback
             self.subsystems.pm._acl_callback = _on_acl_operation_complete
@@ -527,6 +591,11 @@ class DaemonOrchestrator:
 def main():
     logger.info("Productivity Daemon v1.4.3 started.")
     cfg_path = os.path.join(base_data, "config.json")
+    try:
+        from core.persistence import harden_config_dir
+        harden_config_dir(base_data)
+    except Exception:
+        logger.debug("Config ACL hardening skipped.")
     orchestrator = DaemonOrchestrator(cfg_path)
     orchestrator.run()
 
