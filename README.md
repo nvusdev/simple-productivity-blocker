@@ -11,7 +11,7 @@ It combines advanced website filtering, application termination, strict file and
 * **System-Level Enforcement:** Instead of just asking you to stop scrolling, SPB uses Windows process monitoring, policy controls, file handles, and NTFS ACLs to lock down apps, files, and folders. During a focus session, the operating system itself helps enforce your rules.
 * **Smart DNS Interception:** SPB catches website requests before they leave your computer when local DNS interception is safe. You can block specific sites, use wildcard patterns, block keywords, or apply curated filters for categories like Social Media, Gaming, Shopping, and Adult Content.
 * **Schedule Your Focus:** Create different profiles for different needs. Each group can have its own schedule, selected days, time window, or all-day enforcement.
-* **Crash-Proof Recovery:** SPB logs permission-sensitive changes to recovery history. If your computer loses power, crashes, or a block becomes orphaned, the daemon and recovery tools can reconcile and restore normal access.
+* **Crash-Proof Recovery:** SPB logs permission-critical changes to recovery history. If your computer loses power, crashes, or a block becomes orphaned, the daemon and recovery tools can reconcile and restore normal access.
 * **Network Fail-Safes:** SPB audits adapters before changing DNS, skips risky VPN or security-managed adapters, preserves original DNS state, and falls back to hosts-file blocking when local DNS proxying is unsafe.
 * **Battery-Aware Performance:** The background service uses caching and performance profiles (Passive, Balanced, Strict) to control how aggressively it scans for running programs.
 
@@ -25,7 +25,7 @@ SPB is built to eliminate the "willpower gap" by removing easy bypasses while ke
 * **Dual-Layer Network Protection:** SPB prefers a local DNS proxy for flexible pattern matching. When DNS proxying is unavailable or unsafe, it falls back to managed `hosts` file entries.
 * **DNS State Preservation:** Before redirecting DNS, SPB captures adapter state in `dns_state.json`. If the proxy fails or blocking is disabled, SPB restores the saved adapter settings.
 * **SSRF & Path Hardening:** Custom blocklists are validated to reduce unsafe network and local path access. Local lists are restricted to the application configuration area.
-* **Encrypted Vulnerability Lists:** Sensitive category lists can be stored in an obfuscated form to make casual tampering harder during a moment of weakness.
+* **Encrypted Vulnerability Lists:** Restricted category lists can be stored in an obfuscated form to make casual tampering harder during a moment of weakness.
 
 ## Core Capabilities
 
@@ -134,7 +134,7 @@ The DNS stress tests use high ports and should not rewrite system adapter DNS.
 
 ## Repository Notes
 
-Generated build output belongs in `dist/` and `build/`, both of which are ignored. Local runtime state such as `config.json`, recovery history, DNS snapshots, logs, coverage reports, PyInstaller specs, scratch files, and local agent indexes should not be committed.
+Generated build output belongs in `dist/` and `build/`, both of which are ignored. Local runtime state such as `config.json`, recovery history, DNS snapshots, logs, coverage reports, PyInstaller specs, scratch files, and internal metadata should not be committed.
 
 ## Disclaimer
 
