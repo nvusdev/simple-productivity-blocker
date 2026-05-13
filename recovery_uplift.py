@@ -4,6 +4,10 @@ import ctypes
 import sys
 import json
 
+def _has_flag(name: str) -> bool:
+    name = name.lower()
+    return any(arg.lower() == name for arg in sys.argv[1:])
+
 def is_admin():
     try:
         return ctypes.windll.shell32.IsUserAnAdmin()
@@ -16,10 +20,42 @@ def force_unlock(path):
         print(f"[-] Path does not exist: {path}")
         return False
 
+    print(f"[*] Attempting to unlock: {path}")
+    try:
+        # 1. Take ownership (The Sledgehammer)
+        # /f path, /a (give ownership to Administrators group)
+        print("    - Taking ownership...")
+        subprocess.run(['takeown', '/f', path, '/a'], capture_output=True, creationflags=0x08000000)
+        
+        # 2. Grant Administrators full control
+        print("    - Granting Administrator access...")
+        subprocess.run(['icacls', path, '/grant', 'Administrators:(F)', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+
+        # 3. Re-enable inheritance and remove ALL deny rules
+        print("    - Resetting inheritance and removing deny rules...")
+        subprocess.run(['icacls', path, '/reset', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+        
+        # 4. Explicitly remove everyone-deny just in case reset wasn't enough
+        # S-1-1-0 is the SID for 'Everyone'
+        subprocess.run(['icacls', path, '/remove:d', '*S-1-1-0', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+        
+        print(f"[+] Successfully processed: {path}")
+        return True
+    except Exception as e:
+        print(f"[!] Error unlocking {path}: {e}")
+        return False
+
 def restore_dns_state(config_dir):
     state_path = os.path.join(config_dir, "dns_state.json")
     if not os.path.exists(state_path):
-        print("[-] No SPB DNS state file found.")
+        print("[-] No SPB DNS state file found. Performing emergency safety reset...")
+        # Fallback: Reset any adapter pointing to loopback to DHCP
+        emergency_script = (
+            "Get-DnsClientServerAddress -AddressFamily IPv4,IPv6 -ErrorAction SilentlyContinue | "
+            "Where-Object { $_.ServerAddresses -contains '127.0.0.1' -or $_.ServerAddresses -contains '::1' } | "
+            "ForEach-Object { Write-Host 'Safety Reset:' $_.InterfaceAlias; Set-DnsClientServerAddress -InterfaceIndex $_.InterfaceIndex -ResetServerAddresses }"
+        )
+        subprocess.run(["powershell", "-NoProfile", "-Command", emergency_script], capture_output=True, creationflags=0x08000000)
         return False
     print("[*] Restoring adapter DNS state...")
     try:
@@ -109,38 +145,16 @@ def clean_hosts_file():
     except Exception as e:
         print(f"[!] Failed to clean hosts file: {e}")
 
-    print(f"[*] Attempting to unlock: {path}")
-    
-    try:
-        # 1. Take ownership (The Sledgehammer)
-        # /f path, /a (give ownership to Administrators group)
-        print("    - Taking ownership...")
-        subprocess.run(['takeown', '/f', path, '/a'], capture_output=True, creationflags=0x08000000)
-        
-        # 2. Grant Administrators full control
-        print("    - Granting Administrator access...")
-        subprocess.run(['icacls', path, '/grant', 'Administrators:(F)', '/c', '/q'], capture_output=True, creationflags=0x08000000)
-
-        # 3. Re-enable inheritance and remove ALL deny rules
-        print("    - Resetting inheritance and removing deny rules...")
-        subprocess.run(['icacls', path, '/reset', '/c', '/q'], capture_output=True, creationflags=0x08000000)
-        
-        # 4. Explicitly remove everyone-deny just in case reset wasn't enough
-        # S-1-1-0 is the SID for 'Everyone'
-        subprocess.run(['icacls', path, '/remove:d', '*S-1-1-0', '/c', '/q'], capture_output=True, creationflags=0x08000000)
-        
-        print(f"[+] Successfully processed: {path}")
-        return True
-    except Exception as e:
-        print(f"[!] Error unlocking {path}: {e}")
-        return False
 
 def main():
     print("====================================================")
     print("   Simple Productivity Blocker - EMERGENCY RECOVERY")
     print("====================================================")
+    dry_run = _has_flag("--dry-run")
+    if dry_run:
+        print("[DRY-RUN] No system changes will be made.")
     
-    if not is_admin():
+    if not dry_run and not is_admin():
         print("[!] Administrator privileges required.")
         print("[*] Restarting with elevated privileges...")
         ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
@@ -149,10 +163,16 @@ def main():
     # Try to find recovery history
     config_dir = os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
     paths_to_unlock = set()
-    restore_dns_state(config_dir)
-    clear_browser_doh_policies()
-    cleanup_scheduled_task()
-    clean_hosts_file()
+    if dry_run:
+        print("[DRY-RUN] Would restore adapter DNS state.")
+        print("[DRY-RUN] Would clear browser DoH policies.")
+        print("[DRY-RUN] Would remove scheduled task if present.")
+        print("[DRY-RUN] Would clean SPB hosts entries.")
+    else:
+        restore_dns_state(config_dir)
+        clear_browser_doh_policies()
+        cleanup_scheduled_task()
+        clean_hosts_file()
     
     for fname in ["recovery.json", "recovery_history.json"]:
         h_file = os.path.join(config_dir, fname)
@@ -173,22 +193,27 @@ def main():
     if paths_to_unlock:
         print(f"[*] Found {len(paths_to_unlock)} paths to restore from history.")
         for p in paths_to_unlock:
-            force_unlock(p)
+            if dry_run:
+                print(f"[DRY-RUN] Would unlock: {p}")
+            else:
+                force_unlock(p)
     else:
         print("[-] No automated recovery history found.")
 
-    print("\n--- MANUAL RECOVERY ---")
-    print("If you still can't access certain files/folders, enter the path below.")
-    print("Leave blank to exit.")
-    
-    while True:
-        manual_path = input("\nEnter path to force-unlock: ").strip().strip('"')
-        if not manual_path:
-            break
-        force_unlock(manual_path)
+    if not dry_run:
+        print("\n--- MANUAL RECOVERY ---")
+        print("If you still can't access certain files/folders, enter the path below.")
+        print("Leave blank to exit.")
+        
+        while True:
+            manual_path = input("\nEnter path to force-unlock: ").strip().strip('"')
+            if not manual_path:
+                break
+            force_unlock(manual_path)
 
     print("\n[*] Recovery process complete.")
-    input("Press Enter to exit...")
+    if not dry_run:
+        input("Press Enter to exit...")
 
 if __name__ == "__main__":
     main()

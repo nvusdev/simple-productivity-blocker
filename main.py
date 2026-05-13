@@ -9,6 +9,7 @@ import webbrowser
 import ctypes
 import sys
 import copy
+import site
 from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, get_config_dir, export_config, import_config
 from core.persistence import set_startup, is_startup_enabled
 
@@ -18,8 +19,23 @@ def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
     except Exception:
-        base_path = os.path.abspath(".")
+        base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
+
+def _harden_runtime_paths():
+    if not getattr(sys, "frozen", False):
+        return
+    try:
+        user_site = site.getusersitepackages()
+        if user_site in sys.path:
+            sys.path.remove(user_site)
+    except Exception:
+        pass
+    for entry in ("", ".", os.getcwd()):
+        while entry in sys.path:
+            sys.path.remove(entry)
+
+_harden_runtime_paths()
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
