@@ -214,32 +214,52 @@ def create_shortcut(target, shortcut_path, icon=None):
         except:
             pass
 
+def _has_flag(name: str) -> bool:
+    name = name.lower()
+    return any(arg.lower() == name for arg in sys.argv[1:])
+
 def main():
+    dry_run = _has_flag("--dry-run")
     print("Simple Productivity Blocker v1.4.3 Installer")
     print("---------------------------------------------")
+    if dry_run:
+        print("[DRY-RUN] No system changes will be made.")
     
-    if not is_admin():
+    if not dry_run and not is_admin():
         print("Requesting Administrator privileges...")
         ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
         sys.exit()
 
     try:
-        terminate_ghost_instances()
-        cleanup_legacy_registry()
+        if dry_run:
+            print("[DRY-RUN] Would terminate ghost instances.")
+            print("[DRY-RUN] Would clean legacy registry stubs.")
+        else:
+            terminate_ghost_instances()
+            cleanup_legacy_registry()
         
         # 1. Resolve Secure Path
         base_prog_files = get_program_files_path()
         dest_dir = os.path.join(base_prog_files, "Simple Productivity Blocker")
         
         # 3. Deploy Binaries
-        install_files(dest_dir)
+        if dry_run:
+            print(f"[DRY-RUN] Would install files into: {dest_dir}")
+        else:
+            install_files(dest_dir)
         
         # 4. Harden Installation Directory (Admin-only write access)
-        harden_install_dir(dest_dir)
+        if dry_run:
+            print(f"[DRY-RUN] Would harden install directory ACLs: {dest_dir}")
+        else:
+            harden_install_dir(dest_dir)
         
         # 5. Register Background Daemon (Do this AFTER hardening)
         daemon_exe = os.path.normpath(os.path.join(dest_dir, "SPB_Daemon.exe"))
-        register_daemon_task(daemon_exe)
+        if dry_run:
+            print(f"[DRY-RUN] Would register scheduled task: SPB_Daemon -> {daemon_exe}")
+        else:
+            register_daemon_task(daemon_exe)
         
         print("\n" + "="*50)
         print("INSTALLATION COMPLETE!")
@@ -251,10 +271,13 @@ def main():
         shortcut_path = os.path.join(desktop, "Simple Productivity Blocker.lnk")
         icon_loc = f"{app_path},0"
         
-        if create_shortcut(app_path, shortcut_path, icon=icon_loc):
-            print("Desktop shortcut created successfully!")
+        if dry_run:
+            print(f"[DRY-RUN] Would create desktop shortcut: {shortcut_path}")
         else:
-            print("Warning: Could not create desktop shortcut automatically.")
+            if create_shortcut(app_path, shortcut_path, icon=icon_loc):
+                print("Desktop shortcut created successfully!")
+            else:
+                print("Warning: Could not create desktop shortcut automatically.")
 
         print("\nInstallation Complete!")
         print("v1.4.3 Hardened Engine is now active.")
@@ -269,14 +292,16 @@ def main():
         print("fully locked by the kernel-level protection engine.")
         print("="*50)
         
-        time.sleep(2)
+        if not dry_run:
+            time.sleep(2)
 
     except Exception as e:
         print(f"\nERROR during installation: {e}")
         input("Press Enter to exit...")
         sys.exit(1)
 
-    input("\nPress Enter to exit...")
+    if not dry_run:
+        input("\nPress Enter to exit...")
 
 if __name__ == "__main__":
     main()
