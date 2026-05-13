@@ -4,14 +4,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const baseUrl = 'https://nvusdev.github.io/simple-productivity-blocker/'
   const routes = [
     '',
-    'students',
-    'higher-ed',
-    'developers',
-    'professionals',
-    'writers',
-    'adhd',
-    'parents',
-    'entrepreneurs',
+    'students/',
+    'higher-ed/',
+    'developers/',
+    'professionals/',
+    'writers/',
+    'adhd/',
+    'parents/',
+    'entrepreneurs/',
   ]
 
   return routes.map((route) => ({
