@@ -1,5 +1,6 @@
 "use client";
 import { motion } from "framer-motion";
+import Link from "next/link";
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -9,7 +10,9 @@ export default function Footer() {
       <div className="max-w-6xl mx-auto px-8">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 mb-12">
           <div>
-            <h3 className="text-xl font-bold text-zinc-100 mb-2">Simple Productivity Blocker</h3>
+            <Link href="/" className="group">
+              <h3 className="text-xl font-bold text-zinc-100 mb-2 group-hover:text-blue-500 transition-colors">Simple Productivity Blocker</h3>
+            </Link>
             <p className="text-zinc-500 text-sm max-w-xs">
               Absolute Focus for the Modern World. A hardened, system-level focus suite for Windows.
             </p>

@@ -1,7 +1,8 @@
 "use client";
 import { motion } from "framer-motion";
-import { GraduationCap, Users, Briefcase, Heart, AppWindow, Globe, FolderLock, Zap } from "lucide-react";
+import { GraduationCap, Users, Briefcase, Heart, AppWindow, Globe, FolderLock, Zap, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
 
 const solutions = [
   {
@@ -10,6 +11,7 @@ const solutions = [
     icon: GraduationCap,
     className: "md:col-span-2 md:row-span-1",
     color: "bg-blue-500/10 border-blue-500/20 text-blue-500",
+    href: "/students/",
   },
   {
     title: "Supportive Parents",
@@ -17,6 +19,7 @@ const solutions = [
     icon: Users,
     className: "md:col-span-1 md:row-span-1",
     color: "bg-purple-500/10 border-purple-500/20 text-purple-500",
+    href: "/parents/",
   },
   {
     title: "Professionals",
@@ -24,6 +27,7 @@ const solutions = [
     icon: Briefcase,
     className: "md:col-span-1 md:row-span-1",
     color: "bg-blue-500/10 border-blue-500/20 text-blue-500",
+    href: "/professionals/",
   },
   {
     title: "ADHD & Personal",
@@ -31,6 +35,7 @@ const solutions = [
     icon: Heart,
     className: "md:col-span-2 md:row-span-1",
     color: "bg-rose-500/10 border-rose-500/20 text-rose-500",
+    href: "/adhd/",
   }
 ];
 
@@ -75,35 +80,42 @@ export default function Solutions({ highlightTitle }: SolutionsProps) {
             const isHighlighted = s.title.toLowerCase().includes(highlightTitle?.toLowerCase() || "");
             
             return (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 }}
-                viewport={{ once: true }}
+              <Link 
+                key={i} 
+                href={s.href}
                 className={cn(
-                  "group relative rounded-3xl border p-8 overflow-hidden transition-all duration-500",
+                  "group relative rounded-3xl border p-8 overflow-hidden transition-all duration-500 block",
                   isHighlighted 
                     ? "border-blue-500/50 bg-blue-500/5 shadow-[0_0_30px_rgba(59,130,246,0.1)] ring-1 ring-blue-500/20" 
-                    : "border-zinc-800 bg-zinc-900/40 hover:border-zinc-700",
+                    : "border-zinc-800 bg-zinc-900/40 hover:border-blue-500/30 hover:bg-zinc-900/60",
                   s.className
                 )}
               >
-                <div className={cn("inline-flex p-3 rounded-2xl mb-6 border", s.color)}>
-                  <s.icon size={24} />
-                </div>
-                <h3 className="text-2xl font-bold mb-3">{s.title}</h3>
-                <p className="text-zinc-400 leading-relaxed text-sm max-w-[280px] md:max-w-none">
-                  {s.description}
-                </p>
-                
-                {/* Decorative Corner Glow */}
-                <div className={cn(
-                  "absolute -bottom-8 -right-8 w-24 h-24 blur-[40px] transition-opacity", 
-                  isHighlighted ? "opacity-30" : "opacity-0 group-hover:opacity-20",
-                  s.color
-                )} />
-              </motion.div>
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  viewport={{ once: true }}
+                >
+                  <div className={cn("inline-flex p-3 rounded-2xl mb-6 border", s.color)}>
+                    <s.icon size={24} />
+                  </div>
+                  <h3 className="text-2xl font-bold mb-3 flex items-center gap-2 group-hover:text-blue-400 transition-colors">
+                    {s.title}
+                    <ArrowRight size={20} className="opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
+                  </h3>
+                  <p className="text-zinc-400 leading-relaxed text-sm max-w-[280px] md:max-w-none">
+                    {s.description}
+                  </p>
+                  
+                  {/* Decorative Corner Glow */}
+                  <div className={cn(
+                    "absolute -bottom-8 -right-8 w-24 h-24 blur-[40px] transition-opacity", 
+                    isHighlighted ? "opacity-30" : "opacity-0 group-hover:opacity-20",
+                    s.color
+                  )} />
+                </motion.div>
+              </Link>
             );
           })}
         </div>
