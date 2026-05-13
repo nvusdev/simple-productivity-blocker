@@ -1,6 +1,9 @@
 import json
 import os
 import threading
+import ctypes
+import sys
+import subprocess
 import copy
 import base64
 import shutil
@@ -65,12 +68,21 @@ DEFAULT_SETTINGS = {
         "dwm.exe", "csrss.exe", "MsMpEng.exe", "SecurityHealthService.exe",
         "MpCmdRun.exe", "python.exe", "pythonw.exe", "SimpleProductivityBlocker.exe",
         "SPB_Daemon.exe", "antigravity.exe", "gemini.exe", "node.exe", "git.exe",
-        "code.exe", "powershell.exe", "cmd.exe", "bash.exe", "sh.exe"
+        "code.exe", "powershell.exe", "cmd.exe", "bash.exe", "sh.exe",
+        "google.com", "bing.com", "duckduckgo.com", "yahoo.com",
+        "microsoft.com", "live.com", "outlook.com", "office.com",
+        "icloud.com", "apple.com", "github.com", "gitlab.com",
+        "openai.com", "anthropic.com", "aws.amazon.com", "dropbox.com",
+        "box.com", "zoom.us", "slack.com", "trello.com", "notion.so",
+        "googletagmanager.com", "gstatic.com", "googleapis.com",
+        "compute.googleapis.com", "oauth2.googleapis.com", "mcp.context7.com"
     ],
     "cloud_path_keywords": [
         "onedrive", "google drive", "googledrive", "dropbox", "icloud", "mega",
         "synology drive", "pcloud", "nextcloud", "backup and sync",
-        "appdata\\roaming", "appdata\\local", "programdata", "windows\\system32"
+        "appdata\\roaming", "appdata\\local", "programdata", "windows\\system32",
+        "program files", "program files (x86)", "steamapps", "site-packages",
+        "node_modules", "package.json", ".git", ".vscode", ".config"
     ],
     "notifications": {
         "on_block": True, "on_block_attempt": True, "on_exception_bypass": False,
@@ -179,6 +191,31 @@ def _quarantine_bad_config(path):
         return None
     return None
 
+def repair_config(path=None):
+    """Attempt to force-delete a corrupted/locked config via elevation.
+    This is a failsafe for the end-user when NTFS ACLs or file locks block standard recovery.
+    """
+    cfg_file = path or CONFIG_FILE
+    if not os.path.exists(cfg_file):
+        return True
+        
+    try:
+        # 1. Try standard delete first
+        os.remove(cfg_file)
+        return True
+    except (PermissionError, OSError):
+        # 2. If blocked, attempt elevated forced removal
+        if os.name == 'nt':
+            try:
+                # Use powershell to force-remove the item with elevation
+                params = f'-NoProfile -Command "Remove-Item \'{cfg_file}\' -Force"'
+                res = ctypes.windll.shell32.ShellExecuteW(None, "runas", "powershell.exe", params, None, 0)
+                # res > 32 indicates success in launching
+                return res > 32
+            except Exception:
+                return False
+        return False
+
 def load_config(path=None):
     cfg_file = path or CONFIG_FILE
     with _lock:
@@ -188,11 +225,18 @@ def load_config(path=None):
             with open(cfg_file, 'r') as f:
                 data = json.load(f)
                 return normalize_config(data)
-        except Exception:
+        except Exception as e:
+            # CORRUPTION DETECTED: Trigger self-healing
             fallback = normalize_config(copy.deepcopy(DEFAULT_CONFIG))
             quarantine = _quarantine_bad_config(cfg_file)
-            if quarantine:
+            
+            # If we couldn't even quarantine it (likely permission error), trigger repair
+            if not quarantine:
+                repair_config(cfg_file)
+                fallback["migration_warnings"].append("Critical config corruption detected. Elevated self-healing triggered.")
+            else:
                 fallback["migration_warnings"].append(f"Invalid config quarantined at {quarantine}.")
+            
             return fallback
 
 import time
