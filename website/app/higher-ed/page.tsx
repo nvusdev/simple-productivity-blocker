@@ -25,6 +25,27 @@ export default function HigherEdPage() {
       />
       <Comparison />
       <Solutions highlightTitle="Schools" />
+      
+      <section className="py-24 border-t border-zinc-900 bg-zinc-950/50">
+        <div className="max-w-4xl mx-auto px-8">
+          <h2 className="text-3xl font-bold mb-8 text-zinc-100">Deep Work for Academic Researchers</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-12 text-zinc-400 leading-relaxed">
+            <div>
+              <h3 className="text-xl font-semibold mb-4 text-blue-400">Master Your Research Sessions</h3>
+              <p>
+                Academic writing requires long periods of undisturbed concentration. Our <strong>research focus tool</strong> prevents the "quick search" from becoming a distraction, ensuring your citation checks stay focused and your thesis drafting remains uninterrupted.
+              </p>
+            </div>
+            <div>
+              <h3 className="text-xl font-semibold mb-4 text-blue-400">Hardened Scholarly Focus</h3>
+              <p>
+                Whether you are a professor or a Ph.D. candidate, SPB provides the <strong>absolute focus</strong> needed to push the boundaries of knowledge. Eliminate digital clutter and focus on the deep intellectual work that matters most with kernel-level Windows enforcement.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <Installation />
       <Footer />
     </main>
