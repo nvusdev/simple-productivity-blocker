@@ -15,12 +15,24 @@ export default function Footer() {
             </p>
           </div>
           
-          <div className="flex flex-col items-start md:items-end gap-2">
-            <span className="text-zinc-400 text-sm font-medium">Built with passion by nvusdev</span>
-            <div className="flex items-center gap-4 text-xs text-zinc-600">
-              <a href="https://github.com/nvusdev/simple-productivity-blocker" target="_blank" rel="noopener noreferrer" className="hover:text-blue-500 transition-colors">GitHub</a>
-              <a href="https://github.com/nvusdev/simple-productivity-blocker/releases" target="_blank" rel="noopener noreferrer" className="hover:text-blue-500 transition-colors">Releases</a>
-              <a href="https://github.com/nvusdev/simple-productivity-blocker/issues" target="_blank" rel="noopener noreferrer" className="hover:text-blue-500 transition-colors">Support</a>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-8 text-sm">
+            <div className="flex flex-col gap-3">
+              <span className="text-zinc-100 font-bold mb-1">Solutions</span>
+              <a href="students/" className="text-zinc-500 hover:text-blue-500 transition-colors">For Students</a>
+              <a href="developers/" className="text-zinc-500 hover:text-blue-500 transition-colors">For Developers</a>
+              <a href="adhd/" className="text-zinc-500 hover:text-blue-500 transition-colors">For ADHD</a>
+            </div>
+            <div className="flex flex-col gap-3">
+              <span className="text-zinc-100 font-bold mb-1">Use Cases</span>
+              <a href="higher-ed/" className="text-zinc-500 hover:text-blue-500 transition-colors">Higher Ed</a>
+              <a href="professionals/" className="text-zinc-500 hover:text-blue-500 transition-colors">Office Work</a>
+              <a href="writers/" className="text-zinc-500 hover:text-blue-500 transition-colors">Writers</a>
+            </div>
+            <div className="flex flex-col gap-3">
+              <span className="text-zinc-100 font-bold mb-1">Connect</span>
+              <a href="https://github.com/nvusdev/simple-productivity-blocker" target="_blank" rel="noopener noreferrer" className="text-zinc-500 hover:text-blue-500 transition-colors">GitHub</a>
+              <a href="https://github.com/nvusdev/simple-productivity-blocker/releases" target="_blank" rel="noopener noreferrer" className="text-zinc-500 hover:text-blue-500 transition-colors">Releases</a>
+              <a href="https://github.com/nvusdev/simple-productivity-blocker/issues" target="_blank" rel="noopener noreferrer" className="text-zinc-500 hover:text-blue-500 transition-colors">Support</a>
             </div>
           </div>
         </div>

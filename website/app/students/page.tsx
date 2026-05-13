@@ -25,6 +25,27 @@ export default function StudentsPage() {
       />
       <Comparison />
       <Solutions highlightTitle="Schools" />
+      
+      <section className="py-24 border-t border-zinc-900 bg-zinc-950/50">
+        <div className="max-w-4xl mx-auto px-8">
+          <h2 className="text-3xl font-bold mb-8 text-zinc-100">The Best Way to Focus While Studying</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-12 text-zinc-400 leading-relaxed">
+            <div>
+              <h3 className="text-xl font-semibold mb-4 text-blue-400">Exam Productivity Tools</h3>
+              <p>
+                When finals approach, willpower often fails. Our <strong>system-level distraction blocker</strong> for students ensures that your browser and apps stay closed until your study timer is up. Unlike simple browser extensions, SPB cannot be bypassed by simply opening a new private window.
+              </p>
+            </div>
+            <div>
+              <h3 className="text-xl font-semibold mb-4 text-blue-400">Lock Down Study Sessions</h3>
+              <p>
+                Whether you are writing a Ph.D. thesis or studying for high school SATs, maintaining a deep work state is critical. SPB helps you <strong>avoid procrastination</strong> by enforcing absolute digital boundaries, making it the perfect productivity companion for Windows users in academia.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <Installation />
       <Footer />
     </main>
