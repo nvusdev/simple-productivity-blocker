@@ -253,7 +253,7 @@ def audit_dns_safety(state_path=DNS_STATE_FILE):
 class DomainMatcher:
     def __init__(self, patterns):
         self.exact_set = set()
-        self.regex_pattern = None
+        self.regex_patterns = []
         regex_parts = []
         
         for p in patterns:
@@ -273,17 +273,20 @@ class DomainMatcher:
                 regex_parts.append(self.compile_pattern_str(p))
         
         if regex_parts:
-            # Join all patterns with OR to leverage optimized regex engine
-            self.regex_pattern = re.compile("|".join(regex_parts), re.IGNORECASE)
+            # Chunk regex parts to prevent extremely slow compilation on large rulesets
+            chunk_size = 200
+            for i in range(0, len(regex_parts), chunk_size):
+                chunk = regex_parts[i:i + chunk_size]
+                self.regex_patterns.append(re.compile("|".join(chunk), re.IGNORECASE))
 
     def compile_pattern_str(self, p: str) -> str:
         """Returns the regex string for a pattern (without compiling).
         Handles:
         - *.domain.com: All subdomains
-        - word*: Label prefix
-        - *word: Label suffix
-        - keyword: Any label starting with keyword
-        - a*b: Wildcard within label
+        - word*: Segment prefix
+        - *word: Segment suffix
+        - keyword: Any segment starting with keyword (boundary-aware)
+        - a*b: Wildcard within segment
         """
         p = p.lower().strip()
         
@@ -292,26 +295,26 @@ class DomainMatcher:
             base = re.escape(p[2:])
             return f"(?:^|.*\\.){base}$"
 
-        # 2. Convert glob-style pattern to label-aware regex
-        # We want '*' to match anything within a label (not crossing dots)
-        # and the overall pattern to match a sequence of labels.
-        
-        # Escape everything except '*'
+        # 2. Convert glob-style pattern to boundary-aware regex
+        # We want '*' to match anything within a segment (not crossing dots or slashes)
         parts = p.split('*')
         escaped_parts = [re.escape(part) for part in parts]
         
-        # Join with [^.]* which matches anything except a dot
-        # This keeps the wildcard within the scope of a label
-        core_regex = "[^.]*".join(escaped_parts)
+        # Join with [^.\\\/]* which matches anything except a dot or path separator
+        core_regex = "[^.\\\\/]*".join(escaped_parts)
         
-        # If it's a plain keyword (no dots, no wildcards), allow it to match as a label prefix
-        # This matches user expectation: 'youtube' matches 'youtube-extra.com'
+        # If it's a plain keyword (no dots, no wildcards), allow it to match anywhere in the domain
+        # This ensures 'youtube' matches 'myyoutube.com', 'youtube-proxy.com', etc.
+        # This is the "Nuclear" approach requested by the user.
         if "." not in p and "*" not in p:
-            core_regex = f"{core_regex}[^.]*"
+            core_regex = f".*{core_regex}.*"
+        else:
+            # Anchor to boundaries (Start, dot, backslash, or forward slash)
+            # Suffix boundaries: End, dot, backslash, or forward slash
+            # This ensures 'microsoft.com' matches 'microsoft.com' but not 'notmicrosoft.com'
+            return f"(?:^|\\.|\\\\|/){core_regex}(?:\\.|\\\\|/|$)"
 
-        # Anchor to label boundaries (start of string or after a dot)
-        # and end of label (end of string or before a dot)
-        return f"(?:^|\\.){core_regex}(?:\\.|$)"
+        return core_regex
 
     def matches(self, domain: str) -> bool:
         if not domain: return False
@@ -322,8 +325,9 @@ class DomainMatcher:
             return True
             
         # 2. Optimized Combined Regex Match
-        if self.regex_pattern and self.regex_pattern.search(domain):
-            return True
+        for pattern in self.regex_patterns:
+            if pattern.search(domain):
+                return True
         return False
 
 class DNSProxyServer:
@@ -535,7 +539,9 @@ class DNSProxyServer:
         # Try each upstream until one works
         for upstream in self.upstream_dnss:
             try:
-                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                # Support IPv6 upstreams
+                family = socket.AF_INET6 if ":" in upstream else socket.AF_INET
+                with socket.socket(family, socket.SOCK_DGRAM) as s:
                     s.settimeout(1.5)
                     s.sendto(data, (upstream, 53))
                     response, _ = s.recvfrom(512)
@@ -546,28 +552,67 @@ class DNSProxyServer:
         return None
 
 def detect_system_dns():
-    """Detects currently active DNS servers to use as upstream for the proxy."""
+    """Detects currently active DNS servers to use as upstream for the proxy.
+    Prioritizes recovery from saved state to prevent isolation after unclean exits.
+    """
     dns_servers = []
+    
+    # 1. Try to recover from SPB's own saved state first (unclean exit recovery)
+    # This is the most reliable way to get the *original* DNS before we intercepted it.
+    if os.path.exists(DNS_STATE_FILE):
+        try:
+            with open(DNS_STATE_FILE, "r") as f:
+                state = json.load(f)
+                for adapter in state.get("adapters", []):
+                    ips = (adapter.get("ipv4", []) or []) + (adapter.get("ipv6", []) or [])
+                    for ip in ips:
+                        if ip and ip not in LOOPBACK_DNS:
+                            dns_servers.append(ip)
+            if dns_servers:
+                logger.info(f"Recovered {len(dns_servers)} original upstream DNS servers from {DNS_STATE_FILE}")
+        except Exception as e:
+            logger.debug(f"Failed to read DNS state file: {e}")
+            pass
+
+    # 2. Query current system configuration (active adapters)
     try:
         if os.name == 'nt':
-            # Use PowerShell to find current IPv4 DNS servers that AREN'T loopback
-            cmd = 'powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object {$_.ServerAddresses -ne $null -and $_.ServerAddresses -notcontains \'127.0.0.1\'} | Select-Object -ExpandProperty ServerAddresses"'
+            # Use PowerShell to get active DNS servers, excluding loopbacks
+            cmd = 'powershell -NoProfile -Command "Get-DnsClientServerAddress | Where-Object {$_.ServerAddresses -ne $null} | Select-Object -ExpandProperty ServerAddresses"'
             res = subprocess.run(cmd, shell=True, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
             if res.stdout:
-                dns_servers = [s.strip() for s in res.stdout.splitlines() if s.strip()]
+                for s in res.stdout.splitlines():
+                    s = s.strip().strip('"').strip("'")
+                    if s and s not in LOOPBACK_DNS and s not in dns_servers:
+                        dns_servers.append(s)
         else:
             if os.path.exists('/etc/resolv.conf'):
                 with open('/etc/resolv.conf', 'r') as f:
                     for line in f:
                         if line.startswith('nameserver'):
                             ip = line.split()[1].strip()
-                            if ip != '127.0.0.1': dns_servers.append(ip)
-    except Exception:
+                            if ip not in LOOPBACK_DNS and ip not in dns_servers:
+                                dns_servers.append(ip)
+    except Exception as e:
+        logger.debug(f"System DNS query failed: {e}")
         pass
         
-    # Filter unique and return, fallback if empty
-    dns_servers = list(dict.fromkeys(dns_servers)) 
-    return dns_servers if dns_servers else ["8.8.8.8", "1.1.1.1"]
+    # 3. Fallback to public DNS if nothing found or if all found are loopback
+    if not dns_servers:
+        dns_servers = ["8.8.8.8", "1.1.1.1", "2001:4860:4860::8888", "2606:4700:4700::1111"]
+        logger.info("No valid system DNS detected. Falling back to public DNS (Google/Cloudflare).")
+    else:
+        # Final filter to ensure NO loopbacks or empty strings made it through
+        dns_servers = [s for s in dns_servers if s and s not in LOOPBACK_DNS]
+        if not dns_servers:
+             dns_servers = ["8.8.8.8", "1.1.1.1"]
+             logger.warning("All detected DNS servers were loopbacks. Forced fallback to public DNS.")
+        
+    # Unique set while preserving order
+    seen = set()
+    result = [x for x in dns_servers if not (x in seen or seen.add(x))]
+    logger.debug(f"System DNS detection result: {result}")
+    return result
 
 if __name__ == "__main__":
     print(json.dumps(audit_dns_safety(), indent=2))

@@ -249,7 +249,10 @@ class ProcessMonitor:
             user_profile = os.environ.get("USERPROFILE", "").lower()
             critical_zones = [
                 system_root, os.path.join(system_root, "system32"),
-                program_data, os.path.join(user_profile, "appdata")
+                program_data, os.path.join(user_profile, "appdata"),
+                # SPB Self-Protection: prevent locking its own binaries or config
+                os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Simple Productivity Blocker"),
+                os.path.join(os.getenv("PROGRAMDATA", "C:\\ProgramData"), "SimpleProductivityBlocker")
             ]
         else:
             critical_zones = ["/etc", "/bin", "/sbin", "/usr/bin", "/usr/sbin", "/boot", "/dev"]
@@ -370,32 +373,39 @@ class ProcessMonitor:
 
     def _apply_disallow_run(self):
         if os.name != 'nt': return
-        try:
-            policy_key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer")
-            winreg.SetValueEx(policy_key, "DisallowRun", 0, winreg.REG_DWORD, 1 if self.blocked_app_names else 0)
-            list_key = winreg.CreateKey(policy_key, "DisallowRun")
+        roots = [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]
+        for root in roots:
             try:
-                while True:
-                    name, _, _ = winreg.EnumValue(list_key, 0)
-                    winreg.DeleteValue(list_key, name)
-            except OSError: pass
-            
-            idx = 1
-            for app in self.blocked_app_names:
-                if app.endswith(".exe"):
-                    winreg.SetValueEx(list_key, str(idx), 0, winreg.REG_SZ, app)
-                    idx += 1
-            winreg.CloseKey(list_key)
-            winreg.CloseKey(policy_key)
-        except Exception: pass
+                policy_key = winreg.CreateKey(root, r"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer")
+                winreg.SetValueEx(policy_key, "DisallowRun", 0, winreg.REG_DWORD, 1 if self.blocked_app_names else 0)
+                list_key = winreg.CreateKey(policy_key, "DisallowRun")
+                try:
+                    while True:
+                        name, _, _ = winreg.EnumValue(list_key, 0)
+                        winreg.DeleteValue(list_key, name)
+                except OSError:
+                    pass
+
+                idx = 1
+                for app in self.blocked_app_names:
+                    if app.endswith(".exe"):
+                        winreg.SetValueEx(list_key, str(idx), 0, winreg.REG_SZ, app)
+                        idx += 1
+                winreg.CloseKey(list_key)
+                winreg.CloseKey(policy_key)
+            except Exception:
+                continue
 
     def _clear_disallow_run(self):
         if os.name != 'nt': return
-        try:
-            policy_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer", 0, winreg.KEY_SET_VALUE)
-            winreg.SetValueEx(policy_key, "DisallowRun", 0, winreg.REG_DWORD, 0)
-            winreg.CloseKey(policy_key)
-        except Exception: pass
+        roots = [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]
+        for root in roots:
+            try:
+                policy_key = winreg.OpenKey(root, r"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer", 0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(policy_key, "DisallowRun", 0, winreg.REG_DWORD, 0)
+                winreg.CloseKey(policy_key)
+            except Exception:
+                continue
 
     def _apply_file_locks(self):
         self._clear_file_locks()
