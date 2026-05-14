@@ -43,8 +43,8 @@ def test_compute_targets():
     # google.com should NOT be blocked (*.google.com in cloud allowlist)
     assert "google.com" not in ctx.manual_domains
     
-    # notepad.exe should be blocked
-    assert "notepad.exe" in ctx.processes
+    # notepad.exe should NOT be blocked (in SYSTEM_SAFETY_EXCLUSIONS)
+    assert "notepad.exe" not in ctx.processes
     # git.exe should NOT be blocked (in cloud allowlist)
     assert "git.exe" not in ctx.processes
     

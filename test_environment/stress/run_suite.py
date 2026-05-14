@@ -45,16 +45,24 @@ def main():
     
     base_dir = os.path.dirname(__file__)
     all_passed = True
-    
-    for test in tests:
-        if isinstance(test, tuple):
-            name, args = test
-        else:
-            name, args = test, []
-        path = os.path.join(base_dir, name)
-        if not run_test(path, args):
-            all_passed = False
-            break
+    try:
+        for test in tests:
+            if isinstance(test, tuple):
+                name, args = test
+            else:
+                name, args = test, []
+            path = os.path.join(base_dir, name)
+            if not run_test(path, args):
+                all_passed = False
+                break
+    finally:
+        print("\n" + "="*42)
+        print("   INITIATING AUTOMATED RECOVERY UPLIFT   ")
+        print("="*42)
+        recovery_path = os.path.abspath(os.path.join(base_dir, "../../recovery_uplift.py"))
+        # Run elevated if on Windows, but since we are in a script, we'll try direct run first
+        subprocess.run([sys.executable, recovery_path, "--dry-run"], capture_output=False) # Visual confirmation
+        subprocess.run([sys.executable, recovery_path], input="\n", text=True) # Send Enter to exit
             
     if all_passed:
         print("\n" + "="*42)

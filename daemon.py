@@ -53,6 +53,13 @@ ProcessMonitor = None
 DNSProxyServer = None
 HOSTS_FILE = _INTERNAL_HOSTS_FILE # Default global
 
+# System Safety Exclusions (Must NEVER be blocked)
+SYSTEM_SAFETY_EXCLUSIONS = {
+    "notepad.exe", "taskmgr.exe", "regedit.exe", "cmd.exe", "powershell.exe",
+    "explorer.exe", "svchost.exe", "lsass.exe", "winlogon.exe", "services.exe"
+}
+
+
 try:
     from blockers.app_blocker import ProcessMonitor
     from blockers.website_blocker import (
@@ -77,6 +84,7 @@ except ImportError as e:
     logger = logging.getLogger("SPB_Daemon")
     logger.error(f"CRITICAL: Background modules failed to load. Basic protection is inactive: {e}")
     # orchestrator will use the no-op fallbacks defined above
+
 
 # Constants
 if "SPB_DATA_DIR" in os.environ:
@@ -211,8 +219,9 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
             
             for a in gdata.get("apps", []):
                 a_clean = a.strip()
-                if a_clean and not is_cloud_allowed(a_clean):
+                if a_clean and not is_cloud_allowed(a_clean) and a_clean.lower() not in SYSTEM_SAFETY_EXCLUSIONS:
                     all_apps.add(a_clean)
+
                     
             for f in gdata.get("files", []):
                 if not f.strip(): continue
