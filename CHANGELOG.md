@@ -160,7 +160,7 @@
 
 ## [1.2.2] - 2026-05-04
 ### Added
-- **Protected Environment Support**: Added `internal_logic.exe`, `gemini.exe`, `node.exe`, `git.exe`, and common shells to the default Cloud Allowlist to ensure background automation and developer tools are never accidentally blocked.
+- **Protected Environment Support**: Added `node.exe`, `git.exe`, and common shells to the default Cloud Allowlist to ensure background automation and developer tools are never accidentally blocked.
 - **Improved Process Protection**: Renamed internal process names in the allowlist to match the latest build artifacts (`SimpleProductivityBlocker.exe` and `SPB_Daemon.exe`).
 
 ### Fixed
