@@ -63,7 +63,6 @@ temp_*/
 test_venv/
 PERFORMANCE_LOGS.md
 
-
 # Persistence & State
 dns_cache.json
 last_run.state
@@ -82,5 +81,3 @@ docs/superpowers/
 RELEASE_NOTES_v*.md
 .gemini/
 .antigravity/
-d o c s /  
- . g i t h u b /  
