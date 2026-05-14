@@ -8,7 +8,7 @@ from blockers.dns_server import DomainMatcher
 def test_nuclear_matching():
     print("--- Verifying Nuclear Keyword Matching ---")
     
-    # User requested that plain keywords match anywhere in the domain
+    # Verify that plain keywords match anywhere in the domain
     matcher = DomainMatcher(["youtube", "fb"])
     
     # Positive matches

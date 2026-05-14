@@ -283,13 +283,12 @@ def main():
         print("v1.4.3 Hardened Engine is now active.")
         
         print("\n" + "="*50)
-        print("☢️  NUCLEAR PROTECTION NOTICE  ☢️")
+        print("  REBOOT RECOMMENDED")
         print("="*50)
-        print("For the most robust 'Nuclear' file protection:")
-        print("1. A SYSTEM REBOOT is highly recommended now.")
-        print("2. REBOOT AGAIN if you restore a backup configuration.")
-        print("\nThis ensures all active file handles are released and")
-        print("fully locked by the kernel-level protection engine.")
+        print("For optimal performance and full file-system protection:")
+        print("1. A system reboot is recommended to ensure all blocks are active.")
+        print("2. If you restore a configuration backup, a reboot is also advised.")
+        print("\nThis ensures that kernel-level enforcement is correctly applied.")
         print("="*50)
         
         if not dry_run:
