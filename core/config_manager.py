@@ -67,7 +67,7 @@ DEFAULT_SETTINGS = {
         "explorer.exe", "taskmgr.exe", "svchost.exe", "lsass.exe", "winlogon.exe",
         "dwm.exe", "csrss.exe", "MsMpEng.exe", "SecurityHealthService.exe",
         "MpCmdRun.exe", "python.exe", "pythonw.exe", "SimpleProductivityBlocker.exe",
-        "SPB_Daemon.exe", "internal_logic.exe", "gemini.exe", "node.exe", "git.exe",
+        "SPB_Daemon.exe", "node.exe", "git.exe",
         "code.exe", "powershell.exe", "cmd.exe", "bash.exe", "sh.exe",
         "google.com", "bing.com", "duckduckgo.com", "yahoo.com",
         "microsoft.com", "live.com", "outlook.com", "office.com",
