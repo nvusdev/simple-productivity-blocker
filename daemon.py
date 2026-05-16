@@ -53,13 +53,6 @@ ProcessMonitor = None
 DNSProxyServer = None
 HOSTS_FILE = _INTERNAL_HOSTS_FILE # Default global
 
-# System Safety Exclusions (Must NEVER be blocked)
-SYSTEM_SAFETY_EXCLUSIONS = {
-    "notepad.exe", "taskmgr.exe", "regedit.exe", "cmd.exe", "powershell.exe",
-    "explorer.exe", "svchost.exe", "lsass.exe", "winlogon.exe", "services.exe"
-}
-
-
 try:
     from blockers.app_blocker import ProcessMonitor
     from blockers.website_blocker import (
@@ -84,7 +77,6 @@ except ImportError as e:
     logger = logging.getLogger("SPB_Daemon")
     logger.error(f"CRITICAL: Background modules failed to load. Basic protection is inactive: {e}")
     # orchestrator will use the no-op fallbacks defined above
-
 
 # Constants
 if "SPB_DATA_DIR" in os.environ:
@@ -219,9 +211,8 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
             
             for a in gdata.get("apps", []):
                 a_clean = a.strip()
-                if a_clean and not is_cloud_allowed(a_clean) and a_clean.lower() not in SYSTEM_SAFETY_EXCLUSIONS:
+                if a_clean and not is_cloud_allowed(a_clean):
                     all_apps.add(a_clean)
-
                     
             for f in gdata.get("files", []):
                 if not f.strip(): continue
@@ -334,7 +325,7 @@ def _on_acl_operation_complete(path, locked, success):
         try:
             history = _get_history()
             path_norm = os.path.normpath(path)
-            # Find and remove (ignoring case on Windows)
+            # Find and remove (case-insensitive on Windows)
             to_remove = None
             for p in history:
                 if os.path.normpath(p).lower() == path_norm.lower():
@@ -357,7 +348,7 @@ def _boot_sweep_task(initial_targets: set[str], pm_instance):
     if not lock_history: return
     
     logger.info(f"Failsafe Boot Sweep: Re-verifying {len(lock_history)} locks...")
-    # Normalize initial targets for consistent comparison (ignoring case on Windows)
+    # Normalize initial targets for consistent comparison (case-insensitive on Windows)
     norm_targets = {os.path.normcase(os.path.normpath(p)) for p in initial_targets}
     
     for path in lock_history:
@@ -438,6 +429,7 @@ class SubsystemOrchestrator:
                 self.dns_server.stop()
                 self.dns_server = None
             sync_website_protection([], active=False)
+            self._update_health_signal("None")
             return False
 
         if not self.dns_server:
@@ -466,14 +458,48 @@ class SubsystemOrchestrator:
             self.dns_server = None
             self.using_dns_proxy = False
         
+        # Determine Redundancy Set (Critical keywords that must be in hosts even with proxy)
+        redundancy_set = set()
+        critical_patterns = ["youtube", "discord", "googlevideo", "ytimg", "discord.gg"]
+        
+        for d in manual_domains:
+            d_low = d.lower()
+            if any(p in d_low for p in critical_patterns):
+                redundancy_set.add(d)
+        
+        # Also include a subset of filter keywords for redundancy if they are high-priority
+        # (limiting to prevent hosts file bloat)
+        for d in filter_keywords:
+            d_low = d.lower()
+            # Only add specific high-impact filter domains to redundancy
+            if "youtube" in d_low or "discord" in d_low:
+                 redundancy_set.add(d)
+
         active_domains = _resolve_hosts_fallback_domains(
             manual_domains,
             filter_keywords,
             cloud_allowlist,
             filter_exceptions,
         )
-        sync_website_protection(list(active_domains), active=True, using_dns_proxy=self.using_dns_proxy)
+        
+        # Pass redundancy_set to ensure core distractions are in hosts file
+        sync_website_protection(
+            list(active_domains), 
+            active=True, 
+            using_dns_proxy=self.using_dns_proxy,
+            redundancy_domains=list(redundancy_set) if redundancy_set else None
+        )
+        
+        self._update_health_signal("Active" if self.using_dns_proxy else "Fallback")
         return True
+
+    def _update_health_signal(self, status: str):
+        """Writes a signal file for the UI to display engine health."""
+        try:
+            health_file = os.path.join(base_data, "dns_health.signal")
+            with open(health_file, "w") as f:
+                f.write(status)
+        except: pass
 
     def watchdog_dns(self, active_domains):
         if not self.using_dns_proxy or not self.dns_server:
@@ -597,8 +623,10 @@ class DaemonOrchestrator:
                 logger.error(f"Orchestrator error: {e}", exc_info=True)
                 time.sleep(5)
 
+VERSION = "1.4.4"
+
 def main():
-    logger.info("Productivity Daemon v1.4.3 started.")
+    logger.info(f"Productivity Daemon v{VERSION} started.")
     cfg_path = os.path.join(base_data, "config.json")
     try:
         from core.persistence import harden_config_dir

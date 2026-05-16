@@ -9,33 +9,17 @@ import webbrowser
 import ctypes
 import sys
 import copy
-import site
 from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, get_config_dir, export_config, import_config
 from core.persistence import set_startup, is_startup_enabled
 
-VERSION = "1.4.3"
+VERSION = "1.4.4"
 
 def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
     except Exception:
-        base_path = os.path.dirname(os.path.abspath(__file__))
+        base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
-
-def _harden_runtime_paths():
-    if not getattr(sys, "frozen", False):
-        return
-    try:
-        user_site = site.getusersitepackages()
-        if user_site in sys.path:
-            sys.path.remove(user_site)
-    except Exception:
-        pass
-    for entry in ("", ".", os.getcwd()):
-        while entry in sys.path:
-            sys.path.remove(entry)
-
-_harden_runtime_paths()
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
@@ -225,11 +209,38 @@ class ProductivityApp(ctk.CTk):
         
         self.show_dashboard()
         
+        # Phase 2: DNS Health Indicator Polling
+        self.dns_health_lbl = None
+        self._update_dns_health_ui()
+
         # Anti-Flash: Show window once UI is ready
         self.after(250, lambda: [self.attributes('-alpha', 1.0), self.deiconify()])
         
         # Protocol handler for graceful/forced exit persistence
         self.protocol("WM_DELETE_WINDOW", self.on_exit)
+
+    def _update_dns_health_ui(self):
+        """Polls the daemon health signal and updates the UI status."""
+        health_file = os.path.join(get_config_dir(), "dns_health.signal")
+        status = "Unknown"
+        color = "gray"
+        
+        if os.path.exists(health_file):
+            try:
+                with open(health_file, "r") as f:
+                    status = f.read().strip()
+                if status == "Active":
+                    color = "#4CAF50" # Material Green
+                elif status == "Fallback":
+                    color = "#FF9800" # Material Orange
+            except: pass
+            
+        if hasattr(self, "dns_health_lbl") and self.dns_health_lbl:
+            try:
+                self.dns_health_lbl.configure(text=f"DNS ENGINE: {status.upper()}", text_color=color)
+            except: pass
+            
+        self.after(5000, self._update_dns_health_ui)
 
     def _apply_app_icon(self):
         try:
@@ -306,7 +317,11 @@ class ProductivityApp(ctk.CTk):
         
         # Cooldown/Countdown Label (Locked to right margin)
         self.cooldown_label = ctk.CTkLabel(self.status_frame, text="", font=ctk.CTkFont(family="Consolas", size=13, weight="bold"))
-        self.cooldown_label.pack(side="right", padx=20)
+        self.cooldown_label.pack(side="right", padx=10)
+
+        # DNS Health Label
+        self.dns_health_lbl = ctk.CTkLabel(self.status_frame, text="DNS ENGINE: CHECKING...", font=ctk.CTkFont(family="Consolas", size=12, weight="bold"), text_color="gray")
+        self.dns_health_lbl.pack(side="right", padx=10)
 
         # Create New Profile button - Locked to center of backdrop
         ctk.CTkButton(self.status_frame, text="+ Create New Profile", font=ctk.CTkFont(weight="bold"), width=200, height=40, command=self.add_new_group).place(relx=0.5, rely=0.5, anchor="center")

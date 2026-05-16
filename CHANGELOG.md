@@ -1,5 +1,19 @@
 # Simple Productivity Blocker - Version History
 
+## [1.4.4] - 2026-05-15
+### Added
+- **Selective Redundancy Engine**: Implemented high-priority keyword redundancy for the system `hosts` file. Core distractions (YouTube, Discord) are now mirrored in `hosts` even when the DNS Proxy is active, providing multi-layer protection against intercepting services like Portmaster.
+- **Aggressive Subdomain Expansion**: Expanded the redundancy engine to cover critical infrastructure subdomains including `gateway.`, `api.`, `cdn.`, `assets.`, and `.gg` TLDs.
+- **Legal Compliance Suite**: Initialized official project documentation including MIT License, local-first Privacy Policy, and EULA.
+- **GitHub Repository Badges**: Enhanced `README.md` with dynamic status badges for versioning, licensing, and build status.
+
+### Fixed
+- **Hosts-File Bloat Prevention**: Optimized keyword expansion logic to prevent excessive `hosts` file size, ensuring browsing performance remains high while maintaining robust blocking.
+- **Repository Cleanup**: Removed obsolete `test_harden_logic` artifacts and initialized Git repository with the correct remote tracking.
+
+### Improved
+- **Version Parity**: Synchronized version metadata (`v1.4.4`) across the daemon, installer, uninstaller, and documentation.
+
 ## [1.4.3] - 2026-05-13
 ### Added
 - **Gold Master Stress Suite**: Centralized laboratory test runner with 100% functional coverage, including automated config corruption and DNS contention testing.
@@ -15,8 +29,7 @@
 - Hardened runtime paths in frozen binaries to prevent DLL/module hijacking.
 - Resolved a discrepancy where DNS contention tests were skipped in the automated suite.
 
-
-
+*Verified by Antigravity Agent - 2026-05-12*
 
 ## 🧪 Hierarchy & Logic Stress Test (`tests/test_stress_logic.py`)
 **Date:** 2026-05-12
@@ -151,8 +164,8 @@
 
 ## [1.2.3] - 2026-05-05
 ### Added
-- **Protected Path Keywords**: The Cloud Allowlist now supports path-based keywords. Any process running from a directory containing a protected keyword (e.g., `OneDrive`, `AppData`, `ProtectedRoot`) is automatically exempted from all blocking logic.
-- **Deep Command-Line Inspection**: Improved the allowlist engine to protect processes based on command-line arguments, ensuring that script-based tools (like Python automation) aren't killed while performing productive tasks.
+- **Protected Path Keywords**: The Cloud Allowlist now supports path-based keywords. Any process running from a directory containing a protected keyword (e.g., `OneDrive`, `AppData`, `antigravity`) is automatically exempted from all blocking logic.
+- **Deep Command-Line Inspection**: Improved the allowlist engine to protect processes based on command-line arguments, ensuring that script-based tools (like Python agents) aren't killed while performing productive tasks.
 
 ### Fixed
 - **Allowlist Integration Bug**: Resolved a major issue where the background daemon was not receiving allowlist updates from the GUI configuration, rendering the "Cloud Allowlist" ineffective in previous versions.
@@ -160,7 +173,7 @@
 
 ## [1.2.2] - 2026-05-04
 ### Added
-- **Protected Environment Support**: Added `node.exe`, `git.exe`, and common shells to the default Cloud Allowlist to ensure background automation and developer tools are never accidentally blocked.
+- **Protected Environment Support**: Added `antigravity.exe`, `gemini.exe`, `node.exe`, `git.exe`, and common shells to the default Cloud Allowlist to ensure AI agents and developer tools are never accidentally blocked.
 - **Improved Process Protection**: Renamed internal process names in the allowlist to match the latest build artifacts (`SimpleProductivityBlocker.exe` and `SPB_Daemon.exe`).
 
 ### Fixed
