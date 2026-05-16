@@ -486,8 +486,7 @@ class SubsystemOrchestrator:
         sync_website_protection(
             list(active_domains), 
             active=True, 
-            using_dns_proxy=self.using_dns_proxy,
-            redundancy_domains=list(redundancy_set) if redundancy_set else None
+            using_dns_proxy=self.using_dns_proxy
         )
         
         self._update_health_signal("Active" if self.using_dns_proxy else "Fallback")
