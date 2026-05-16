@@ -7,40 +7,7 @@ import time
 import uuid
 from ctypes import wintypes
 
-# --- Win32 API Helpers ---
-class GUID(ctypes.Structure):
-    _fields_ = [
-        ("Data1", wintypes.DWORD),
-        ("Data2", wintypes.WORD),
-        ("Data3", wintypes.WORD),
-        ("Data4", ctypes.c_byte * 8)
-    ]
-    def __init__(self, uuid_str):
-        u = uuid.UUID(uuid_str)
-        ctypes.Structure.__init__(self)
-        self.Data1 = u.time_low
-        self.Data2 = u.time_mid
-        self.Data3 = u.time_hi_version
-        for i in range(8):
-            self.Data4[i] = u.bytes[8 + i]
-
-def get_program_files_path():
-    try:
-        SHGetKnownFolderPath = ctypes.windll.shell32.SHGetKnownFolderPath
-        # Update argtypes to accept void_p pointer
-        SHGetKnownFolderPath.argtypes = [ctypes.POINTER(GUID), wintypes.DWORD, wintypes.HANDLE, ctypes.POINTER(ctypes.c_void_p)]
-        SHGetKnownFolderPath.restype = wintypes.HRESULT
-        PROGRAM_FILES_GUID = "{905e63b6-c1bf-494e-b29c-65b732d3d21a}"
-        folder_id = GUID(PROGRAM_FILES_GUID)
-        path_ptr = ctypes.c_void_p()
-        result = SHGetKnownFolderPath(ctypes.byref(folder_id), 0, None, ctypes.byref(path_ptr))
-        if result == 0:
-            path = ctypes.cast(path_ptr, ctypes.c_wchar_p).value
-            ctypes.windll.ole32.CoTaskMemFree(path_ptr)
-            return path
-    except Exception:
-        pass
-    return os.environ.get("ProgramFiles", "C:\\Program Files")
+from core.win32_utils import is_admin, get_program_files_path
 
 SPB_BEGIN = "# SPB BEGIN"
 SPB_END = "# SPB END"
@@ -70,11 +37,6 @@ def _strip_spb_block(lines):
     cleaned = [line for line in cleaned if line.strip() not in (SPB_BEGIN, SPB_END, SPB_BLOCK_BEGIN, SPB_BLOCK_END)]
     return cleaned
 
-def is_admin():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        return False
 
 def kill_processes():
     print("Terminating background processes and ghost instances...")
