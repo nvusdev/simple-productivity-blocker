@@ -40,6 +40,10 @@ class PlatformHandler:
 
     def get_system_dns(self):
         raise NotImplementedError
+    
+    def dns_points_to_local(self, local_ip="127.0.0.1", state_path=None):
+        """Return True when platform DNS redirection remains pointed at local resolver addresses."""
+        return True
 
     def audit_dns_safety(self, state_path=None):
         return {}
@@ -200,6 +204,31 @@ $items | ConvertTo-Json -Depth 4
         script = 'Get-DnsClientServerAddress | Where-Object {$_.ServerAddresses -ne $null} | Select-Object -ExpandProperty ServerAddresses'
         try: return self._run_powershell_json(script)
         except: return []
+    
+    def dns_points_to_local(self, local_ip="127.0.0.1", state_path=None):
+        """Validate that eligible active adapters still resolve DNS through localhost loopbacks."""
+        if not state_path:
+            state_path = self.get_dns_state_file()
+        try:
+            allowed_loopbacks = {"127.0.0.1", "::1"}
+            if local_ip:
+                allowed_loopbacks.add(str(local_ip).strip())
+            state = self._snapshot_dns_state(state_path)
+            eligible = set(state.get("eligible", []))
+            if not eligible:
+                return True
+            for adapter in state.get("adapters", []):
+                if adapter.get("index") not in eligible:
+                    continue
+                raw_ips = (adapter.get("ipv4") or []) + (adapter.get("ipv6") or [])
+                configured = [str(ip).strip() for ip in raw_ips]
+                configured = [ip for ip in configured if ip]
+                if not any(ip in allowed_loopbacks for ip in configured):
+                    return False
+            return True
+        except Exception as e:
+            logger.debug(f"dns_points_to_local check failed: {e}")
+            return False
 
     def apply_browser_policies(self, activate=True):
         import winreg
@@ -275,6 +304,10 @@ class LinuxHandler(PlatformHandler):
                         ip = line.split()[1].strip()
                         dns_servers.append(ip)
         return dns_servers
+
+    def dns_points_to_local(self, local_ip="127.0.0.1", state_path=None):
+        """Linux does not redirect adapter DNS in this project, so drift check is not applicable."""
+        return True
 
 def get_platform_handler():
     if os.name == 'nt':

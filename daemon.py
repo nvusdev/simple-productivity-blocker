@@ -471,6 +471,14 @@ class SubsystemOrchestrator:
         self.pm = ProcessMonitor() if ProcessMonitor else None
         self.dns_server = None
         self.using_dns_proxy = False
+    
+    def _dns_redirect_healthy(self) -> bool:
+        """Return True when adapter DNS is still bound to localhost for proxy mode."""
+        try:
+            return handler.dns_points_to_local()
+        except Exception as e:
+            logger.debug(f"DNS redirect health check failed: {e}")
+            return False
 
     def sync_dns(self, manual_domains, filter_keywords, cloud_allowlist, filter_exceptions, first_run):
         want_domains = manual_domains.union(filter_keywords)
@@ -502,8 +510,8 @@ class SubsystemOrchestrator:
             if self.using_dns_proxy:
                 self.dns_server.update_rules(list(manual_domains), list(filter_keywords), list(cloud_allowlist), list(filter_exceptions))
 
-        if self.using_dns_proxy and self.dns_server and not self.dns_server.is_healthy():
-            logger.error("DNS Proxy health check failed. Restoring adapter DNS and falling back to hosts-file protection.")
+        if self.using_dns_proxy and self.dns_server and (not self.dns_server.is_healthy() or not self._dns_redirect_healthy()):
+            logger.error("DNS Proxy health check failed or adapter DNS drift detected. Restoring adapter DNS and falling back to hosts-file protection.")
             self.dns_server.stop()
             self.dns_server = None
             self.using_dns_proxy = False
@@ -552,9 +560,9 @@ class SubsystemOrchestrator:
     def watchdog_dns(self, active_domains):
         if not self.using_dns_proxy or not self.dns_server:
             return
-        if self.dns_server.is_healthy():
+        if self.dns_server.is_healthy() and self._dns_redirect_healthy():
             return
-        logger.error("DNS watchdog detected an unhealthy proxy. Restoring DNS and switching to hosts fallback.")
+        logger.error("DNS watchdog detected an unhealthy proxy or adapter DNS drift. Restoring DNS and switching to hosts fallback.")
         self.dns_server.stop()
         self.dns_server = None
         self.using_dns_proxy = False
