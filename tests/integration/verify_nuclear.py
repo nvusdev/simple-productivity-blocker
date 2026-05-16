@@ -1,4 +1,4 @@
-# filepath: test_environment/integration/verify_nuclear.py
+# filepath: tests/integration/verify_nuclear.py
 import sys
 import os
 

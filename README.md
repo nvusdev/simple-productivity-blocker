@@ -137,7 +137,7 @@ python -m unittest discover tests
 Run the stress suite:
 
 ```powershell
-python test_environment\stress\run_suite.py
+python tests\stress\run_suite.py
 ```
 
 Compile-check the main modules:
