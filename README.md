@@ -24,11 +24,11 @@ It combines advanced website filtering, application termination, strict file and
 
 SPB is built to eliminate the "willpower gap" by removing easy bypasses while keeping recovery paths available. Here is how it secures your focus behind the scenes:
 
-* **The Triple-Lock Suite:** SPB does not just look for running apps and close them. It can register blocked applications with Windows `DisallowRun`, apply exclusive file handle locks, and modify NTFS ACLs (`icacls`) so blocked files and folders cannot be opened during an active session.
+* **The Triple-Lock Suite:** SPB does not just look for running apps and close them. It uses high-security `win32file` exclusive handles to prevent binary execution, alongside native NTFS ACLs (`icacls`) to lock down files and folders.
 * **Deep Process Scanning:** SPB checks process names, executable paths, current working directories, and command-line arguments to catch blocked apps or files even when launched indirectly.
-* **Active Window Interception:** If a user tries to browse into a blocked folder through Windows File Explorer, SPB detects the restricted path and closes or redirects the Explorer window.
+* **Active Window Interception:** If a user tries to browse into a blocked folder through Windows File Explorer, SPB detects the restricted path and closes or redirects the Explorer window via COM integration.
 * **Dual-Layer Network Protection:** SPB prefers a local DNS proxy for flexible pattern matching. When DNS proxying is unavailable or unsafe, it falls back to managed `hosts` file entries.
-* **DNS State Preservation:** Before redirecting DNS, SPB captures adapter state in `dns_state.json`. If the proxy fails or blocking is disabled, SPB restores the saved adapter settings.
+* **Atomic Recovery History:** SPB uses a write-ahead logging strategy with `fsync` and atomic file swaps. This guarantees that your recovery history is never corrupted, even during a system crash.
 * **SSRF & Path Hardening:** Custom blocklists are validated to reduce unsafe network and local path access. Local lists are restricted to the application configuration area.
 * **Encrypted Vulnerability Lists:** Sensitive category lists can be stored in an obfuscated form to make casual tampering harder during a moment of weakness.
 
