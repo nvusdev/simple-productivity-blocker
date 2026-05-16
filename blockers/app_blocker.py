@@ -144,14 +144,13 @@ class ProcessMonitor:
                 self.blocked_app_paths.add(path_norm)
         
         if self.is_active:
-            # Vector 2: ACL
+            self._lock_files()   # Vector 1: Exclusive Handles
+            
+            # Vector 2: ACLs
+            for path in old_paths - self.blocked_app_paths:
+                self._set_acl_lock(path, False)
             for path in self.blocked_app_paths:
                 self._set_acl_lock(path, True)
-            
-            # Vector 3: Exclusive Handle Lock
-            self._lock_files()
-            for path in self.blocked_app_paths:
-                self._set_acl_lock(path, True) # Vector 3: ACLs
 
     def set_blocked_files(self, files):
         self._fast_until = time.time() + 10
@@ -165,6 +164,7 @@ class ProcessMonitor:
             if base: self.blocked_file_names.add(base.lower())
             
         if self.is_active:
+            self._lock_files()
             for path in removed: self._set_acl_lock(path, False)
             for path in self.blocked_file_paths: self._set_acl_lock(path, True) # Vector 3: ACLs
 
