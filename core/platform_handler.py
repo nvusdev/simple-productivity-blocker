@@ -215,7 +215,9 @@ $items | ConvertTo-Json -Depth 4
             for adapter in state.get("adapters", []):
                 if adapter.get("index") not in eligible:
                     continue
-                configured = [str(ip).strip() for ip in ((adapter.get("ipv4", []) or []) + (adapter.get("ipv6", []) or [])) if str(ip).strip()]
+                raw_ips = (adapter.get("ipv4") or []) + (adapter.get("ipv6") or [])
+                configured = [str(ip).strip() for ip in raw_ips]
+                configured = [ip for ip in configured if ip]
                 if local_ip not in configured and "::1" not in configured:
                     return False
             return True
