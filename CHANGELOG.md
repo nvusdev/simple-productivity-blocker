@@ -1,18 +1,24 @@
 # Simple Productivity Blocker - Version History
 
-## [1.4.4] - 2026-05-15
+## [1.4.4] - 2026-05-16
 ### Added
-- **Selective Redundancy Engine**: Implemented high-priority keyword redundancy for the system `hosts` file. Core distractions (YouTube, Discord) are now mirrored in `hosts` even when the DNS Proxy is active, providing multi-layer protection against intercepting services like Portmaster.
-- **Aggressive Subdomain Expansion**: Expanded the redundancy engine to cover critical infrastructure subdomains including `gateway.`, `api.`, `cdn.`, `assets.`, and `.gg` TLDs.
-- **Legal Compliance Suite**: Initialized official project documentation including MIT License, local-first Privacy Policy, and EULA.
-- **GitHub Repository Badges**: Enhanced `README.md` with dynamic status badges for versioning, licensing, and build status.
+- **Production Hardened Recovery Suite**: 
+    - Implemented atomic `recovery_history.json` writes using `fsync` and `.tmp` swaps to prevent 0-byte corruption during power loss.
+    - Enhanced `recovery_uplift.exe` with aggressive `psutil` handle-releasing to kill processes holding exclusive locks on blocked files.
+    - Introduced batched "Boot Sweep" reconciliation for near-instant startup protection without performance lag.
+- **Unified Platform Abstraction**: Centralized all OS-specific logic (paths, DNS flushing, privilege checks) into `core/platform_handler.py`.
+- **Advanced Protection Vector**: Replaced legacy registry/file locking with high-security `win32file` exclusive handles, providing tamper-proof application blocking.
+- **Legal & Compliance**: Initialized project with MIT License, local-first Privacy Policy, and EULA documentation.
 
 ### Fixed
-- **Hosts-File Bloat Prevention**: Optimized keyword expansion logic to prevent excessive `hosts` file size, ensuring browsing performance remains high while maintaining robust blocking.
-- **Repository Cleanup**: Removed obsolete `test_harden_logic` artifacts and initialized Git repository with the correct remote tracking.
+- **UAC Elevation Argument Loop**: Fixed a critical bug in `spb_installer`, `spb_uninstaller`, and `daemon` where elevated processes would enter an infinite parameter loop.
+- **Hosts File Deadlock**: Resolved a race condition where `ProcessMonitor` would lock the `HOSTS_FILE`, preventing `website_blocker` from applying protection after a reboot.
+- **Build Pipeline Integrity**: Hardened `build.ps1` with directory shadow-renaming to resolve `WinError 32` file locks and corrected build-order dependency failures.
+- **State Desynchronization**: Fixed a logic bug where batch-unlocked folders would desynchronize internal prefix caches.
 
 ### Improved
-- **Version Parity**: Synchronized version metadata (`v1.4.4`) across the daemon, installer, uninstaller, and documentation.
+- **Process Termination Accuracy**: Refined ghost instance cleanup to surgically target orphaned background processes without impacting system stability.
+- **Version Parity**: Standardized `v1.4.4` metadata across all binaries and legal documents.
 
 ## [1.4.3] - 2026-05-13
 ### Added
