@@ -9,6 +9,7 @@ import time
 import ctypes
 import logging
 import threading
+import socket
 import psutil
 import concurrent.futures
 import urllib.request
