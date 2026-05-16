@@ -17,6 +17,7 @@ except ImportError:
     pass
 
 from core.win32_utils import is_admin, get_program_files_path, get_desktop_path
+from core.subprocess_utils import run_system_command
 
 def terminate_ghost_instances():
     """Surgically terminate any instances of the app or daemon."""
@@ -138,13 +139,13 @@ def harden_install_dir(dest_dir):
     except Exception as e:
         print(f"Warning: Native hardening failed ({e}). Falling back to icacls...")
         # Fallback to icacls if pywin32 is not fully functional
-        subprocess.run([
+        run_system_command([
             'icacls', dest_dir, 
             '/inheritance:r', 
             '/grant:r', '*S-1-5-18:(OI)(CI)(F)', 
             '/grant:r', '*S-1-5-32-544:(OI)(CI)(F)', 
             '/grant:r', '*S-1-5-32-545:(OI)(CI)(RX)'
-        ], capture_output=True)
+        ], check=False)
         return False
 
 def register_daemon_task(daemon_path, args=""):
@@ -184,7 +185,7 @@ def create_shortcut(target, shortcut_path, icon=None):
                 f"{icon_cmd}"
                 f"$s.Save()"
             )
-            subprocess.run(["powershell", "-Command", ps_command], capture_output=True, check=True)
+            run_system_command(["powershell", "-Command", ps_command], check=True)
             return True
         except Exception:
             return False
@@ -211,6 +212,7 @@ def main():
         ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, subprocess.list2cmdline(sys.argv[1:]), None, 1)
         sys.exit()
 
+    rollback_stack = []
     try:
         pythoncom.CoInitialize()
         
@@ -221,30 +223,52 @@ def main():
         base_prog_files = get_program_files_path()
         dest_dir = os.path.join(base_prog_files, "Simple Productivity Blocker")
 
-        # 3. Create Directory and Harden it FIRST
-        os.makedirs(dest_dir, exist_ok=True)
-        harden_install_dir(dest_dir)
-        
-        # 4. Deploy Binaries
+        # 3. Create Directory
+        if not os.path.exists(dest_dir):
+            os.makedirs(dest_dir, exist_ok=True)
+            rollback_stack.append(lambda: shutil.rmtree(dest_dir, ignore_errors=True))
+
+        # 4. Harden it FIRST (If hardening fails, we should still rollback)
+        if harden_install_dir(dest_dir):
+            # If we hardened it, rollback needs to take ownership to delete it
+            def _rollback_hardened_dir():
+                try:
+                    run_system_command(['takeown', '/f', dest_dir, '/a', '/r'], check=False)
+                    run_system_command(['icacls', dest_dir, '/grant', 'Administrators:(F)', '/t', '/c', '/q'], check=False)
+                    shutil.rmtree(dest_dir, ignore_errors=True)
+                except: pass
+            # Replace previous simple rmtree with hardened version
+            rollback_stack[-1] = _rollback_hardened_dir
+
+        # 5. Deploy Binaries
         install_files(dest_dir)
         
-        # 5. Register Background Daemon
+        # 6. Register Background Daemon
         daemon_exe = os.path.normpath(os.path.join(dest_dir, "SPB_Daemon.exe"))
         register_daemon_task(daemon_exe)
+        rollback_stack.append(lambda: run_system_command(['schtasks', '/delete', '/tn', 'SPB_Daemon', '/f'], check=False))
         
-        # 4. Create Desktop Shortcut
+        # 7. Create Desktop Shortcut
         desktop = get_desktop_path()
         app_path = os.path.join(dest_dir, "SimpleProductivityBlocker.exe")
         shortcut_path = os.path.join(desktop, "Simple Productivity Blocker.lnk")
         icon_loc = f"{app_path},0"
-        create_shortcut(app_path, shortcut_path, icon=icon_loc)
+        if create_shortcut(app_path, shortcut_path, icon=icon_loc):
+            rollback_stack.append(lambda: os.remove(shortcut_path) if os.path.exists(shortcut_path) else None)
         
         print("\n" + "="*50)
         print("INSTALLATION COMPLETE!")
         print("="*50)
 
     except Exception as e:
-        print(f"\nERROR during installation: {e}")
+        print(f"\n[!] ERROR during installation: {e}")
+        print("[*] Initiating rollback of partial installation...")
+        for undo_action in reversed(rollback_stack):
+            try:
+                undo_action()
+            except Exception as rollback_err:
+                print(f"  - Rollback warning: {rollback_err}")
+        
         if not is_silent:
             input("Press Enter to exit...")
         sys.exit(1)
