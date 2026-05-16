@@ -17,6 +17,14 @@ if os.name == 'nt':
     import win32file
     import win32con
 
+# Absolute safety guardrails for essential Windows processes.
+# These names must never be blocked, terminated, or locked by SPB enforcement code.
+# Modifying this set can cause system instability or loss of administrative recovery paths.
+SYSTEM_SAFETY_EXCLUSIONS = {
+    "explorer.exe", "taskmgr.exe", "services.exe", "lsass.exe", "csrss.exe",
+    "wininit.exe", "winlogon.exe", "spoolsv.exe", "svchost.exe",
+}
+
 class ProcessMonitor:
     def __init__(self):
         self.blocked_app_names = set()
@@ -134,6 +142,10 @@ class ProcessMonitor:
         for app in (apps or []):
             if not app: continue
             base = os.path.basename(app)
+            base_lower = base.lower() if base else ""
+            if base_lower in SYSTEM_SAFETY_EXCLUSIONS:
+                self.logger.warning(f"Safety exclusion: refusing to add blocked app target '{base_lower}'")
+                continue
             if base:
                 self.blocked_app_names.add(base.lower())
                 stem = os.path.splitext(base)[0]
@@ -374,6 +386,9 @@ class ProcessMonitor:
         
         for path in targets:
             if not os.path.exists(path) or os.path.isdir(path): continue
+            if os.path.basename(path).lower() in SYSTEM_SAFETY_EXCLUSIONS:
+                self.logger.warning(f"Safety exclusion: refusing to lock protected executable: {path}")
+                continue
             
             # SPB Self-Protection: prevent locking its own binaries
             if "simpleproductivityblocker" in path.lower() or "spb_" in path.lower():
@@ -428,6 +443,11 @@ class ProcessMonitor:
             name_lower = (info.get('name') or "").lower()
             exe = (info.get('exe') or "").lower()
             cmdline = info.get('cmdline') or []
+            exe_base = os.path.basename(exe).lower() if exe else ""
+
+            # Absolute bypass for core system safety targets
+            if name_lower in SYSTEM_SAFETY_EXCLUSIONS or exe_base in SYSTEM_SAFETY_EXCLUSIONS:
+                return False
             
             if "target_app" in name_lower or "target_app" in exe:
                 pass
