@@ -54,9 +54,10 @@ def expand_keyword_list(websites):
 
     for d in websites:
         d = d.strip().lower()
-        if d.startswith("*."):
-            d = d[2:]
-        d = d.lstrip("*").lstrip(".")
+        if "*" in d:
+            # Hosts file does not support any wildcards. Filter out patterns with internal/trailing asterisks.
+            continue
+        d = d.lstrip(".")
         
         if not d: continue
         
@@ -197,6 +198,13 @@ def apply_blocks(websites, block_doh=True):
             else:
                 final_domains.add(d)
                 final_domains.add("www." + d)
+
+        # Task 2: Implement hard cap to prevent hosts file bloat
+        MAX_DOMAINS = 1000
+        if len(final_domains) > MAX_DOMAINS:
+            if logger: 
+                logger.critical(f"CRITICAL WARNING: Hosts file bloat detected. Truncating {len(final_domains)} domains to {MAX_DOMAINS} limit.")
+            final_domains = set(list(sorted(final_domains))[:MAX_DOMAINS])
 
         if final_domains:
             block_lines = [BLOCK_BEGIN + "\n"]
