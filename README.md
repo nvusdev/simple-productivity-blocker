@@ -9,7 +9,7 @@ A system-level focus and time management suite for Windows.
 
 Simple Productivity Blocker is designed for people who need absolute focus. Browser extensions are too easy to turn off. Basic app blockers can be bypassed or closed. SPB operates directly at the Windows operating system level to ensure that when you decide to lock in and work, your computer enforces that decision.
 
-It combines advanced website filtering, application termination, strict file and folder access controls, profile schedules, network safety checks, and recovery tooling into one clean interface.
+It combines advanced website filtering, application termination, strict file and folder access controls, profile schedules, network safety checks, and transactional recovery tooling into one clean interface.
 
 ## Why use SPB?
 
@@ -24,20 +24,19 @@ It combines advanced website filtering, application termination, strict file and
 
 SPB is built to eliminate the "willpower gap" by removing easy bypasses while keeping recovery paths available. Here is how it secures your focus behind the scenes:
 
-* **The Triple-Lock Suite:** SPB does not just look for running apps and close them. It uses high-security `win32file` exclusive handles to prevent binary execution, alongside native NTFS ACLs (`icacls`) to lock down files and folders.
-* **Deep Process Scanning:** SPB checks process names, executable paths, current working directories, and command-line arguments to catch blocked apps or files even when launched indirectly.
-* **Active Window Interception:** If a user tries to browse into a blocked folder through Windows File Explorer, SPB detects the restricted path and closes or redirects the Explorer window via COM integration.
-* **Dual-Layer Network Protection:** SPB prefers a local DNS proxy for flexible pattern matching. When DNS proxying is unavailable or unsafe, it falls back to managed `hosts` file entries.
-* **Atomic Recovery History:** SPB uses a write-ahead logging strategy with `fsync` and atomic file swaps. This guarantees that your recovery history is never corrupted, even during a system crash.
-* **SSRF & Path Hardening:** Custom blocklists are validated to reduce unsafe network and local path access. Local lists are restricted to the application configuration area.
-* **Encrypted Vulnerability Lists:** Sensitive category lists can be stored in an obfuscated form to make casual tampering harder during a moment of weakness.
+* **The Triple-Lock Suite**: SPB does not just look for running apps and close them. It uses high-security `win32file` exclusive handles to prevent binary execution, alongside native NTFS ACLs (`icacls`) to lock down files and folders.
+* **Dual-Layer Lock Redundancy**: SPB prefers a local DNS proxy for flexible pattern matching. Critical domains like YouTube and Discord are mirrored to the Windows `hosts` file automatically, creating a secondary lock that prevents bypass via third-party proxies or DoH.
+* **Transactional Lifecycle**: Installer and uninstaller operations use a LIFO rollback stack and post-condition audits. This ensures that the system is never left in a partial or unstable state during maintenance.
+* **Atomic Recovery History**: SPB uses a write-ahead logging strategy with `fsync` and atomic file swaps. This guarantees that your recovery history is never corrupted, even during a system crash.
+* **SSRF & Path Hardening**: Custom blocklists are validated to reduce unsafe network and local path access. Local lists are restricted to the application configuration area.
+* **Encrypted Vulnerability Lists**: Sensitive category lists can be stored in an obfuscated form to make casual tampering harder during a moment of weakness.
 
 ## Core Capabilities
 
 ### Website and Network Control
 
 * Block specific domains, wildcard patterns, and keyword-style matches.
-* Apply pre-built filters for common distractions such as streaming, shopping, ads, gaming, and adult content.
+* Apply pre-built filters for common distractions such as streaming, shopping, ads, gaming, music, and adult content.
 * Add exceptions for sites that should remain accessible inside a blocked category.
 * Use a read-only DNS safety audit to inspect active adapters, VPN-style services, stale loopback DNS, and stored DNS recovery state.
 
