@@ -191,6 +191,51 @@ def _get_history(config_dir: str, filename: str) -> set:
         print(f"[!] Failed to read {filename}: {e}")
         return set()
 
+def run_auto_recovery():
+    """Runs a fully automated, silent recovery to lift all locks and clean hosts."""
+    print("[!] Safe Mode detected! Running automated emergency recovery...")
+    config_dir = os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
+    paths_to_unlock = set()
+    try:
+        terminate_spb_processes()
+    except Exception:
+        pass
+    try:
+        restore_dns_state(config_dir)
+    except Exception:
+        pass
+    try:
+        clear_browser_doh_policies()
+    except Exception:
+        pass
+    try:
+        cleanup_scheduled_task()
+    except Exception:
+        pass
+    
+    for fname in ["recovery.json", "recovery_history.json"]:
+        try:
+            recovered_paths = _get_history(config_dir, fname)
+            if recovered_paths:
+                paths_to_unlock.update(recovered_paths)
+        except Exception:
+            pass
+
+    hosts_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'drivers', 'etc', 'hosts')
+    paths_to_unlock.add(hosts_path)
+
+    for p in sorted(list(paths_to_unlock)):
+        try:
+            force_unlock(p)
+        except Exception:
+            pass
+
+    try:
+        clean_hosts_file()
+    except Exception:
+        pass
+    print("[+] Automated emergency recovery complete. All blocks lifted.")
+
 def main():
     print("====================================================")
     print("   Simple Productivity Blocker - EMERGENCY RECOVERY")
