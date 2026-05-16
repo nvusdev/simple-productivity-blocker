@@ -57,6 +57,11 @@ ADBLOCK_LISTS = {
         "chatgpt.com", "openai.com", "anthropic.com", "claude.ai", "perplexity.ai", "midjourney.com",
         "deepseek.com", "mistral.ai", "cohere.com", "labs.google", "gemini.google.com", "character.ai"
     ],
+    "music_podcasts": [
+        "spotify.com", "soundcloud.com", "music.apple.com", "podcasts.apple.com", "deezer.com",
+        "tidal.com", "pandora.com", "music.amazon.com", "bandcamp.com", "podcasts.google.com",
+        "mixcloud.com", "tunein.com"
+    ],
     "piracy_illegal": _dec(_PIRACY), # Includes piracy, torrents, etc.
     "adult_content":  _dec(_ADULT),  # Aggregate: e621.net, rule34, etc added via _dec if updated, or I can add them here if plaintext is allowed for these? No, user wants these encrypted.
     "gambling":      _dec(_GAMBLE), # Sensitive/Explicit/Illegal -> Encrypted
