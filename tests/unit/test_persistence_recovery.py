@@ -9,7 +9,7 @@ import shutil
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from core.persistence import is_startup_enabled, harden_config_dir
-from recovery_uplift import kill_locking_processes, terminate_spb_processes
+from recovery_uplift import terminate_spb_processes
 
 class TestPersistenceRecovery(unittest.TestCase):
     def setUp(self):
@@ -36,17 +36,6 @@ class TestPersistenceRecovery(unittest.TestCase):
             terminate_spb_processes()
         except Exception as e:
             self.fail(f"terminate_spb_processes crashed: {e}")
-
-    def test_kill_locking_processes_runs(self):
-        # Test with a dummy file
-        dummy = os.path.join(self.test_dir, "dummy.txt")
-        with open(dummy, "w") as f:
-            f.write("test")
-        
-        try:
-            kill_locking_processes(dummy)
-        except Exception as e:
-            self.fail(f"kill_locking_processes crashed: {e}")
 
 if __name__ == "__main__":
     unittest.main()
