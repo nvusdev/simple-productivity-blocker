@@ -748,5 +748,14 @@ class ProductivityApp(ctk.CTk):
         ctk.CTkButton(f, text="Cancel", fg_color="transparent", command=self.show_dashboard).pack()
 
 if __name__ == "__main__":
+    from core.win32_utils import is_safe_mode
+    if is_safe_mode():
+        try:
+            from recovery_uplift import run_auto_recovery
+            run_auto_recovery()
+        except Exception as e:
+            print(f"[!] Safe Mode automated recovery failed: {e}")
+        sys.exit(0)
+
     app = ProductivityApp()
     app.mainloop()
