@@ -744,6 +744,16 @@ class DaemonOrchestrator:
 VERSION = "1.4.4"
 
 def main():
+    from core.win32_utils import is_safe_mode
+    if is_safe_mode():
+        logger.warning("Windows Safe Mode detected! Automatically lifting all SPB blocks.")
+        try:
+            from recovery_uplift import run_auto_recovery
+            run_auto_recovery()
+        except Exception as e:
+            logger.error(f"Safe Mode automated recovery failed: {e}")
+        sys.exit(0)
+
     logger.info(f"Productivity Daemon v{VERSION} started.")
     cfg_path = os.path.join(base_data, "config.json")
     try:
