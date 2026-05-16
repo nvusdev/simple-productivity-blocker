@@ -65,6 +65,7 @@ class DomainMatcher:
         self.regex_patterns = []
         regex_parts = []
         
+        
         for p in patterns:
             if not p: continue
             p = str(p).strip().lower()
@@ -281,29 +282,33 @@ class DNSProxyServer:
             request = DNSRecord.parse(data)
             qname = str(request.q.qname).lower().rstrip(".")
             
-            # --- TIERED PRIORITY CHECK ---
+            # --- TIERED PRIORITY HIERARCHY ---
             
-            # 1. Cloud Allowlist - ABSOLUTE PRIORITY (Always Allowed)
+            # 1. Cloud Allowlist - ABSOLUTE PRIORITY (Global Bypass)
+            # If a domain is allowed by the cloud, we always forward it immediately.
             if self.cloud_matcher.matches(qname):
                 forwarded_data = self._forward_query(data)
                 if forwarded_data:
                     sock.sendto(forwarded_data, addr)
                 return
 
-            # 2. Manual Blocks - HIGHER than filter exceptions
+            # 2. Manual Blocking - SECOND PRIORITY (Per-Group Blocks)
+            # Respects the user's manual schedule and group settings.
             if self.manual_matcher.matches(qname):
                 logger.info(f"[DNS] Blocked (Manual): {qname}")
                 self._send_block(sock, request, addr)
                 return
             
-            # 3. Filter Exceptions - Allows specific keywords/domains within filter lists
+            # 3. Exceptions - THIRD PRIORITY (Allowlist for specific domains)
+            # Allows specific domains even if they would normally be caught by content filters.
             if self.filter_exception_matcher.matches(qname):
                 forwarded_data = self._forward_query(data)
                 if forwarded_data:
                     sock.sendto(forwarded_data, addr)
                 return
 
-            # 4. Content Filters (Adblock/Categories)
+            # 4. Content Filter - FOURTH PRIORITY (Adblock/Malware/Categories)
+            # General blocking based on selected filter lists.
             if self.filter_matcher.matches(qname):
                 logger.info(f"[DNS] Blocked (Filter): {qname}")
                 self._send_block(sock, request, addr)
