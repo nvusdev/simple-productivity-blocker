@@ -42,8 +42,8 @@ class TestProcessSafetyExclusions(unittest.TestCase):
 
     def test_non_protected_blocked_process_still_terminates(self):
         pm = ProcessMonitor()
-        pm.set_blocked_apps(["notepad-plus-plus.exe"])
-        proc = _FakeProc("notepad-plus-plus.exe", r"C:\Apps\notepad-plus-plus.exe")
+        pm.set_blocked_apps(["notepadplusplus.exe"])
+        proc = _FakeProc("notepadplusplus.exe", r"C:\Apps\notepadplusplus.exe")
         self.assertTrue(pm._should_terminate_proc(proc, 0.0, 0.0))
 
 
