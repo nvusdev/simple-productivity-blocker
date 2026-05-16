@@ -29,8 +29,17 @@ def kill_locking_processes(filepath):
     filepath = os.path.normcase(os.path.abspath(filepath))
     killed_any = False
     
+    # Core system processes that will cause psutil.open_files() to hang on Windows
+    # PID 0: System Idle Process, PID 4: System
+    skip_pids = {0, 4} 
+    skip_names = {'csrss.exe', 'smss.exe', 'services.exe', 'lsass.exe', 'wininit.exe', 'registry', 'memory compression'}
+
     # Iterate through all running processes
     for proc in psutil.process_iter(['pid', 'name']):
+        # Skip processes known to cause NtQueryObject hangs
+        if proc.info['pid'] in skip_pids or str(proc.info['name']).lower() in skip_names:
+            continue
+            
         try:
             # Note: access to open_files() requires admin rights, which this script already enforces
             for item in proc.open_files():
