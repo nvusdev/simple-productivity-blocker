@@ -2,16 +2,18 @@ import os
 import subprocess
 import shutil
 
+from core.platform_handler import get_platform_handler
+
+handler = get_platform_handler()
+HOSTS_FILE = handler.get_hosts_path()
+BACKUP_FILE = handler.get_backup_hosts_path()
+
 if os.name == 'nt':
-    HOSTS_FILE = r"C:\Windows\System32\drivers\etc\hosts"
-    BACKUP_FILE = r"C:\Windows\System32\drivers\etc\hosts.backup"
     import msvcrt
     import winreg
     import logging
     logger = logging.getLogger("SPB_Daemon")
 else:
-    HOSTS_FILE = "/etc/hosts"
-    BACKUP_FILE = "/etc/hosts.backup"
     logger = None
 
 _locked_hosts_handle = None
@@ -35,19 +37,7 @@ DOH_PROVIDERS = [
 ]
 
 def flush_dns():
-    try:
-        if os.name == 'nt':
-            subprocess.run(["ipconfig", "/flushdns"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        else:
-            try:
-                subprocess.run(["systemd-resolve", "--flush-caches"], capture_output=True)
-            except FileNotFoundError:
-                try:
-                    subprocess.run(["resolvectl", "flush-caches"], capture_output=True)
-                except FileNotFoundError:
-                    pass
-    except Exception:
-        pass
+    handler.flush_dns()
 
 def expand_keyword_list(websites):
     """Expands dot-less keywords into common domain variations for hosts-file fallback."""
@@ -142,28 +132,8 @@ def _apply_acl_lock(lock=True):
         if logger: logger.debug(f"ACL error: {e}")
 
 def apply_browser_policies(activate=True):
-    """Vector 3: Disable DNS-over-HTTPS (DoH) via Registry for Chrome, Edge, and Firefox."""
-    if os.name != 'nt': return
-    policies = [
-        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Google\Chrome", "DnsOverHttpsMode", "off", winreg.REG_SZ),
-        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Edge", "DnsOverHttpsMode", "off", winreg.REG_SZ),
-        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Mozilla\Firefox\DNSOverHTTPS", "Enabled", 0, winreg.REG_DWORD)
-    ]
-    
-    for root, path, name, value, vtype in policies:
-        try:
-            if activate:
-                key = winreg.CreateKeyEx(root, path, 0, winreg.KEY_SET_VALUE)
-                winreg.SetValueEx(key, name, 0, vtype, value)
-                winreg.CloseKey(key)
-            else:
-                try:
-                    key = winreg.OpenKey(root, path, 0, winreg.KEY_SET_VALUE)
-                    winreg.DeleteValue(key, name)
-                    winreg.CloseKey(key)
-                except FileNotFoundError: pass
-        except Exception as e:
-            if logger: logger.debug(f"Registry policy error for {path}: {e}")
+    """Vector 3: Disable DNS-over-HTTPS (DoH) via Registry/Config for browsers."""
+    handler.apply_browser_policies(activate)
     if logger: logger.info(f"Browser DoH Policies {'Enforced' if activate else 'Cleared'} (Vector 3)")
 
 def _strip_spb_entries(lines):
