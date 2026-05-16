@@ -156,6 +156,7 @@ class ContentFilterTab(ctk.CTkFrame):
             ("Entertainment & Video", "entertainment"), 
             ("Shopping & E-commerce", "shopping"), 
             ("AI & Tech News", "ai_tech"), 
+            ("Music & Podcasts", "music_podcasts"), 
             ("Adult Content", "adult_content"), 
             ("Gambling", "gambling"), 
             ("Piracy & Illegal", "piracy_illegal")

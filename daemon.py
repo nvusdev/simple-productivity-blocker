@@ -510,7 +510,7 @@ class SubsystemOrchestrator:
         
         # Determine Redundancy Set (Critical keywords that must be in hosts even with proxy)
         redundancy_set = set()
-        critical_patterns = ["youtube", "discord", "googlevideo", "ytimg", "discord.gg"]
+        critical_patterns = ["youtube", "discord", "googlevideo", "ytimg", "discordapp", "discord.gg", "spotify", "soundcloud"]
         
         for d in manual_domains:
             d_low = d.lower()
@@ -518,11 +518,9 @@ class SubsystemOrchestrator:
                 redundancy_set.add(d)
         
         # Also include a subset of filter keywords for redundancy if they are high-priority
-        # (limiting to prevent hosts file bloat)
         for d in filter_keywords:
             d_low = d.lower()
-            # Only add specific high-impact filter domains to redundancy
-            if "youtube" in d_low or "discord" in d_low:
+            if any(p in d_low for p in critical_patterns):
                  redundancy_set.add(d)
 
         active_domains = _resolve_hosts_fallback_domains(
@@ -536,7 +534,8 @@ class SubsystemOrchestrator:
         sync_website_protection(
             list(active_domains), 
             active=True, 
-            using_dns_proxy=self.using_dns_proxy
+            using_dns_proxy=self.using_dns_proxy,
+            redundancy_list=list(redundancy_set)
         )
         
         self._update_health_signal("Active" if self.using_dns_proxy else "Fallback")

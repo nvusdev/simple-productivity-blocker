@@ -246,7 +246,7 @@ def remove_blocks(keep_policies=False):
     except Exception as e:
         if logger: logger.debug(f"Error in remove_blocks: {e}")
 
-def sync_website_protection(websites, active=True, using_dns_proxy=False):
+def sync_website_protection(websites, active=True, using_dns_proxy=False, redundancy_list=None):
     """
     High-level entry point to synchronize website blocking state.
     Handles switching between DNS Proxy and Hosts-file fallback automatically.
@@ -256,10 +256,16 @@ def sync_website_protection(websites, active=True, using_dns_proxy=False):
         return
 
     if using_dns_proxy:
-        # If using DNS proxy, we remove hosts blocks (to avoid conflicts)
-        # but KEEP the browser policies to prevent DoH bypass.
-        remove_blocks(keep_policies=True)
+        # If using DNS proxy, we keep the hosts file clear of bloat,
+        # but we MUST ensure critical/redundancy domains are still present
+        # to prevent bypass via other proxies or DoH.
+        if redundancy_list:
+            apply_blocks(redundancy_list, block_doh=True)
+        else:
+            remove_blocks(keep_policies=True)
+        
+        # Always enforce browser policies to prevent DoH bypass
         apply_browser_policies(True)
     else:
-        # Fallback to hosts file
+        # Fallback to full hosts file blocking
         apply_blocks(websites, block_doh=True)
