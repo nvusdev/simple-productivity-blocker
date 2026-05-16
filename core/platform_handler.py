@@ -208,6 +208,9 @@ $items | ConvertTo-Json -Depth 4
         if not state_path:
             state_path = self.get_dns_state_file()
         try:
+            allowed_loopbacks = {"127.0.0.1", "::1"}
+            if local_ip:
+                allowed_loopbacks.add(str(local_ip).strip())
             state = self._snapshot_dns_state(state_path)
             eligible = set(state.get("eligible", []))
             if not eligible:
@@ -218,7 +221,7 @@ $items | ConvertTo-Json -Depth 4
                 raw_ips = (adapter.get("ipv4") or []) + (adapter.get("ipv6") or [])
                 configured = [str(ip).strip() for ip in raw_ips]
                 configured = [ip for ip in configured if ip]
-                if local_ip not in configured and "::1" not in configured:
+                if not any(ip in allowed_loopbacks for ip in configured):
                     return False
             return True
         except Exception:

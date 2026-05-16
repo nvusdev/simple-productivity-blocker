@@ -474,7 +474,7 @@ class SubsystemOrchestrator:
     
     def _dns_redirect_healthy(self) -> bool:
         try:
-            return handler.dns_points_to_local(local_ip="127.0.0.1")
+            return handler.dns_points_to_local()
         except Exception as e:
             logger.debug(f"DNS redirect health check failed: {e}")
             return False
