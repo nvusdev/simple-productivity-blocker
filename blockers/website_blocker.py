@@ -60,7 +60,7 @@ def expand_keyword_list(websites):
         ".app", ".dev", ".studio", ".shop", ".blog", ".news", ".tech", ".be", ".ly"
     ]
     # Expanded subdomains to cover common patterns
-    COMMON_SUBDOMAINS = ["", "www.", "m.", "music.", "api.", "mobile.", "en.", "login.", "static."]
+    COMMON_SUBDOMAINS = ["", "www."]
 
     for d in websites:
         d = d.strip().lower()
