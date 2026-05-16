@@ -308,10 +308,18 @@ def _save_history(new_paths):
     """
     try:
         existing = _get_history()
-        # Only add to history, never remove here (Removal happens in _on_acl_operation_complete)
         updated = existing.union(set(new_paths))
-        with open(RECOVERY_FILE, "w") as f:
+        
+        # Write to a temporary file first
+        import tempfile
+        fd, tmp_path = tempfile.mkstemp(dir=base_data, prefix="recovery_tmp_", suffix=".json")
+        with os.fdopen(fd, "w") as f:
             json.dump(list(updated), f)
+            f.flush()
+            os.fsync(f.fileno()) # Guarantee it is written to disk
+            
+        # Atomic replacement (safe from mid-write crashes)
+        os.replace(tmp_path, RECOVERY_FILE)
     except Exception as e:
         logger.error(f"Failed to save history: {e}")
 
@@ -335,8 +343,13 @@ def _on_acl_operation_complete(path, locked, success):
             
             if to_remove:
                 history.remove(to_remove)
-                with open(RECOVERY_FILE, "w") as f:
+                import tempfile
+                fd, tmp_path = tempfile.mkstemp(dir=base_data, prefix="recovery_tmp_", suffix=".json")
+                with os.fdopen(fd, "w") as f:
                     json.dump(list(history), f)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, RECOVERY_FILE)
                 logger.info(f"Verified Uplift: Removed {path} from recovery history.")
         except Exception as e:
             logger.error(f"Failed to update history after unlock: {e}")
@@ -352,16 +365,35 @@ def _boot_sweep_task(initial_targets: set[str], pm_instance):
     # Normalize initial targets for consistent comparison (case-insensitive on Windows)
     norm_targets = {os.path.normcase(os.path.normpath(p)) for p in initial_targets}
     
+    to_lock = []
+    to_unlock = []
+    
     for path in lock_history:
         p = os.path.normpath(path)
         lookup_p = os.path.normcase(p)
         if lookup_p in norm_targets:
             if os.path.exists(p):
-                pm_instance.synchronize_lock(p, True)
+                to_lock.append(p)
         else:
-            # Reconcile: If it's in history but not in current targets, unlock it
-            logger.info(f"Failsafe: Unlocking orphaned target: {p}")
-            pm_instance.synchronize_lock(p, False)
+            to_unlock.append(p)
+            
+    # Process unlocks first (Batched)
+    if to_unlock:
+        logger.info(f"Failsafe: Unlocking {len(to_unlock)} orphaned targets...")
+        if hasattr(pm_instance, 'batch_unlock'):
+            pm_instance.batch_unlock(to_unlock)
+        else:
+            for p in to_unlock:
+                pm_instance.synchronize_lock(p, False)
+        
+    # Re-verify existing locks (Batch)
+    if to_lock:
+        logger.info(f"Failsafe: Re-verifying {len(to_lock)} active locks.")
+        files = [p for p in to_lock if os.path.isfile(p)]
+        folders = [p for p in to_lock if os.path.isdir(p)]
+        if files: pm_instance.set_blocked_files(list(set(pm_instance.blocked_file_paths).union(set(files))))
+        if folders: pm_instance.set_blocked_folders(list(set(pm_instance.blocked_folder_roots).union(set(folders))))
+
     logger.info("Boot Sweep complete.")
 
 def is_admin():
