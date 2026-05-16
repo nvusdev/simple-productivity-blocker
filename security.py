@@ -63,7 +63,7 @@ ADBLOCK_LISTS = {
         "mixcloud.com", "tunein.com"
     ],
     "piracy_illegal": _dec(_PIRACY), # Includes piracy, torrents, etc.
-    "adult_content":  _dec(_ADULT),  # Aggregate: e621.net, rule34, etc added via _dec if updated, or I can add them here if plaintext is allowed for these? No, user wants these encrypted.
+    "adult_content":  _dec(_ADULT),  # Obfuscated adult content filter list
     "gambling":      _dec(_GAMBLE), # Sensitive/Explicit/Illegal -> Encrypted
 }
 
