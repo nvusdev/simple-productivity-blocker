@@ -2,21 +2,20 @@
 
 ## [1.4.4] - 2026-05-16
 ### Added
-- **Production Hardened Recovery Suite**: 
-    - Implemented atomic `recovery_history.json` writes using `fsync` and `.tmp` swaps to prevent 0-byte corruption during power loss.
-    - Enhanced `recovery_uplift.exe` with aggressive `psutil` handle-releasing to kill processes holding exclusive locks on blocked files.
-    - Introduced batched "Boot Sweep" reconciliation for near-instant startup protection without performance lag.
-- **Unified Platform Abstraction**: Centralized all OS-specific logic (paths, DNS flushing, privilege checks) into `core/platform_handler.py`.
-- **Advanced Protection Vector**: Replaced legacy registry/file locking with high-security `win32file` exclusive handles, providing tamper-proof application blocking.
-- **Legal & Compliance**: Initialized project with MIT License, local-first Privacy Policy, and EULA documentation.
+- **Transactional Installation**: Implemented a LIFO rollback stack in `spb_installer.py` for atomic installation states.
+- **Fail-Closed Protection**: Daemon now triggers a native Windows error alert and aborts if core protection modules fail to load.
+- **Music & Podcasts Category**: Added a new content filter category to `security.py` and the UI.
+- **Critical Redundancy**: Implemented a dual-layer lock that ensures critical domains (Discord, YouTube, Spotify) remain in the hosts file even when the DNS Proxy is active.
 
 ### Fixed
-- **UAC Elevation Argument Loop**: Fixed a critical bug in `spb_installer`, `spb_uninstaller`, and `daemon` where elevated processes would enter an infinite parameter loop.
-- **Hosts File Deadlock**: Resolved a race condition where `ProcessMonitor` would lock the `HOSTS_FILE`, preventing `website_blocker` from applying protection after a reboot.
-- **Build Pipeline Integrity**: Hardened `build.ps1` with directory shadow-renaming to resolve `WinError 32` file locks and corrected build-order dependency failures.
-- **State Desynchronization**: Fixed a logic bug where batch-unlocked folders would desynchronize internal prefix caches.
+- **Post-Condition Audit Crash**: Fixed `AttributeError` in uninstaller when system commands returned `None` due to timeouts.
+- **Silent Failure Masking**: Eradicated all bare `except: pass` blocks in lifecycle scripts to ensure explicit failure signaling.
+- **Browser Bypass Vector**: Hardened registry policies to disable DNS-over-HTTPS (DoH) and built-in resolvers in Chrome, Edge, and Firefox.
+- **Uninstaller Integrity**: Added post-execution audit to verify removal of scheduled tasks and host file markers.
 
 ### Improved
+- **Handle Safety**: Replaced aggressive handle-scanning in recovery/uninstaller with NTFS ACL "Sledgehammer" logic to prevent kernel deadlocks with security software like Portmaster.
+- **Subprocess Standardization**: Centralized all system commands into `core/subprocess_utils.py` for consistent timeout and error handling.
 - **Process Termination Accuracy**: Refined ghost instance cleanup to surgically target orphaned background processes without impacting system stability.
 - **Version Parity**: Standardized `v1.4.4` metadata across all binaries and legal documents.
 
