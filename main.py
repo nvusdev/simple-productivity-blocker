@@ -10,7 +10,8 @@ import ctypes
 import sys
 import copy
 from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, get_config_dir, export_config, import_config
-from core.persistence import set_startup, is_startup_enabled
+from core.platform_handler import get_platform_handler
+handler = get_platform_handler()
 
 VERSION = "1.4.4"
 
@@ -25,10 +26,7 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
 def is_admin():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        return False
+    return handler.is_admin()
 
 class InputListFrame(ctk.CTkFrame):
     def __init__(self, master, app, config_key, placeholder, validation_fn=None, info_tooltip=None, browse_mode=None, config_section=None, **kwargs):
@@ -504,12 +502,12 @@ class ProductivityApp(ctk.CTk):
 
         # Persistence
         ctk.CTkLabel(c, text="Persistence", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
-        self.startup_var = ctk.BooleanVar(value=is_startup_enabled())
+        self.startup_var = ctk.BooleanVar(value=handler.is_startup_enabled())
         ctk.CTkSwitch(c, text="Run Protection Engine on System Startup", variable=self.startup_var, command=self._on_startup_toggle).pack(anchor="w", padx=30, pady=10)
 
     def _on_startup_toggle(self):
         e = self.startup_var.get()
-        if set_startup(e):
+        if handler.set_startup(e):
             self.config_data["settings"]["startup_enabled"] = e
             self.trigger_save()
 
