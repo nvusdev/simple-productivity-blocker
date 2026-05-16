@@ -58,8 +58,8 @@ ADBLOCK_LISTS = {
         "deepseek.com", "mistral.ai", "cohere.com", "labs.google", "gemini.google.com", "character.ai"
     ],
     "piracy_illegal": _dec(_PIRACY), # Includes piracy, torrents, etc.
-    "adult_content":  _dec(_ADULT),  # Aggregate: e621.net, rule34, etc.
-    "gambling":      _dec(_GAMBLE), # Restricted/Explicit/Illegal -> Encrypted
+    "adult_content":  _dec(_ADULT),  # Aggregate: e621.net, rule34, etc added via _dec if updated, or I can add them here if plaintext is allowed for these? No, user wants these encrypted.
+    "gambling":      _dec(_GAMBLE), # Sensitive/Explicit/Illegal -> Encrypted
 }
 
 class CustomListManager:

@@ -11,6 +11,8 @@ from ctypes import wintypes
 try:
     import win32com.client
     import pythoncom
+    import win32security
+    import ntsecuritycon as con
 except ImportError:
     pass
 
@@ -129,8 +131,9 @@ def install_files(dest_dir):
         s = os.path.join(src_dir, item)
         d = os.path.join(dest_dir, item)
         
-        # Skip the installer itself, build artifacts, and _internal (we'll handle _internal surgically)
-        if item.lower() in ["spb_installer.exe", "spb_installer.py", "spb_uninstaller.exe", "spb_uninstaller.py", "_internal"]:
+        # Skip the installer itself, source files, and build artifacts.
+        # We explicitly WANT to copy the uninstaller and recovery helper.
+        if item.lower() in ["spb_installer.exe", "spb_installer.py", "spb_uninstaller.py", "_internal"]:
             continue
             
         if os.path.isfile(s):
@@ -153,19 +156,46 @@ def install_files(dest_dir):
             shutil.copytree(internal_src, internal_dest)
 
 def harden_install_dir(dest_dir):
-    """Locks the installation directory so only System/Admins can write to it."""
-    print("Hardening directory permissions...")
-    # SIDs: System (S-1-5-18), Admins (S-1-5-32-544), Users (S-1-5-32-545)
-    # /inheritance:r = remove inheritance, /grant = give specific perms
-    # OI/CI/F = Object/Container Inherit, Full Control
-    # OI/CI/RX = Read/Execute
-    subprocess.run([
-        'icacls', dest_dir, 
-        '/inheritance:r', 
-        '/grant:r', '*S-1-5-18:(OI)(CI)(F)', 
-        '/grant:r', '*S-1-5-32-544:(OI)(CI)(F)', 
-        '/grant:r', '*S-1-5-32-545:(OI)(CI)(RX)'
-    ], capture_output=True)
+    """Locks the installation directory so only System/Admins can write to it using native Win32 API for speed."""
+    print("Hardening directory permissions (Native)...")
+    try:
+        # Define SIDs
+        everyone, _, _ = win32security.LookupAccountName("", "Everyone")
+        admins, _, _ = win32security.LookupAccountName("", "Administrators")
+        system, _, _ = win32security.LookupAccountName("", "SYSTEM")
+        users, _, _ = win32security.LookupAccountName("", "Users")
+
+        # Create DACL
+        dacl = win32security.ACL()
+        
+        # Add ACEs (Object Inherit + Container Inherit)
+        # Administrators: Full Control
+        dacl.AddAccessAllowedAceEx(win32security.ACL_REVISION, con.OBJECT_INHERIT_ACE | con.CONTAINER_INHERIT_ACE, con.FILE_ALL_ACCESS, admins)
+        # SYSTEM: Full Control
+        dacl.AddAccessAllowedAceEx(win32security.ACL_REVISION, con.OBJECT_INHERIT_ACE | con.CONTAINER_INHERIT_ACE, con.FILE_ALL_ACCESS, system)
+        # Users: Read & Execute
+        dacl.AddAccessAllowedAceEx(win32security.ACL_REVISION, con.OBJECT_INHERIT_ACE | con.CONTAINER_INHERIT_ACE, con.FILE_GENERIC_READ | con.FILE_GENERIC_EXECUTE, users)
+
+        # Apply to directory
+        # SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, owner, group, dacl, sacl
+        # PROTECTED_DACL_SECURITY_INFORMATION = disable inheritance
+        win32security.SetNamedSecurityInfo(
+            dest_dir, win32security.SE_FILE_OBJECT, 
+            win32security.DACL_SECURITY_INFORMATION | win32security.PROTECTED_DACL_SECURITY_INFORMATION,
+            None, None, dacl, None
+        )
+        return True
+    except Exception as e:
+        print(f"Warning: Native hardening failed ({e}). Falling back to icacls...")
+        # Fallback to icacls if pywin32 is not fully functional
+        subprocess.run([
+            'icacls', dest_dir, 
+            '/inheritance:r', 
+            '/grant:r', '*S-1-5-18:(OI)(CI)(F)', 
+            '/grant:r', '*S-1-5-32-544:(OI)(CI)(F)', 
+            '/grant:r', '*S-1-5-32-545:(OI)(CI)(RX)'
+        ], capture_output=True)
+        return False
 
 def register_daemon_task(daemon_path, args=""):
     """Registers the background daemon as a high-integrity scheduled task."""
@@ -214,92 +244,67 @@ def create_shortcut(target, shortcut_path, icon=None):
         except:
             pass
 
-def _has_flag(name: str) -> bool:
-    name = name.lower()
-    return any(arg.lower() == name for arg in sys.argv[1:])
-
 def main():
-    dry_run = _has_flag("--dry-run")
-    print("Simple Productivity Blocker v1.4.3 Installer")
+    print("Simple Productivity Blocker v1.4.4 Installer")
     print("---------------------------------------------")
-    if dry_run:
-        print("[DRY-RUN] No system changes will be made.")
     
-    if not dry_run and not is_admin():
+    import pythoncom
+    
+    # Check for silent flag (for automated testing)
+    is_silent = "--silent" in sys.argv
+    
+    if not is_admin():
+        if is_silent:
+            print("[!] ERROR: Silent installation requires an elevated terminal.")
+            sys.exit(1)
         print("Requesting Administrator privileges...")
         ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
         sys.exit()
 
     try:
-        if dry_run:
-            print("[DRY-RUN] Would terminate ghost instances.")
-            print("[DRY-RUN] Would clean legacy registry stubs.")
-        else:
-            terminate_ghost_instances()
-            cleanup_legacy_registry()
+        pythoncom.CoInitialize()
+        
+        terminate_ghost_instances()
+        cleanup_legacy_registry()
         
         # 1. Resolve Secure Path
         base_prog_files = get_program_files_path()
         dest_dir = os.path.join(base_prog_files, "Simple Productivity Blocker")
-        
-        # 3. Deploy Binaries
-        if dry_run:
-            print(f"[DRY-RUN] Would install files into: {dest_dir}")
-        else:
-            install_files(dest_dir)
-        
-        # 4. Harden Installation Directory (Admin-only write access)
-        if dry_run:
-            print(f"[DRY-RUN] Would harden install directory ACLs: {dest_dir}")
-        else:
-            harden_install_dir(dest_dir)
-        
-        # 5. Register Background Daemon (Do this AFTER hardening)
-        daemon_exe = os.path.normpath(os.path.join(dest_dir, "SPB_Daemon.exe"))
-        if dry_run:
-            print(f"[DRY-RUN] Would register scheduled task: SPB_Daemon -> {daemon_exe}")
-        else:
-            register_daemon_task(daemon_exe)
-        
-        print("\n" + "="*50)
-        print("INSTALLATION COMPLETE!")
-        print("="*50)
 
+        # 3. Create Directory and Harden it FIRST
+        os.makedirs(dest_dir, exist_ok=True)
+        harden_install_dir(dest_dir)
+        
+        # 4. Deploy Binaries
+        install_files(dest_dir)
+        
+        # 5. Register Background Daemon
+        daemon_exe = os.path.normpath(os.path.join(dest_dir, "SPB_Daemon.exe"))
+        register_daemon_task(daemon_exe)
+        
         # 4. Create Desktop Shortcut
         desktop = get_desktop_path()
         app_path = os.path.join(dest_dir, "SimpleProductivityBlocker.exe")
         shortcut_path = os.path.join(desktop, "Simple Productivity Blocker.lnk")
         icon_loc = f"{app_path},0"
-        
-        if dry_run:
-            print(f"[DRY-RUN] Would create desktop shortcut: {shortcut_path}")
-        else:
-            if create_shortcut(app_path, shortcut_path, icon=icon_loc):
-                print("Desktop shortcut created successfully!")
-            else:
-                print("Warning: Could not create desktop shortcut automatically.")
-
-        print("\nInstallation Complete!")
-        print("v1.4.3 Hardened Engine is now active.")
+        create_shortcut(app_path, shortcut_path, icon=icon_loc)
         
         print("\n" + "="*50)
-        print("  REBOOT RECOMMENDED")
+        print("INSTALLATION COMPLETE!")
         print("="*50)
-        print("For optimal performance and full file-system protection:")
-        print("1. A system reboot is recommended to ensure all blocks are active.")
-        print("2. If you restore a configuration backup, a reboot is also advised.")
-        print("\nThis ensures that kernel-level enforcement is correctly applied.")
-        print("="*50)
-        
-        if not dry_run:
-            time.sleep(2)
 
     except Exception as e:
         print(f"\nERROR during installation: {e}")
-        input("Press Enter to exit...")
+        if not is_silent:
+            input("Press Enter to exit...")
         sys.exit(1)
+    finally:
+        try:
+            pythoncom.CoUninitialize()
+        except:
+            pass
 
-    if not dry_run:
+    if not is_silent:
         input("\nPress Enter to exit...")
 
 if __name__ == "__main__":

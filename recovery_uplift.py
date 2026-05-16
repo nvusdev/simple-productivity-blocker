@@ -4,10 +4,6 @@ import ctypes
 import sys
 import json
 
-def _has_flag(name: str) -> bool:
-    name = name.lower()
-    return any(arg.lower() == name for arg in sys.argv[1:])
-
 def is_admin():
     try:
         return ctypes.windll.shell32.IsUserAnAdmin()
@@ -48,14 +44,7 @@ def force_unlock(path):
 def restore_dns_state(config_dir):
     state_path = os.path.join(config_dir, "dns_state.json")
     if not os.path.exists(state_path):
-        print("[-] No SPB DNS state file found. Performing emergency safety reset...")
-        # Fallback: Reset any adapter pointing to loopback to DHCP
-        emergency_script = (
-            "Get-DnsClientServerAddress -AddressFamily IPv4,IPv6 -ErrorAction SilentlyContinue | "
-            "Where-Object { $_.ServerAddresses -contains '127.0.0.1' -or $_.ServerAddresses -contains '::1' } | "
-            "ForEach-Object { Write-Host 'Safety Reset:' $_.InterfaceAlias; Set-DnsClientServerAddress -InterfaceIndex $_.InterfaceIndex -ResetServerAddresses }"
-        )
-        subprocess.run(["powershell", "-NoProfile", "-Command", emergency_script], capture_output=True, creationflags=0x08000000)
+        print("[-] No SPB DNS state file found.")
         return False
     print("[*] Restoring adapter DNS state...")
     try:
@@ -120,7 +109,6 @@ def clean_hosts_file():
         "# --- SPB Block Begin ---": "# --- SPB Block End ---",
     }
     print("[*] Cleaning SPB hosts entries...")
-    force_unlock(hosts_path)
     try:
         with open(hosts_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
@@ -145,16 +133,17 @@ def clean_hosts_file():
     except Exception as e:
         print(f"[!] Failed to clean hosts file: {e}")
 
-
 def main():
     print("====================================================")
     print("   Simple Productivity Blocker - EMERGENCY RECOVERY")
     print("====================================================")
-    dry_run = _has_flag("--dry-run")
-    if dry_run:
-        print("[DRY-RUN] No system changes will be made.")
     
-    if not dry_run and not is_admin():
+    is_silent = "--silent" in sys.argv
+    
+    if not is_admin():
+        if is_silent:
+            print("[!] ERROR: Silent recovery requires an elevated terminal.")
+            sys.exit(1)
         print("[!] Administrator privileges required.")
         print("[*] Restarting with elevated privileges...")
         ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
@@ -163,16 +152,9 @@ def main():
     # Try to find recovery history
     config_dir = os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
     paths_to_unlock = set()
-    if dry_run:
-        print("[DRY-RUN] Would restore adapter DNS state.")
-        print("[DRY-RUN] Would clear browser DoH policies.")
-        print("[DRY-RUN] Would remove scheduled task if present.")
-        print("[DRY-RUN] Would clean SPB hosts entries.")
-    else:
-        restore_dns_state(config_dir)
-        clear_browser_doh_policies()
-        cleanup_scheduled_task()
-        clean_hosts_file()
+    restore_dns_state(config_dir)
+    clear_browser_doh_policies()
+    cleanup_scheduled_task()
     
     for fname in ["recovery.json", "recovery_history.json"]:
         h_file = os.path.join(config_dir, fname)
@@ -186,21 +168,21 @@ def main():
             except:
                 print(f"[!] Failed to read {fname}")
 
-    # Add hosts file just in case
+    # Add hosts file to the batch unlock set
     hosts_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'drivers', 'etc', 'hosts')
     paths_to_unlock.add(hosts_path)
 
     if paths_to_unlock:
-        print(f"[*] Found {len(paths_to_unlock)} paths to restore from history.")
-        for p in paths_to_unlock:
-            if dry_run:
-                print(f"[DRY-RUN] Would unlock: {p}")
-            else:
-                force_unlock(p)
+        print(f"[*] Found {len(paths_to_unlock)} unique paths to restore.")
+        for p in sorted(list(paths_to_unlock)):
+            force_unlock(p)
     else:
         print("[-] No automated recovery history found.")
 
-    if not dry_run:
+    # Now clean the hosts file content (it's already unlocked)
+    clean_hosts_file()
+
+    if not is_silent:
         print("\n--- MANUAL RECOVERY ---")
         print("If you still can't access certain files/folders, enter the path below.")
         print("Leave blank to exit.")
@@ -212,7 +194,7 @@ def main():
             force_unlock(manual_path)
 
     print("\n[*] Recovery process complete.")
-    if not dry_run:
+    if not is_silent:
         input("Press Enter to exit...")
 
 if __name__ == "__main__":

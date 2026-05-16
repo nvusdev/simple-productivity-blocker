@@ -161,14 +161,7 @@ def restore_dns_state():
     config_dir = os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
     state_path = os.path.join(config_dir, "dns_state.json")
     if not os.path.exists(state_path):
-        print("No SPB DNS state file found. Performing emergency safety reset...")
-        # Fallback: Reset any adapter pointing to loopback to DHCP
-        emergency_script = (
-            "Get-DnsClientServerAddress -AddressFamily IPv4,IPv6 -ErrorAction SilentlyContinue | "
-            "Where-Object { $_.ServerAddresses -contains '127.0.0.1' -or $_.ServerAddresses -contains '::1' } | "
-            "ForEach-Object { Write-Host 'Safety Reset:' $_.InterfaceAlias; Set-DnsClientServerAddress -InterfaceIndex $_.InterfaceIndex -ResetServerAddresses }"
-        )
-        subprocess.run(["powershell", "-NoProfile", "-Command", emergency_script], capture_output=True, creationflags=0x08000000)
+        print("No SPB DNS state file found.")
         return
     try:
         import json
@@ -280,47 +273,53 @@ def cleanup_acls():
     
     print("Physical blocks released successfully.")
 
-def _has_flag(name: str) -> bool:
-    name = name.lower()
-    return any(arg.lower() == name for arg in sys.argv[1:])
-
 def main():
-    dry_run = _has_flag("--dry-run")
-    print("Simple Productivity Blocker v1.4.3 Uninstaller")
+    print("Simple Productivity Blocker v1.4.4 Uninstaller")
     print("-------------------------------------------------------")
-    if dry_run:
-        print("[DRY-RUN] No system changes will be made.")
     
-    if not dry_run and not is_admin():
+    import pythoncom
+    
+    is_silent = "--silent" in sys.argv
+    
+    if not is_admin():
+        if is_silent:
+            print("[!] ERROR: Silent uninstallation requires an elevated terminal.")
+            sys.exit(1)
         print("Administrator privileges required. Requesting UAC prompt...")
         ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
         sys.exit()
         
-    if not dry_run:
+    if not is_silent:
         confirm = input("Are you sure you want to completely remove Simple Productivity Blocker? (y/n): ")
         if confirm.lower() != 'y':
             print("Uninstallation cancelled.")
             time.sleep(2)
             sys.exit(0)
+    
+    try:
+        pythoncom.CoInitialize()
         
-    if dry_run:
-        print("[DRY-RUN] Would terminate background processes.")
-        print("[DRY-RUN] Would remove scheduled task and registry entries.")
-        print("[DRY-RUN] Would restore adapter DNS state.")
-        print("[DRY-RUN] Would restore hosts file.")
-        print("[DRY-RUN] Would release file/folder ACL blocks.")
-        print("[DRY-RUN] Would remove installed files and config directories.")
-    else:
         kill_processes()
         cleanup_persistence()
         restore_dns_state()
         restore_hosts()
-        cleanup_acls() # Essential before deleting history and files
+        cleanup_acls()
         remove_files()
-    
-    print("\nUninstallation Complete.")
-    if not dry_run:
+        
+        print("\nUninstallation Complete.")
         print("All files, blocks, and configurations have been successfully removed.")
+    except Exception as e:
+        print(f"\nERROR during uninstallation: {e}")
+        if not is_silent:
+            input("Press Enter to exit...")
+        sys.exit(1)
+    finally:
+        try:
+            pythoncom.CoUninitialize()
+        except:
+            pass
+
+    if not is_silent:
         input("\nPress Enter to exit...")
 
 if __name__ == "__main__":
