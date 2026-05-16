@@ -13,11 +13,10 @@ from typing import List, Optional, Set, Any, Dict
 from dnslib import DNSRecord, QTYPE, RR, A, AAAA, DNSHeader
 
 logger = logging.getLogger("SPB_Daemon")
-DNS_STATE_FILE = os.path.join(
-    os.getenv("PROGRAMDATA", r"C:\ProgramData"),
-    "SimpleProductivityBlocker",
-    "dns_state.json"
-) if os.name == 'nt' else os.path.expanduser("~/.config/SimpleProductivityBlocker/dns_state.json")
+from core.platform_handler import get_platform_handler
+
+handler = get_platform_handler()
+DNS_STATE_FILE = handler.get_dns_state_file()
 
 LOOPBACK_DNS = {"127.0.0.1", "::1"}
 PROTECTED_ADAPTER_KEYWORDS = (
@@ -33,8 +32,8 @@ CONFLICT_SERVICE_KEYWORDS = (
 )
 
 # Robust Import Hardening for flush_dns and HOSTS_FILE
-HOSTS_FILE = r"C:\Windows\System32\drivers\etc\hosts" if os.name == 'nt' else "/etc/hosts"
-def _f_dns(): pass
+HOSTS_FILE = handler.get_hosts_path()
+def _f_dns(): handler.flush_dns()
 flush_dns = _f_dns
 
 try:
@@ -58,197 +57,8 @@ def _ensure_state_dir(path: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
 def _run_powershell_json(script: str):
-    res = subprocess.run(
-        ["powershell", "-NoProfile", "-Command", script],
-        capture_output=True,
-        text=True,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-    )
-    if res.returncode != 0:
-        raise RuntimeError(res.stderr.strip() or "PowerShell command failed")
-    text = res.stdout.strip()
-    if not text:
-        return []
-    data = json.loads(text)
-    return data if isinstance(data, list) else [data]
-
-def _as_list(value):
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [str(v) for v in value if str(v).strip()]
-    return [str(value)] if str(value).strip() else []
-
-def _is_loopback_only(addresses) -> bool:
-    addresses = set(_as_list(addresses))
-    return bool(addresses) and addresses.issubset(LOOPBACK_DNS)
-
-def _has_non_loopback(addresses) -> bool:
-    return any(a not in LOOPBACK_DNS for a in _as_list(addresses))
-
-def _is_protected_adapter(adapter: Dict[str, Any]) -> bool:
-    haystack = " ".join([
-        str(adapter.get("alias", "")),
-        str(adapter.get("description", "")),
-    ]).lower()
-    return any(k in haystack for k in PROTECTED_ADAPTER_KEYWORDS)
-
-def snapshot_dns_state(adapters=None, state_path=DNS_STATE_FILE):
-    """Capture active adapter DNS state and mark which adapters are safe to redirect."""
-    if os.name != 'nt':
-        return {"version": 1, "platform": os.name, "adapters": [], "eligible": [], "warnings": ["DNS snapshots are Windows-only."]}
-
-    if adapters is None:
-        script = r"""
-$items = Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | ForEach-Object {
-  $idx = $_.ifIndex
-  $v4 = @(Get-DnsClientServerAddress -InterfaceIndex $idx -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ServerAddresses)
-  $v6 = @(Get-DnsClientServerAddress -InterfaceIndex $idx -AddressFamily IPv6 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ServerAddresses)
-  [pscustomobject]@{
-    alias = $_.Name
-    description = $_.InterfaceDescription
-    index = $idx
-    status = $_.Status
-    ipv4 = $v4
-    ipv6 = $v6
-  }
-}
-$items | ConvertTo-Json -Depth 4
-"""
-        adapters = _run_powershell_json(script)
-
-    warnings = []
-    normalized = []
-    eligible = []
-    for item in adapters:
-        adapter = {
-            "alias": str(item.get("alias", item.get("Name", ""))),
-            "description": str(item.get("description", item.get("InterfaceDescription", ""))),
-            "index": int(item.get("index", item.get("InterfaceIndex", 0))),
-            "status": str(item.get("status", item.get("Status", ""))),
-            "ipv4": _as_list(item.get("ipv4", item.get("IPv4", []))),
-            "ipv6": _as_list(item.get("ipv6", item.get("IPv6", []))),
-        }
-        adapter["protected"] = _is_protected_adapter(adapter)
-        adapter["has_existing_dns"] = _has_non_loopback(adapter["ipv4"] + adapter["ipv6"])
-        adapter["stale_loopback_dns"] = _is_loopback_only(adapter["ipv4"] + adapter["ipv6"])
-        adapter["eligible"] = (
-            adapter["index"] > 0
-            and not adapter["protected"]
-        )
-        if adapter["protected"]:
-            warnings.append(f"Skipping protected adapter: {adapter['alias']}")
-        elif adapter["eligible"]:
-            eligible.append(adapter["index"])
-            if adapter["has_existing_dns"]:
-                warnings.append(f"Intercepting adapter with custom DNS (used as upstream): {adapter['alias']}")
-        normalized.append(adapter)
-
-    state = {
-        "version": 1,
-        "platform": os.name,
-        "captured_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "state_path": state_path,
-        "adapters": normalized,
-        "eligible": eligible,
-        "warnings": list(dict.fromkeys(warnings)),
-    }
-    return state
-
-def _save_dns_state(state, state_path=DNS_STATE_FILE):
-    _ensure_state_dir(state_path)
-    with open(state_path, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2)
-
-def _load_dns_state(state_path=DNS_STATE_FILE):
-    if not os.path.exists(state_path):
-        return None
-    with open(state_path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-def _set_adapter_dns(index: int, servers: List[str]) -> bool:
-    if servers:
-        quoted = ", ".join("'" + s.replace("'", "''") + "'" for s in servers)
-        script = f"Set-DnsClientServerAddress -InterfaceIndex {int(index)} -ServerAddresses @({quoted})"
-    else:
-        script = f"Set-DnsClientServerAddress -InterfaceIndex {int(index)} -ResetServerAddresses"
-    res = subprocess.run(
-        ["powershell", "-NoProfile", "-Command", script],
-        capture_output=True,
-        text=True,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-    )
-    if res.returncode != 0:
-        logger.error(f"PowerShell DNS Error for interface {index}: {res.stderr.strip()}")
-        return False
-    return True
-
-def apply_local_dns(state, ipv4="127.0.0.1", ipv6="::1", state_path=DNS_STATE_FILE) -> bool:
-    """Persist a snapshot, then point only eligible adapters at the local DNS proxy."""
-    if os.name != 'nt':
-        return False
-    eligible = set(state.get("eligible", []))
-    if not eligible:
-        logger.warning("DNS safety: no adapters eligible for local DNS redirection.")
-        return False
-    _save_dns_state(state, state_path)
-    ok = True
-    for adapter in state.get("adapters", []):
-        if adapter.get("index") not in eligible:
-            continue
-        if not _set_adapter_dns(adapter["index"], [ipv4, ipv6]):
-            ok = False
-    return ok
-
-def restore_dns_state(state=None, state_path=DNS_STATE_FILE) -> bool:
-    """Restore previously captured adapter DNS state."""
-    if os.name != 'nt':
-        return False
-    if state is None:
-        state = _load_dns_state(state_path)
-    if not state:
-        return False
-    ok = True
-    for adapter in state.get("adapters", []):
-        if adapter.get("index") not in set(state.get("eligible", [])):
-            continue
-        original = _as_list(adapter.get("ipv4", [])) + _as_list(adapter.get("ipv6", []))
-        if not _set_adapter_dns(adapter["index"], original):
-            ok = False
-    if ok:
-        try:
-            os.remove(state_path)
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            logger.debug(f"DNS state cleanup failed: {e}")
-    return ok
-
-def audit_dns_safety(state_path=DNS_STATE_FILE):
-    state = snapshot_dns_state(state_path=state_path)
-    stale = [
-        a["alias"] for a in state.get("adapters", [])
-        if a.get("stale_loopback_dns") and not a.get("eligible")
-    ]
-    conflicts = []
-    if os.name == 'nt':
-        pattern = "|".join(CONFLICT_SERVICE_KEYWORDS)
-        script = (
-            "Get-Service | Where-Object {$_.Name -match '" + pattern + "' -or $_.DisplayName -match '" + pattern + "'} "
-            "| Select-Object Name,DisplayName,Status,StartType | ConvertTo-Json -Depth 3"
-        )
-        try:
-            conflicts = _run_powershell_json(script)
-        except Exception as e:
-            state.setdefault("warnings", []).append(f"Service audit failed: {e}")
-    return {
-        "adapters": state.get("adapters", []),
-        "eligible": state.get("eligible", []),
-        "warnings": state.get("warnings", []),
-        "stale_loopback_adapters": stale,
-        "conflicting_services": conflicts,
-        "stored_state_exists": os.path.exists(state_path),
-    }
+def audit_dns_safety(state_path=None):
+    return handler.audit_dns_safety(state_path)
 
 class DomainMatcher:
     def __init__(self, patterns):
@@ -433,14 +243,7 @@ class DNSProxyServer:
     def _redirect_system_dns(self, activate):
         """Forces the system to use our local proxy for all active adapters."""
         try:
-            if activate:
-                state = self._dns_state or snapshot_dns_state(state_path=self._state_path)
-                if state.get("warnings"):
-                    for warning in state["warnings"]:
-                        logger.warning(f"DNS safety: {warning}")
-                return apply_local_dns(state, state_path=self._state_path)
-            else:
-                return restore_dns_state(state_path=self._state_path)
+            return handler.redirect_dns(activate, local_ip=self.host)
         except Exception as e:
             logger.error(f"Failed to modify system DNS: {e}")
             return False
@@ -551,7 +354,6 @@ def detect_system_dns():
     dns_servers = []
     
     # 1. Try to recover from SPB's own saved state first (unclean exit recovery)
-    # This is the most reliable way to get the *original* DNS before we intercepted it.
     if os.path.exists(DNS_STATE_FILE):
         try:
             with open(DNS_STATE_FILE, "r") as f:
@@ -569,33 +371,20 @@ def detect_system_dns():
 
     # 2. Query current system configuration (active adapters)
     try:
-        if os.name == 'nt':
-            # Use PowerShell to get active DNS servers, excluding loopbacks
-            cmd = 'powershell -NoProfile -Command "Get-DnsClientServerAddress | Where-Object {$_.ServerAddresses -ne $null} | Select-Object -ExpandProperty ServerAddresses"'
-            res = subprocess.run(cmd, shell=True, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            if res.stdout:
-                for s in res.stdout.splitlines():
-                    s = s.strip().strip('"').strip("'")
-                    if s and s not in LOOPBACK_DNS and s not in dns_servers:
-                        dns_servers.append(s)
-        else:
-            if os.path.exists('/etc/resolv.conf'):
-                with open('/etc/resolv.conf', 'r') as f:
-                    for line in f:
-                        if line.startswith('nameserver'):
-                            ip = line.split()[1].strip()
-                            if ip not in LOOPBACK_DNS and ip not in dns_servers:
-                                dns_servers.append(ip)
+        system_dns = handler.get_system_dns()
+        for s in system_dns:
+            s = s.strip().strip('"').strip("'")
+            if s and s not in LOOPBACK_DNS and s not in dns_servers:
+                dns_servers.append(s)
     except Exception as e:
         logger.debug(f"System DNS query failed: {e}")
         pass
         
-    # 3. Fallback to public DNS if nothing found or if all found are loopback
+    # 3. Fallback to public DNS
     if not dns_servers:
         dns_servers = ["8.8.8.8", "1.1.1.1", "2001:4860:4860::8888", "2606:4700:4700::1111"]
         logger.info("No valid system DNS detected. Falling back to public DNS (Google/Cloudflare).")
     else:
-        # Final filter to ensure NO loopbacks or empty strings made it through
         dns_servers = [s for s in dns_servers if s and s not in LOOPBACK_DNS]
         if not dns_servers:
              dns_servers = ["8.8.8.8", "1.1.1.1"]
