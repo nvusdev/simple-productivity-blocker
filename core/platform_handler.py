@@ -306,6 +306,7 @@ class LinuxHandler(PlatformHandler):
         return dns_servers
 
     def dns_points_to_local(self, local_ip="127.0.0.1", state_path=None):
+        """Linux does not redirect adapter DNS in this project, so drift check is not applicable."""
         return True
 
 def get_platform_handler():
