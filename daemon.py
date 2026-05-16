@@ -473,6 +473,7 @@ class SubsystemOrchestrator:
         self.using_dns_proxy = False
     
     def _dns_redirect_healthy(self) -> bool:
+        """Return True when adapter DNS is still bound to localhost for proxy mode."""
         try:
             return handler.dns_points_to_local()
         except Exception as e:

@@ -42,6 +42,7 @@ class PlatformHandler:
         raise NotImplementedError
     
     def dns_points_to_local(self, local_ip="127.0.0.1", state_path=None):
+        """Return True when platform DNS redirection remains pointed at local resolver addresses."""
         return True
 
     def audit_dns_safety(self, state_path=None):
@@ -205,6 +206,7 @@ $items | ConvertTo-Json -Depth 4
         except: return []
     
     def dns_points_to_local(self, local_ip="127.0.0.1", state_path=None):
+        """Validate that eligible active adapters still resolve DNS through localhost loopbacks."""
         if not state_path:
             state_path = self.get_dns_state_file()
         try:
@@ -224,7 +226,8 @@ $items | ConvertTo-Json -Depth 4
                 if not any(ip in allowed_loopbacks for ip in configured):
                     return False
             return True
-        except Exception:
+        except Exception as e:
+            logger.debug(f"dns_points_to_local check failed: {e}")
             return False
 
     def apply_browser_policies(self, activate=True):
