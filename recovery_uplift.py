@@ -173,6 +173,42 @@ def clean_hosts_file():
     except Exception as e:
         print(f"[!] Failed to clean hosts file: {e}")
 
+def _get_history(config_dir: str, filename: str) -> set:
+    """Safely parse recovery JSON files, resisting corruption."""
+    file_path = os.path.join(config_dir, filename)
+    if not os.path.exists(file_path):
+        return set()
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+            if not content:
+                return set()
+            data = json.loads(content)
+            
+            # Validate structure: must be a list of strings
+            if isinstance(data, list):
+                return {str(item) for item in data if isinstance(item, str) and item.strip()}
+            return set()
+    except json.JSONDecodeError as e:
+        print(f"[!] Corruption detected in {filename}: {e}. Attempting raw string extraction.")
+        # Fallback: regex extraction if JSON is partially corrupted
+        import re
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                raw_text = f.read()
+                # Extract anything that looks like a Windows path or basic string between quotes
+                matches = re.findall(r'"([a-zA-Z]:\\[^"\*<>\|]+)"', raw_text)
+                if matches:
+                    print(f"[*] Recovered {len(matches)} paths via raw extraction.")
+                    return set(matches)
+        except Exception:
+            pass
+        return set()
+    except Exception as e:
+        print(f"[!] Failed to read {filename}: {e}")
+        return set()
+
 def main():
     print("====================================================")
     print("   Simple Productivity Blocker - EMERGENCY RECOVERY")
@@ -198,16 +234,10 @@ def main():
     cleanup_scheduled_task()
     
     for fname in ["recovery.json", "recovery_history.json"]:
-        h_file = os.path.join(config_dir, fname)
-        if os.path.exists(h_file):
-            print(f"[*] Found recovery file: {fname}")
-            try:
-                with open(h_file, 'r') as f:
-                    data = json.load(f)
-                    if isinstance(data, list):
-                        paths_to_unlock.update(data)
-            except:
-                print(f"[!] Failed to read {fname}")
+        recovered_paths = _get_history(config_dir, fname)
+        if recovered_paths:
+            print(f"[*] Found valid recovery data in: {fname}")
+            paths_to_unlock.update(recovered_paths)
 
     # Add hosts file to the batch unlock set
     hosts_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'drivers', 'etc', 'hosts')
