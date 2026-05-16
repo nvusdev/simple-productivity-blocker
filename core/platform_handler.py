@@ -71,7 +71,7 @@ class WindowsHandler(PlatformHandler):
         return os.path.join(self.get_data_dir(), "dns_state.json")
 
     def get_data_dir(self):
-        return os.path.join(os.getenv("PROGRAMDATA", r"C:\ProgramData"), "SimpleProductivityBlocker")
+        return os.environ.get("SPB_DATA_DIR") or os.path.join(os.getenv("PROGRAMDATA", r"C:\ProgramData"), "SimpleProductivityBlocker")
 
     def is_admin(self):
         from core.win32_utils import is_admin as win_is_admin
@@ -268,7 +268,7 @@ class LinuxHandler(PlatformHandler):
         return os.path.join(self.get_data_dir(), "dns_state.json")
 
     def get_data_dir(self):
-        return os.path.expanduser("~/.config/SimpleProductivityBlocker")
+        return os.environ.get("SPB_DATA_DIR") or os.path.expanduser("~/.config/SimpleProductivityBlocker")
 
     def is_admin(self):
         return os.getuid() == 0
