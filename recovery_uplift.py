@@ -3,12 +3,48 @@ import subprocess
 import ctypes
 import sys
 import json
+import psutil
+import time
 
 def is_admin():
     if os.name == "nt":
         from core.win32_utils import is_admin as win_is_admin
         return win_is_admin()
     return os.getuid() == 0
+
+def terminate_spb_processes():
+    """Aggressively kill all SPB-related processes to release file handles."""
+    print("[*] Terminating SPB processes...")
+    procs = ["SimpleProductivityBlocker.exe", "SPB_Daemon.exe", "spb_installer.exe"]
+    for proc in psutil.process_iter(['pid', 'name']):
+        try:
+            if proc.info['name'] in procs:
+                print(f"    - Killing {proc.info['name']} (PID: {proc.info['pid']})")
+                proc.kill()
+        except: pass
+    time.sleep(1)
+
+def kill_locking_processes(filepath):
+    """Finds and forcefully kills any process holding an open handle to the file."""
+    filepath = os.path.normcase(os.path.abspath(filepath))
+    killed_any = False
+    
+    # Iterate through all running processes
+    for proc in psutil.process_iter(['pid', 'name']):
+        try:
+            # Note: access to open_files() requires admin rights, which this script already enforces
+            for item in proc.open_files():
+                if os.path.normcase(os.path.abspath(item.path)) == filepath:
+                    print(f"    [!] Terminating locking process: {proc.info['name']} (PID: {proc.info['pid']})")
+                    proc.kill()
+                    killed_any = True
+                    break # Process is dead, move to the next
+        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+            pass
+            
+    if killed_any:
+        # Give the OS a moment to actually release the handles
+        time.sleep(1)
 
 def force_unlock(path):
     path = os.path.normpath(os.path.abspath(path))
@@ -18,6 +54,10 @@ def force_unlock(path):
 
     print(f"[*] Attempting to unlock: {path}")
     try:
+        # 0. AGGRESSIVE HANDLE RELEASE
+        print("    - Hunting for locking processes...")
+        kill_locking_processes(path)
+        
         # 1. Take ownership (The Sledgehammer)
         # /f path, /a (give ownership to Administrators group)
         print("    - Taking ownership...")
@@ -152,6 +192,7 @@ def main():
     # Try to find recovery history
     config_dir = os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
     paths_to_unlock = set()
+    terminate_spb_processes()
     restore_dns_state(config_dir)
     clear_browser_doh_policies()
     cleanup_scheduled_task()
