@@ -7,7 +7,13 @@ import unittest
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 if "psutil" not in sys.modules:
-    sys.modules["psutil"] = types.SimpleNamespace(process_iter=lambda *args, **kwargs: [])
+    sys.modules["psutil"] = types.SimpleNamespace(
+        process_iter=lambda *args, **kwargs: [],
+        Process=lambda *args, **kwargs: None,
+        NoSuchProcess=Exception,
+        AccessDenied=Exception,
+        ZombieProcess=Exception,
+    )
 
 from blockers.app_blocker import ProcessMonitor
 
