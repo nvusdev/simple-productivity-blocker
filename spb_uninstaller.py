@@ -248,7 +248,7 @@ def main():
             print("[!] ERROR: Silent uninstallation requires an elevated terminal.")
             sys.exit(1)
         print("Administrator privileges required. Requesting UAC prompt...")
-        ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
+        ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv[1:]), None, 1)
         sys.exit()
         
     if not is_silent:

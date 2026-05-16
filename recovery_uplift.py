@@ -146,7 +146,7 @@ def main():
             sys.exit(1)
         print("[!] Administrator privileges required.")
         print("[*] Restarting with elevated privileges...")
-        ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
+        ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv[1:]), None, 1)
         sys.exit()
 
     # Try to find recovery history
