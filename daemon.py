@@ -89,6 +89,13 @@ except ImportError as e:
     logger = logging.getLogger("SPB_Daemon")
     logger.critical(f"FATAL: Protection modules failed to load: {e}")
     
+    # Try automated recovery first so we fail open/failsafe before exiting
+    try:
+        import recovery_uplift
+        recovery_uplift.run_auto_recovery()
+    except Exception as recovery_err:
+        logger.critical(f"FATAL: Automated recovery failed: {recovery_err}")
+    
     # Signal failure to health monitor
     try:
         base_data = handler.get_data_dir()
@@ -98,7 +105,7 @@ except ImportError as e:
     except: pass
     
     # Native Notification
-    if os.name == 'nt':
+    if os.name == 'nt' and os.environ.get("SPB_GHOST_MODE") != "1":
         try:
             msg = f"Simple Productivity Blocker cannot start because a critical protection module is missing or corrupted.\n\nError: {e}\n\nPlease reinstall the application."
             ctypes.windll.user32.MessageBoxW(0, msg, "SPB - Critical Startup Error", 0x10) # 0x10 = MB_ICONERROR
