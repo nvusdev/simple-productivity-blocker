@@ -40,6 +40,9 @@ class PlatformHandler:
 
     def get_system_dns(self):
         raise NotImplementedError
+    
+    def dns_points_to_local(self, local_ip="127.0.0.1", state_path=None):
+        return True
 
     def audit_dns_safety(self, state_path=None):
         return {}
@@ -200,6 +203,24 @@ $items | ConvertTo-Json -Depth 4
         script = 'Get-DnsClientServerAddress | Where-Object {$_.ServerAddresses -ne $null} | Select-Object -ExpandProperty ServerAddresses'
         try: return self._run_powershell_json(script)
         except: return []
+    
+    def dns_points_to_local(self, local_ip="127.0.0.1", state_path=None):
+        if not state_path:
+            state_path = self.get_dns_state_file()
+        try:
+            state = self._snapshot_dns_state(state_path)
+            eligible = set(state.get("eligible", []))
+            if not eligible:
+                return True
+            for adapter in state.get("adapters", []):
+                if adapter.get("index") not in eligible:
+                    continue
+                configured = [str(ip).strip() for ip in ((adapter.get("ipv4", []) or []) + (adapter.get("ipv6", []) or [])) if str(ip).strip()]
+                if local_ip not in configured and "::1" not in configured:
+                    return False
+            return True
+        except Exception:
+            return False
 
     def apply_browser_policies(self, activate=True):
         import winreg
@@ -275,6 +296,9 @@ class LinuxHandler(PlatformHandler):
                         ip = line.split()[1].strip()
                         dns_servers.append(ip)
         return dns_servers
+
+    def dns_points_to_local(self, local_ip="127.0.0.1", state_path=None):
+        return True
 
 def get_platform_handler():
     if os.name == 'nt':
