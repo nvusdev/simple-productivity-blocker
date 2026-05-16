@@ -5,6 +5,7 @@ import sys
 import json
 import psutil
 import time
+from core.subprocess_utils import run_system_command
 
 def is_admin():
     if os.name == "nt":
@@ -38,19 +39,19 @@ def force_unlock(path):
         # 1. Take ownership (The Sledgehammer)
         # /f path, /a (give ownership to Administrators group)
         print("    - Taking ownership...")
-        subprocess.run(['takeown', '/f', path, '/a'], capture_output=True, creationflags=0x08000000)
+        run_system_command(['takeown', '/f', path, '/a'], check=False)
         
         # 2. Grant Administrators full control
         print("    - Granting Administrator access...")
-        subprocess.run(['icacls', path, '/grant', 'Administrators:(F)', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+        run_system_command(['icacls', path, '/grant', 'Administrators:(F)', '/c', '/q'], check=False)
 
         # 3. Re-enable inheritance and remove ALL deny rules
         print("    - Resetting inheritance and removing deny rules...")
-        subprocess.run(['icacls', path, '/reset', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+        run_system_command(['icacls', path, '/reset', '/c', '/q'], check=False)
         
         # 4. Explicitly remove everyone-deny just in case reset wasn't enough
         # S-1-1-0 is the SID for 'Everyone'
-        subprocess.run(['icacls', path, '/remove:d', '*S-1-1-0', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+        run_system_command(['icacls', path, '/remove:d', '*S-1-1-0', '/c', '/q'], check=False)
         
         print(f"[+] Successfully processed: {path}")
         return True
@@ -79,7 +80,7 @@ def restore_dns_state(config_dir):
                 ps = f"Set-DnsClientServerAddress -InterfaceIndex {int(idx)} -ServerAddresses @({quoted})"
             else:
                 ps = f"Set-DnsClientServerAddress -InterfaceIndex {int(idx)} -ResetServerAddresses"
-            subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, creationflags=0x08000000)
+            run_system_command(["powershell", "-NoProfile", "-Command", ps], check=False)
             restored += 1
         try:
             os.remove(state_path)
@@ -88,7 +89,9 @@ def restore_dns_state(config_dir):
         print(f"[+] Restored DNS state for {restored} adapter(s).")
         return True
     except Exception as e:
-        print(f"[!] Failed to restore DNS state: {e}")
+        print(f"[!] Critical error during DNS restoration: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def clear_browser_doh_policies():
@@ -111,11 +114,13 @@ def clear_browser_doh_policies():
                 pass
     except Exception as e:
         print(f"[!] Failed to clear browser policies: {e}")
+        return False
+    return True
 
 def cleanup_scheduled_task():
     print("[*] Removing SPB scheduled task if present...")
     try:
-        subprocess.run(['schtasks', '/delete', '/tn', 'SPB_Daemon', '/f'], capture_output=True, creationflags=0x08000000)
+        run_system_command(['schtasks', '/delete', '/tn', 'SPB_Daemon', '/f'], check=False)
     except Exception as e:
         print(f"[!] Failed to remove scheduled task: {e}")
 
@@ -145,7 +150,7 @@ def clean_hosts_file():
             cleaned.append(line)
         with open(hosts_path, "w", encoding="utf-8") as f:
             f.writelines(cleaned)
-        subprocess.run(["ipconfig", "/flushdns"], capture_output=True, creationflags=0x08000000)
+        run_system_command(["ipconfig", "/flushdns"], check=False)
         print("[+] Hosts file cleaned.")
     except Exception as e:
         print(f"[!] Failed to clean hosts file: {e}")
