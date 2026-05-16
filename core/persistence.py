@@ -37,9 +37,19 @@ def register_task(task_name, exe_path, args="", working_dir=None):
     try:
         # Pass as a single command string to powershell
         subprocess.run(['powershell', '-Command', ps_cmd], check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as e:
-        print(f"PowerShell Error: {e.stderr}")
-        raise RuntimeError(f"Failed to register task via PowerShell: {e.stderr}")
+    except (subprocess.CalledProcessError, OSError) as e:
+        err_msg = e.stderr if hasattr(e, 'stderr') else str(e)
+        print(f"PowerShell registration failed (WMI/CIM issue?): {err_msg}")
+        print("[*] Attempting fallback registration via schtasks.exe...")
+        
+        # Fallback to legacy schtasks.exe (bypasses CIM repository)
+        # Note: schtasks has fewer granular settings than PS, but it's more robust on broken systems.
+        fallback_args = ["schtasks", "/create", "/tn", task_name, "/tr", f'"{exe_path}" {args}'.strip(), "/sc", "onlogon", "/rl", "highest", "/f"]
+        try:
+            subprocess.run(fallback_args, check=True, capture_output=True, text=True)
+            print("[+] Fallback registration successful.")
+        except subprocess.CalledProcessError as f_err:
+            raise RuntimeError(f"Complete registration failure. PS: {err_msg} | schtasks: {f_err.stderr}")
 
     # Run now and verify
     result = subprocess.run(['schtasks', '/run', '/tn', task_name], capture_output=True, creationflags=0x08000000)
