@@ -5,10 +5,10 @@ import sys
 import json
 
 def is_admin():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        return False
+    if os.name == "nt":
+        from core.win32_utils import is_admin as win_is_admin
+        return win_is_admin()
+    return os.getuid() == 0
 
 def force_unlock(path):
     path = os.path.normpath(os.path.abspath(path))
