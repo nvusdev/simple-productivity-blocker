@@ -303,18 +303,11 @@ class DomainMatcher:
         # Join with [^.\\\/]* which matches anything except a dot or path separator
         core_regex = "[^.\\\\/]*".join(escaped_parts)
         
-        # If it's a plain keyword (no dots, no wildcards), allow it to match anywhere in the domain
-        # This ensures 'youtube' matches 'myyoutube.com', 'youtube-proxy.com', etc.
-        # This is the "Nuclear" approach requested by the user.
-        if "." not in p and "*" not in p:
-            core_regex = f".*{core_regex}.*"
-        else:
-            # Anchor to boundaries (Start, dot, backslash, or forward slash)
-            # Suffix boundaries: End, dot, backslash, or forward slash
-            # This ensures 'microsoft.com' matches 'microsoft.com' but not 'notmicrosoft.com'
-            return f"(?:^|\\.|\\\\|/){core_regex}(?:\\.|\\\\|/|$)"
-
-        return core_regex
+        # Anchor to boundaries (Start, dot, backslash, or forward slash)
+        # Suffix boundaries: End, dot, backslash, or forward slash
+        # This ensures 'microsoft.com' matches 'microsoft.com' but not 'notmicrosoft.com'
+        # and 'co' matches 'co.uk' but not 'google.com'
+        return f"(?:^|\\.|\\\\|/){core_regex}(?:\\.|\\\\|/|$)"
 
     def matches(self, domain: str) -> bool:
         if not domain: return False
