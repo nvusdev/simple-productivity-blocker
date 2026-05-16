@@ -25,6 +25,13 @@ from security import ADBLOCK_LISTS, CustomListManager
 from core.config_manager import load_config
 from core.scheduler import is_active, is_day_active
 
+# SYSTEM SAFETY EXCLUSIONS - Absolute bypass for core OS processes
+SYSTEM_SAFETY_EXCLUSIONS = {
+    "explorer.exe", "taskmgr.exe", "services.exe", "lsass.exe", "csrss.exe",
+    "wininit.exe", "winlogon.exe", "spoolsv.exe", "svchost.exe", "notepad.exe",
+    "python.exe", "SimpleProductivityBlocker.exe", "SPB_Daemon.exe", "spb_installer.exe"
+}
+
 def _harden_runtime_paths():
     if not getattr(sys, "frozen", False):
         return
@@ -213,6 +220,10 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
         # 3. Robust App/File Matching: If a base filename is in cloud_list, allow it
         basename = os.path.basename(val).lower()
         if basename in {p.lower() for p in cloud_list}:
+            return True
+            
+        # 4. System Safety Exclusions: Hardcoded bypass for critical processes
+        if basename in SYSTEM_SAFETY_EXCLUSIONS:
             return True
 
         return False
