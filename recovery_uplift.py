@@ -24,36 +24,6 @@ def terminate_spb_processes():
         except: pass
     time.sleep(1)
 
-def kill_locking_processes(filepath):
-    """Finds and forcefully kills any process holding an open handle to the file."""
-    filepath = os.path.normcase(os.path.abspath(filepath))
-    killed_any = False
-    
-    # Core system processes that will cause psutil.open_files() to hang on Windows
-    # PID 0: System Idle Process, PID 4: System
-    skip_pids = {0, 4} 
-    skip_names = {'csrss.exe', 'smss.exe', 'services.exe', 'lsass.exe', 'wininit.exe', 'registry', 'memory compression'}
-
-    # Iterate through all running processes
-    for proc in psutil.process_iter(['pid', 'name']):
-        # Skip processes known to cause NtQueryObject hangs
-        if proc.info['pid'] in skip_pids or str(proc.info['name']).lower() in skip_names:
-            continue
-            
-        try:
-            # Note: access to open_files() requires admin rights, which this script already enforces
-            for item in proc.open_files():
-                if os.path.normcase(os.path.abspath(item.path)) == filepath:
-                    print(f"    [!] Terminating locking process: {proc.info['name']} (PID: {proc.info['pid']})")
-                    proc.kill()
-                    killed_any = True
-                    break # Process is dead, move to the next
-        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
-            pass
-            
-    if killed_any:
-        # Give the OS a moment to actually release the handles
-        time.sleep(1)
 
 def force_unlock(path):
     path = os.path.normpath(os.path.abspath(path))
@@ -63,10 +33,8 @@ def force_unlock(path):
 
     print(f"[*] Attempting to unlock: {path}")
     try:
-        # 0. AGGRESSIVE HANDLE RELEASE
-        print("    - Hunting for locking processes...")
-        kill_locking_processes(path)
-        
+        # Rely purely on icacls / takeown to strip permissions and overwrite the file.
+        # Aggressive handle-hunting via psutil is avoided to prevent kernel deadlocks.
         # 1. Take ownership (The Sledgehammer)
         # /f path, /a (give ownership to Administrators group)
         print("    - Taking ownership...")

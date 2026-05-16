@@ -490,15 +490,8 @@ class ProcessMonitor:
                         return True
             except: pass
 
-            if self.blocked_file_paths and (now - last_handle_check) >= 10.0:
-                if name_lower not in ("svchost.exe", "system", "idle", "searchindexer.exe"):
-                    try:
-                        for f in proc.open_files():
-                            f_norm = self._normalize_path(f.path)
-                            if f_norm in self.blocked_file_paths or self._is_in_blocked_folder(f_norm):
-                                self.logger.info(f"TERMINATING: {name_lower} (Accessing Blocked File/Folder: {f_norm})")
-                                return True
-                    except: pass
+            # Note: Vector 4 (aggressive termination on handle access) is disabled on Windows 
+            # to prevent kernel deadlocks caused by psutil.open_files().
             return False
         except: return False
 
