@@ -12,10 +12,10 @@ except ImportError:
     win32com = None
 import urllib.parse
 if os.name == 'nt':
-    import winreg
-    import msvcrt
     import subprocess
     import getpass
+    import win32file
+    import win32con
 
 class ProcessMonitor:
     def __init__(self):
@@ -144,10 +144,12 @@ class ProcessMonitor:
                 self.blocked_app_paths.add(path_norm)
         
         if self.is_active:
-            self._apply_disallow_run() # Vector 1: Registry
-            self._apply_file_locks()   # Vector 2: Handles
-            for path in old_paths - self.blocked_app_paths:
-                self._set_acl_lock(path, False)
+            # Vector 2: ACL
+            for path in self.blocked_app_paths:
+                self._set_acl_lock(path, True)
+            
+            # Vector 3: Exclusive Handle Lock
+            self._lock_files()
             for path in self.blocked_app_paths:
                 self._set_acl_lock(path, True) # Vector 3: ACLs
 
@@ -163,8 +165,6 @@ class ProcessMonitor:
             if base: self.blocked_file_names.add(base.lower())
             
         if self.is_active:
-            self._apply_disallow_run() # Vector 1: Registry
-            self._apply_file_locks()   # Vector 2: Handles
             for path in removed: self._set_acl_lock(path, False)
             for path in self.blocked_file_paths: self._set_acl_lock(path, True) # Vector 3: ACLs
 
@@ -176,7 +176,6 @@ class ProcessMonitor:
         self.blocked_folder_prefixes = [(r if r.endswith(os.path.sep) else r + os.path.sep) for r in self.blocked_folder_roots]
         
         if self.is_active:
-            # Note: Registry/Handles don't apply to folders directly, but we sync ACLs
             for path in removed: self._set_acl_lock(path, False)
             for root in self.blocked_folder_roots: self._set_acl_lock(root, True)
 
@@ -190,8 +189,7 @@ class ProcessMonitor:
         self.is_active = True
         self._stop_event.clear()
         
-        self._apply_disallow_run()
-        self._apply_file_locks()
+        self._lock_files()
         
         for path in self.blocked_app_paths:
             self._set_acl_lock(path, True)
@@ -221,9 +219,7 @@ class ProcessMonitor:
             
         self._watcher_thread = None
         self._acl_worker = None
-        
-        self._apply_disallow_run() # Clears Registry
-        self._clear_file_locks()
+        self._unlock_files()
         self._clear_all_acls()
         self.logger.info("ProcessMonitor stopped.")
 
@@ -350,10 +346,6 @@ class ProcessMonitor:
                     if lock: self._current_acl_paths.add(path)
                     elif path in self._current_acl_paths: self._current_acl_paths.remove(path)
                 return True
-
-            with self._acl_sync_lock:
-                if lock: self._current_acl_paths.add(path)
-                elif path in self._current_acl_paths: self._current_acl_paths.remove(path)
         except Exception as e:
             self.logger.error(f"ACL Exception for {path}: {e}")
             return False
@@ -371,62 +363,45 @@ class ProcessMonitor:
             self._apply_acl_internal(path, False)
         self._current_acl_paths.clear()
 
-    def _apply_disallow_run(self):
+    def _lock_files(self):
+        """Standardized Windows exclusive handle locking."""
         if os.name != 'nt': return
-        roots = [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]
-        for root in roots:
-            try:
-                policy_key = winreg.CreateKey(root, r"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer")
-                winreg.SetValueEx(policy_key, "DisallowRun", 0, winreg.REG_DWORD, 1 if self.blocked_app_names else 0)
-                list_key = winreg.CreateKey(policy_key, "DisallowRun")
-                try:
-                    while True:
-                        name, _, _ = winreg.EnumValue(list_key, 0)
-                        winreg.DeleteValue(list_key, name)
-                except OSError:
-                    pass
-
-                idx = 1
-                for app in self.blocked_app_names:
-                    if app.endswith(".exe"):
-                        winreg.SetValueEx(list_key, str(idx), 0, winreg.REG_SZ, app)
-                        idx += 1
-                winreg.CloseKey(list_key)
-                winreg.CloseKey(policy_key)
-            except Exception:
+        self._unlock_files()
+        
+        targets = set()
+        targets.update(self.blocked_file_paths)
+        targets.update(self.blocked_app_paths)
+        
+        for path in targets:
+            if not os.path.exists(path) or os.path.isdir(path): continue
+            
+            # SPB Self-Protection: prevent locking its own binaries
+            if "simpleproductivityblocker" in path.lower() or "spb_" in path.lower():
                 continue
+                
+            try:
+                # Open with no share mode (0) - this is an exclusive lock
+                handle = win32file.CreateFile(
+                    path,
+                    win32con.GENERIC_READ | win32con.GENERIC_WRITE,
+                    0, # 0 means exclusive lock, no sharing
+                    None,
+                    win32con.OPEN_EXISTING,
+                    win32con.FILE_ATTRIBUTE_NORMAL,
+                    None
+                )
+                self._locked_files.append(handle)
+                self.logger.info(f"EXCLUSIVE LOCK: {path}")
+            except Exception as e:
+                self.logger.debug(f"Handle Lock Failed for {path}: {e}")
 
-    def _clear_disallow_run(self):
+    def _unlock_files(self):
+        """Release all exclusive handles."""
         if os.name != 'nt': return
-        roots = [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]
-        for root in roots:
-            try:
-                policy_key = winreg.OpenKey(root, r"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer", 0, winreg.KEY_SET_VALUE)
-                winreg.SetValueEx(policy_key, "DisallowRun", 0, winreg.REG_DWORD, 0)
-                winreg.CloseKey(policy_key)
-            except Exception:
-                continue
-
-    def _apply_file_locks(self):
-        self._clear_file_locks()
-        if os.name != 'nt': return
-        for path in self.blocked_file_paths:
-            try:
-                if os.path.exists(path):
-                    f = open(path, "rb")
-                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
-                    self._locked_files.append(f)
-            except Exception: continue
-
-    def _clear_file_locks(self):
-        for f in self._locked_files:
-            try:
-                if os.name == 'nt':
-                    f.seek(0)
-                    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
-                f.close()
-            except Exception: pass
-        self._locked_files = []
+        for h in self._locked_files:
+            try: win32file.CloseHandle(h)
+            except: pass
+        self._locked_files.clear()
 
     def _check_shell_windows(self, shell):
         try:
