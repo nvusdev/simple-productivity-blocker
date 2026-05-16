@@ -134,6 +134,20 @@ RECOVERY_FILE = os.path.join(base_data, "recovery_history.json")
 # Security & Lists initialized in security.py
 clm = CustomListManager(base_data)
 
+NORMALIZED_FILTER_MAP = {
+    "ads_trackers": ["doubleclick.net", "googleadservices.com", "googlesyndication.com"],
+    "malware_annoyances": ["coinhive.com", "miner.com"],
+    "social_media": ["facebook.com", "instagram.com", "x.com", "twitter.com", "tiktok.com", "reddit.com", "discord.com"],
+    "entertainment": ["youtube.com", "netflix.com", "twitch.tv", "googlevideo.com"],
+    "shopping": ["amazon.com", "ebay.com", "walmart.com"],
+    "gaming": ["steampowered.com", "roblox.com", "epicgames.com"],
+    "ai_tech": ["chatgpt.com", "openai.com", "claude.ai"],
+    "piracy_illegal": ["thepiratebay.org", "1337x.to"],
+    "adult_content": ["pornhub.com", "xvideos.com"],
+    "gambling": ["stake.com", "bet365.com"],
+    "music_podcasts": ["spotify.com", "soundcloud.com"]
+}
+
 def _base(domain):
     return domain.strip().lower().removeprefix("www.")
 
@@ -153,6 +167,7 @@ class BlockingContext:
     """Structured container for computed blocking targets."""
     manual_domains: Set[str]
     filter_keywords: Set[str]
+    normalized_filter_domains: Set[str]
     cloud_allowlist: Set[str]
     cloud_path_keywords: List[str]
     filter_exceptions: Set[str]
@@ -247,15 +262,29 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
                     all_folders.add(p_norm)
 
         if ad_active:
-            for k in ["ads_trackers", "malware_annoyances", "social_media", "entertainment", "shopping", "gaming", "ai_tech", "piracy_illegal", "adult_content", "gambling"]:
+            for k in ["ads_trackers", "malware_annoyances", "social_media", "entertainment", "shopping", "gaming", "ai_tech", "piracy_illegal", "adult_content", "gambling", "music_podcasts"]:
                 if ad.get(k): 
                     for domain in ADBLOCK_LISTS.get(k, []):
                         if not is_cloud_allowed(domain):
                             tier2.append(domain)
 
+    # Compute normalized domains for fallback redundancy
+    norm_domains = set()
+    for _, gdata in config.get("groups", {}).items():
+        if not gdata.get("enabled", True): continue
+        ad = gdata.get("adblocker", {})
+        if not ad.get("enabled", False): continue
+        day_on = is_day_active(gdata.get("schedule", {}))
+        if not day_on: continue
+        
+        for k, domains in NORMALIZED_FILTER_MAP.items():
+            if ad.get(k):
+                norm_domains.update(domains)
+
     return BlockingContext(
         manual_domains=set(tier1),
         filter_keywords=set(tier2),
+        normalized_filter_domains=norm_domains,
         cloud_allowlist=cloud_list,
         cloud_path_keywords=cloud_kws,
         filter_exceptions=filter_exceptions,
@@ -289,23 +318,19 @@ def _pattern_matches(patterns: Set[str], domain: str) -> bool:
 
 def _resolve_hosts_fallback_domains(
     manual_domains: Set[str],
-    filter_keywords: Set[str],
+    normalized_filter_domains: Set[str],
     cloud_allowlist: Set[str],
-    filter_exceptions: Set[str],
 ) -> Set[str]:
-    """Approximate DNS proxy priority when falling back to static hosts entries."""
+    """ONLY returns manual_domains and the critical normalized redundancy set."""
     resolved: Set[str] = set()
 
     for domain in manual_domains:
         if not _pattern_matches(cloud_allowlist, domain):
             resolved.add(domain)
 
-    for domain in filter_keywords:
-        if _pattern_matches(cloud_allowlist, domain):
-            continue
-        if _pattern_matches(filter_exceptions, domain):
-            continue
-        resolved.add(domain)
+    for domain in normalized_filter_domains:
+        if not _pattern_matches(cloud_allowlist, domain):
+            resolved.add(domain)
 
     return resolved
 
@@ -480,7 +505,29 @@ class SubsystemOrchestrator:
             logger.debug(f"DNS redirect health check failed: {e}")
             return False
 
-    def sync_dns(self, manual_domains, filter_keywords, cloud_allowlist, filter_exceptions, first_run):
+    def _check_dns_recovery(self, manual_domains, normalized_filter_domains, cloud_allowlist, filter_exceptions):
+        """Asynchronous recovery check for Port 53."""
+        if self.using_dns_proxy:
+            return
+
+        # Simple non-destructive bind check
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.bind(('0.0.0.0', 53))
+            
+            logger.info("DNS Proxy Recovery: Port 53 is now available. Restarting DNS Subsystem...")
+            # Re-initialize DNS Server
+            self.sync_dns(manual_domains, set(), cloud_allowlist, filter_exceptions, False, normalized_filter_domains=normalized_filter_domains)
+            if self.using_dns_proxy:
+                logger.info("DNS Proxy Recovery SUCCESS: Subsystem active and hosts bloat cleared.")
+                self._update_health_signal("Active")
+        except socket.error:
+            # Port still occupied
+            pass
+        except Exception as e:
+            logger.debug(f"Recovery check error: {e}")
+
+    def sync_dns(self, manual_domains, filter_keywords, cloud_allowlist, filter_exceptions, first_run, normalized_filter_domains=None):
         want_domains = manual_domains.union(filter_keywords)
         if not want_domains:
             if self.dns_server:
@@ -516,26 +563,16 @@ class SubsystemOrchestrator:
             self.dns_server = None
             self.using_dns_proxy = False
         
-        # Determine Redundancy Set (Critical keywords that must be in hosts even with proxy)
-        redundancy_set = set()
-        critical_patterns = ["youtube", "discord", "googlevideo", "ytimg", "discordapp", "discord.gg", "spotify", "soundcloud"]
-        
-        for d in manual_domains:
-            d_low = d.lower()
-            if any(p in d_low for p in critical_patterns):
-                redundancy_set.add(d)
-        
-        # Also include a subset of filter keywords for redundancy if they are high-priority
-        for d in filter_keywords:
-            d_low = d.lower()
-            if any(p in d_low for p in critical_patterns):
-                 redundancy_set.add(d)
+        # Determine Redundancy Set (Critical domains kept in hosts even with proxy active)
+        # We merge manual domains with a subset of the normalized filter domains
+        redundancy_set = set(manual_domains)
+        if normalized_filter_domains:
+            redundancy_set.update(normalized_filter_domains)
 
         active_domains = _resolve_hosts_fallback_domains(
             manual_domains,
-            filter_keywords,
+            normalized_filter_domains if normalized_filter_domains is not None else set(),
             cloud_allowlist,
-            filter_exceptions,
         )
         
         # Pass redundancy_set to ensure core distractions are in hosts file
@@ -557,15 +594,25 @@ class SubsystemOrchestrator:
                 f.write(status)
         except: pass
 
-    def watchdog_dns(self, active_domains):
+    def watchdog_dns(self, manual_domains, normalized_filter_domains, cloud_allowlist, filter_exceptions):
         if not self.using_dns_proxy or not self.dns_server:
+            # Task 4: Attempt recovery if in fallback mode
+            self._check_dns_recovery(manual_domains, normalized_filter_domains, cloud_allowlist, filter_exceptions)
             return
+
         if self.dns_server.is_healthy() and self._dns_redirect_healthy():
             return
+
         logger.error("DNS watchdog detected an unhealthy proxy or adapter DNS drift. Restoring DNS and switching to hosts fallback.")
         self.dns_server.stop()
         self.dns_server = None
         self.using_dns_proxy = False
+        
+        active_domains = _resolve_hosts_fallback_domains(
+            manual_domains,
+            normalized_filter_domains,
+            cloud_allowlist
+        )
         sync_website_protection(list(active_domains), active=True, using_dns_proxy=False)
 
     def sync_processes(self, processes, files, folders, first_run):
@@ -645,7 +692,7 @@ class DaemonOrchestrator:
         if total_filter.union(ctx.manual_domains) != self.cur_domains or \
            ctx.filter_exceptions != self.cur_exceptions or \
            ctx.cloud_allowlist != self.cur_cloud or self.first_run:
-            self.subsystems.sync_dns(ctx.manual_domains, total_filter, ctx.cloud_allowlist, ctx.filter_exceptions, self.first_run)
+            self.subsystems.sync_dns(ctx.manual_domains, total_filter, ctx.cloud_allowlist, ctx.filter_exceptions, self.first_run, normalized_filter_domains=ctx.normalized_filter_domains)
             logger.info(f"DNS Subsystem Sync: {len(ctx.manual_domains)} manual, {len(total_filter)} filter domains. (DNS Proxy={self.subsystems.using_dns_proxy})")
 
         if ctx.processes != self.cur_apps or ctx.files != self.cur_files or ctx.folders != self.cur_folders or self.first_run:
@@ -658,6 +705,7 @@ class DaemonOrchestrator:
 
         self.cur_apps, self.cur_files, self.cur_folders = ctx.processes, ctx.files, ctx.folders
         self.cur_domains, self.cur_exceptions, self.cur_cloud = total_filter.union(ctx.manual_domains), ctx.filter_exceptions, ctx.cloud_allowlist
+        self.cur_normalized_filter_domains = ctx.normalized_filter_domains
         self.first_run = False
 
     def run(self):
@@ -666,7 +714,7 @@ class DaemonOrchestrator:
                 self.sync()
                 now = time.time()
                 if now - self.last_heartbeat >= 60.0:
-                    self.subsystems.watchdog_dns(self.cur_domains)
+                    self.subsystems.watchdog_dns(self.cur_domains, getattr(self, 'cur_normalized_filter_domains', set()), self.cur_cloud, self.cur_exceptions)
                     dns_status = "Active" if self.subsystems.using_dns_proxy else ("Fallback" if self.cur_domains else "None")
                     logger.info(f"Heartbeat: [Admin={is_admin()}] [Protection={'Active' if self.subsystems.pm and self.subsystems.pm.is_active else 'Off'}] [DNS={dns_status}]")
                     self.last_heartbeat = now
