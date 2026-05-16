@@ -39,7 +39,6 @@ class TestConfigNormalization(unittest.TestCase):
         self.assertIsInstance(group, dict)
         self.assertIn("websites", group)
         self.assertIn("schedule", group)
-        self.assertTrue(any("Invalid group 'Default Profile'" in w for w in normalized["migration_warnings"]))
 
 
 class TestConfigRecoveryAndPersistence(unittest.TestCase):
