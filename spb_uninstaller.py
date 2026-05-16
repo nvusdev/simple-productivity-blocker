@@ -7,7 +7,7 @@ import time
 import uuid
 from ctypes import wintypes
 
-from core.win32_utils import is_admin, get_program_files_path
+from core.win32_utils import is_admin, get_program_files_path, get_desktop_path
 
 SPB_BEGIN = "# SPB BEGIN"
 SPB_END = "# SPB END"
@@ -179,7 +179,7 @@ def remove_files():
         except Exception as e:
             print(f"Failed to remove config directory: {e}")
             
-    desktop = os.path.join(os.environ["USERPROFILE"], "Desktop")
+    desktop = get_desktop_path()
     shortcut_path = os.path.join(desktop, "Simple Productivity Blocker.lnk")
     if os.path.exists(shortcut_path):
         print("Removing desktop shortcut...")
