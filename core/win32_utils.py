@@ -55,3 +55,19 @@ def is_admin():
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
     except:
         return False
+
+def is_safe_mode():
+    """Check if the system is currently booted in Safe Mode."""
+    try:
+        # Check environment variable set by Windows Safe Mode
+        if os.environ.get("SAFEBOOT_OPTION"):
+            return True
+        # Check GetSystemMetrics(SM_CLEANBOOT = 67)
+        # 0 = Normal, 1 = Safe Mode, 2 = Safe Mode with Network
+        if os.name == "nt":
+            clean_boot = ctypes.windll.user32.GetSystemMetrics(67)
+            if clean_boot in [1, 2]:
+                return True
+    except Exception:
+        pass
+    return False
