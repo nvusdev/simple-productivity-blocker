@@ -16,23 +16,7 @@ foreach ($p in $procs) {
     Get-Process $p -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
-# Aggressive search for any process running from the build/dist directories or orphaned PyInstaller instances
-try {
-    $currentDir = (Get-Location).Path
-    $buildPath = Join-Path $currentDir "build"
-    $distPath = Join-Path $currentDir "dist"
-    
-    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { 
-        ($_.ExecutablePath -like "$buildPath*") -or 
-        ($_.ExecutablePath -like "$distPath*") -or
-        ($_.Name -eq "python.exe" -and $_.CommandLine -like "*PyInstaller*")
-    } | ForEach-Object {
-        Write-Host "Killing locking/orphaned process: $($_.Name) (PID: $($_.ProcessId))" -ForegroundColor Yellow
-        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
-    }
-} catch {
-    # Fallback if CimInstance is unavailable or restricted
-}
+# Standard process termination is sufficient and more stable on Windows than CIM-based hunting.
 
 # Wait for file handles to release with retries
 $maxRetries = 5
