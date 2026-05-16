@@ -208,7 +208,7 @@ def main():
             print("[!] ERROR: Silent installation requires an elevated terminal.")
             sys.exit(1)
         print("Requesting Administrator privileges...")
-        ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv[1:]), None, 1)
+        ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, subprocess.list2cmdline(sys.argv[1:]), None, 1)
         sys.exit()
 
     try:
