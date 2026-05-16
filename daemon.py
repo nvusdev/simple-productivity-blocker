@@ -627,8 +627,7 @@ class DaemonOrchestrator:
         self.subsystems = SubsystemOrchestrator()
         
         self.cur_apps, self.cur_files, self.cur_folders = set(), set(), set()
-        self.cur_domains, self.cur_manual_domains = set(), set()
-        self.cur_exceptions, self.cur_cloud = set(), set()
+        self.cur_domains, self.cur_manual_domains, self.cur_exceptions, self.cur_cloud = set(), set(), set(), set()
         self.want_custom = set()
         self._last_custom_urls = set()
         self._is_fetching = False
