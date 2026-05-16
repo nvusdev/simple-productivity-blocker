@@ -627,7 +627,7 @@ class DaemonOrchestrator:
         self.subsystems = SubsystemOrchestrator()
         
         self.cur_apps, self.cur_files, self.cur_folders = set(), set(), set()
-        self.cur_domains, self.cur_exceptions, self.cur_cloud = set(), set(), set()
+        self.cur_domains, self.cur_manual_domains, self.cur_exceptions, self.cur_cloud = set(), set(), set(), set()
         self.want_custom = set()
         self._last_custom_urls = set()
         self._is_fetching = False
@@ -705,6 +705,7 @@ class DaemonOrchestrator:
 
         self.cur_apps, self.cur_files, self.cur_folders = ctx.processes, ctx.files, ctx.folders
         self.cur_domains, self.cur_exceptions, self.cur_cloud = total_filter.union(ctx.manual_domains), ctx.filter_exceptions, ctx.cloud_allowlist
+        self.cur_manual_domains = ctx.manual_domains
         self.cur_normalized_filter_domains = ctx.normalized_filter_domains
         self.first_run = False
 
@@ -714,7 +715,7 @@ class DaemonOrchestrator:
                 self.sync()
                 now = time.time()
                 if now - self.last_heartbeat >= 60.0:
-                    self.subsystems.watchdog_dns(self.cur_domains, getattr(self, 'cur_normalized_filter_domains', set()), self.cur_cloud, self.cur_exceptions)
+                    self.subsystems.watchdog_dns(self.cur_manual_domains, getattr(self, 'cur_normalized_filter_domains', set()), self.cur_cloud, self.cur_exceptions)
                     dns_status = "Active" if self.subsystems.using_dns_proxy else ("Fallback" if self.cur_domains else "None")
                     logger.info(f"Heartbeat: [Admin={is_admin()}] [Protection={'Active' if self.subsystems.pm and self.subsystems.pm.is_active else 'Off'}] [DNS={dns_status}]")
                     self.last_heartbeat = now
