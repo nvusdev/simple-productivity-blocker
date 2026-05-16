@@ -56,7 +56,6 @@ except Exception as e:
 def _ensure_state_dir(path: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
-def _run_powershell_json(script: str):
 def audit_dns_safety(state_path=None):
     return handler.audit_dns_safety(state_path)
 
@@ -147,7 +146,6 @@ class DNSProxyServer:
         self._sock = None
         self._sock6 = None
         self._state_path = state_path
-        self._dns_state = None
         self._threads = []
         self._executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="DNSHandler")
 
@@ -195,8 +193,6 @@ class DNSProxyServer:
             # Direct system DNS to local proxy only for the real system DNS port.
             # Tests and high-port diagnostics must never rewrite real adapters.
             if os.name == 'nt' and self.port == 53:
-                restore_dns_state(state_path=self._state_path)
-                self._dns_state = snapshot_dns_state(state_path=self._state_path)
                 res = self._redirect_system_dns(True)
                 if not res:
                     logger.error("DNS Proxy started but failed to redirect system DNS. Protection is BYPASSED.")
