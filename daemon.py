@@ -515,7 +515,7 @@ class SubsystemOrchestrator:
     def sync_processes(self, processes, files, folders, first_run):
         if self.pm:
             app_paths = {a for a in processes if os.path.sep in a or (os.name == 'nt' and '/' in a)}
-            _save_history(files.union(folders).union(app_paths).union({HOSTS_FILE}))
+            _save_history(files.union(folders).union(app_paths))
             self.pm.synchronize_all(list(processes), list(files), list(folders))
 
 class DaemonOrchestrator:
@@ -567,7 +567,7 @@ class DaemonOrchestrator:
         
         if self.first_run:
             app_paths = {os.path.normpath(a) for a in ctx.processes if os.path.sep in a or (os.name == 'nt' and '/' in a)}
-            initial_targets = ctx.files.union(ctx.folders).union(app_paths).union({HOSTS_FILE})
+            initial_targets = ctx.files.union(ctx.folders).union(app_paths)
             if self.subsystems.pm:
                 threading.Thread(target=_boot_sweep_task, args=(initial_targets, self.subsystems.pm), daemon=True).start()
 
@@ -642,7 +642,7 @@ if __name__ == "__main__":
         else:
             # Re-launch with admin rights using safe quoting
             import subprocess
-            params = subprocess.list2cmdline(sys.argv)
+            params = subprocess.list2cmdline(sys.argv[1:])
             try:
                 # ShellExecuteW returns > 32 on success
                 res = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
