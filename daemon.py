@@ -40,7 +40,10 @@ def _harden_runtime_paths():
 _harden_runtime_paths()
 
 # Define internal fallbacks with explicit defaults to prevent startup NameErrors
-_INTERNAL_HOSTS_FILE = r"C:\Windows\System32\drivers\etc\hosts" if os.name == 'nt' else "/etc/hosts"
+from core.platform_handler import get_platform_handler
+handler = get_platform_handler()
+
+_INTERNAL_HOSTS_FILE = handler.get_hosts_path()
 
 # Placeholder functions that will be replaced by actual implementations if imports succeed
 def flush_dns(): pass
@@ -81,10 +84,8 @@ except ImportError as e:
 # Constants
 if "SPB_DATA_DIR" in os.environ:
     base_data = os.environ["SPB_DATA_DIR"]
-elif os.name == "nt":
-    base_data = os.path.join(os.getenv("PROGRAMDATA", r"C:\ProgramData"), "SimpleProductivityBlocker")
 else:
-    base_data = os.path.expanduser("~/.config/SimpleProductivityBlocker")
+    base_data = handler.get_data_dir()
 os.makedirs(base_data, exist_ok=True)
 
 log_file = os.path.join(base_data, "daemon.log")
@@ -365,8 +366,8 @@ def _boot_sweep_task(initial_targets: set[str], pm_instance):
 
 def is_admin():
     if os.name == "nt":
-        try: return ctypes.windll.shell32.IsUserAnAdmin() != 0
-        except: return False
+        from core.win32_utils import is_admin as win_is_admin
+        return win_is_admin()
     return os.geteuid() == 0
 
 def kill_other_instances():
