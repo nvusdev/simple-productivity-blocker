@@ -59,40 +59,62 @@ def force_unlock(path):
         print(f"[!] Error unlocking {path}: {e}")
         return False
 
+def fallback_dns_reset():
+    print("[*] Running DNS fallback loopback check...")
+    try:
+        # Scan for adapters currently pointing to a local loopback address (e.g. 127.0.0.1 or ::1) and explicitly clear them (DHCP)
+        ps = (
+            "Get-DnsClientServerAddress | "
+            "Where-Object { $_.ServerAddresses -contains '127.0.0.1' -or $_.ServerAddresses -contains '::1' } | "
+            "ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.InterfaceIndex -ResetServerAddresses }"
+        )
+        run_system_command(["powershell", "-NoProfile", "-Command", ps], check=False)
+        print("[+] DNS fallback loopback reset complete.")
+        return True
+    except Exception as fallback_err:
+        print(f"[!] DNS fallback loopback reset failed: {fallback_err}")
+        return False
+
 def restore_dns_state(config_dir):
     state_path = os.path.join(config_dir, "dns_state.json")
-    if not os.path.exists(state_path):
-        print("[-] No SPB DNS state file found.")
-        return False
-    print("[*] Restoring adapter DNS state...")
-    try:
-        with open(state_path, "r", encoding="utf-8") as f:
-            state = json.load(f)
-        eligible = set(state.get("eligible", []))
-        restored = 0
-        for adapter in state.get("adapters", []):
-            idx = adapter.get("index")
-            if idx not in eligible:
-                continue
-            servers = list(adapter.get("ipv4", []) or []) + list(adapter.get("ipv6", []) or [])
-            if servers:
-                quoted = ", ".join("'" + str(s).replace("'", "''") + "'" for s in servers)
-                ps = f"Set-DnsClientServerAddress -InterfaceIndex {int(idx)} -ServerAddresses @({quoted})"
-            else:
-                ps = f"Set-DnsClientServerAddress -InterfaceIndex {int(idx)} -ResetServerAddresses"
-            run_system_command(["powershell", "-NoProfile", "-Command", ps], check=False)
-            restored += 1
+    json_restored = False
+    
+    if os.path.exists(state_path):
+        print("[*] Restoring adapter DNS state...")
         try:
-            os.remove(state_path)
-        except:
-            pass
-        print(f"[+] Restored DNS state for {restored} adapter(s).")
-        return True
-    except Exception as e:
-        print(f"[!] Critical error during DNS restoration: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+            with open(state_path, "r", encoding="utf-8") as f:
+                state = json.load(f)
+            eligible = set(state.get("eligible", []))
+            restored = 0
+            for adapter in state.get("adapters", []):
+                idx = adapter.get("index")
+                if idx not in eligible:
+                    continue
+                servers = list(adapter.get("ipv4", []) or []) + list(adapter.get("ipv6", []) or [])
+                if servers:
+                    quoted = ", ".join("'" + str(s).replace("'", "''") + "'" for s in servers)
+                    ps = f"Set-DnsClientServerAddress -InterfaceIndex {int(idx)} -ServerAddresses @({quoted})"
+                else:
+                    ps = f"Set-DnsClientServerAddress -InterfaceIndex {int(idx)} -ResetServerAddresses"
+                run_system_command(["powershell", "-NoProfile", "-Command", ps], check=False)
+                restored += 1
+            try:
+                os.remove(state_path)
+            except:
+                pass
+            print(f"[+] Restored DNS state for {restored} adapter(s).")
+            json_restored = True
+        except Exception as e:
+            print(f"[!] Error during DNS restoration: {e}")
+            import traceback
+            traceback.print_exc()
+
+    if not json_restored:
+        print("[-] dns_state.json missing or restore failed. Reverting local loopback DNS to DHCP fallback...")
+        fallback_dns_reset()
+        
+    return json_restored
+
 
 def clear_browser_doh_policies():
     print("[*] Clearing SPB browser DoH policies...")
@@ -194,7 +216,7 @@ def _get_history(config_dir: str, filename: str) -> set:
 def run_auto_recovery():
     """Runs a fully automated, silent recovery to lift all locks and clean hosts."""
     print("[!] Safe Mode detected! Running automated emergency recovery...")
-    config_dir = os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
+    config_dir = os.environ.get("SPB_DATA_DIR") or os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
     paths_to_unlock = set()
     try:
         terminate_spb_processes()
@@ -253,7 +275,7 @@ def main():
         sys.exit()
 
     # Try to find recovery history
-    config_dir = os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
+    config_dir = os.environ.get("SPB_DATA_DIR") or os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
     paths_to_unlock = set()
     terminate_spb_processes()
     restore_dns_state(config_dir)
@@ -286,14 +308,20 @@ def main():
         print("Leave blank to exit.")
         
         while True:
-            manual_path = input("\nEnter path to force-unlock: ").strip().strip('"')
+            try:
+                manual_path = input("\nEnter path to force-unlock: ").strip().strip('"')
+            except EOFError:
+                break
             if not manual_path:
                 break
             force_unlock(manual_path)
 
     print("\n[*] Recovery process complete.")
     if not is_silent:
-        input("Press Enter to exit...")
+        try:
+            input("Press Enter to exit...")
+        except EOFError:
+            pass
 
 if __name__ == "__main__":
     main()
