@@ -37,5 +37,10 @@ class TestPersistenceRecovery(unittest.TestCase):
         except Exception as e:
             self.fail(f"terminate_spb_processes crashed: {e}")
 
+    def test_is_safe_mode(self):
+        from core.win32_utils import is_safe_mode
+        status = is_safe_mode()
+        self.assertIsInstance(status, bool)
+
 if __name__ == "__main__":
     unittest.main()
