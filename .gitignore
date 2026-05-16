@@ -62,6 +62,7 @@ tasks/
 temp_*/
 test_venv/
 PERFORMANCE_LOGS.md
+newlogo.png
 
 # Persistence & State
 dns_cache.json
@@ -73,7 +74,6 @@ last_run.state
 
 # Sandbox and Agent Clutter
 .agent/
-.internal/
 .code-review-graph/
 .kluster/
 sandbox/

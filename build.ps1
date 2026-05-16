@@ -11,15 +11,44 @@ if ($isAdmin) {
 
 # Clean previous builds
 Write-Host "Cleaning previous build artifacts and terminating running instances..."
-Get-Process "SimpleProductivityBlocker" -ErrorAction SilentlyContinue | Stop-Process -Force
-Get-Process "SPB_Daemon" -ErrorAction SilentlyContinue | Stop-Process -Force
-Start-Sleep -Seconds 2 # Wait for file handles to release
-
-if (Test-Path "dist") { 
-    Remove-Item -Recurse -Force "dist" -ErrorAction SilentlyContinue
+$procs = @("SimpleProductivityBlocker", "SPB_Daemon", "spb_installer", "spb_uninstaller", "recovery_uplift")
+foreach ($p in $procs) {
+    Get-Process $p -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
-if (Test-Path "build") { 
-    Remove-Item -Recurse -Force "build" -ErrorAction SilentlyContinue
+
+# Wait for file handles to release with retries
+$maxRetries = 5
+$retryCount = 0
+$cleaned = $false
+
+while (-not $cleaned -and $retryCount -lt $maxRetries) {
+    try {
+        if (Test-Path "dist") { 
+            Remove-Item -Recurse -Force "dist" -ErrorAction Stop
+        }
+        if (Test-Path "build") { 
+            Remove-Item -Recurse -Force "build" -ErrorAction Stop
+        }
+        $cleaned = $true
+    } catch {
+        $retryCount++
+        if ($retryCount -eq $maxRetries) {
+            # Shadow Rename Fallback
+            Write-Host "Aggressive cleanup failed. Attempting shadow rename..." -ForegroundColor Yellow
+            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            if (Test-Path "dist") { Rename-Item "dist" "dist_old_$timestamp" -ErrorAction SilentlyContinue }
+            if (Test-Path "build") { Rename-Item "build" "build_old_$timestamp" -ErrorAction SilentlyContinue }
+            $cleaned = $true 
+        } else {
+            Write-Host "Wait... Files are still locked (Attempt $retryCount/$maxRetries). Retrying in 2 seconds..." -ForegroundColor Cyan
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
+if (-not $cleaned) {
+    Write-Host "Error: Could not clean build directory. Please check if files are open in another program." -ForegroundColor Red
+    exit 1
 }
 
 # Prepare icon from newlogo.png
@@ -103,6 +132,8 @@ python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempI
     --hidden-import=win32file `
     --hidden-import=win32con `
     --hidden-import=win32event `
+    --hidden-import=win32security `
+    --hidden-import=ntsecuritycon `
     --name "spb_installer" spb_installer.py
 
 # Build uninstaller (Logic only, NO payload)
@@ -117,35 +148,48 @@ python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempI
     --hidden-import=win32event `
     --name "spb_uninstaller" spb_uninstaller.py
 
-# Build emergency recovery helper (Logic only, NO payload)
+# Build emergency recovery helper
 Write-Host "Building recovery_uplift.exe..."
 python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
+    --hidden-import=pywintypes `
+    --hidden-import=pythoncom `
+    --hidden-import=win32com `
+    --hidden-import=win32api `
+    --hidden-import=win32file `
+    --hidden-import=win32con `
+    --hidden-import=win32event `
     --name "recovery_uplift" recovery_uplift.py
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Error: Failed to build recovery_uplift.exe." -ForegroundColor Red
+    exit 1
+}
 
 # Final Assembly: Copy installer and uninstaller into the package directory
 Write-Host "Finalizing distribution package..."
-Copy-Item "dist\spb_installer.exe" -Destination "$pkgDir\"
-Copy-Item "dist\spb_uninstaller.exe" -Destination "$pkgDir\"
-Copy-Item "dist\recovery_uplift.exe" -Destination "$pkgDir\"
+Copy-Item "dist\spb_installer.exe" -Destination "$pkgDir\" -Force
+Copy-Item "dist\spb_uninstaller.exe" -Destination "$pkgDir\" -Force
+Copy-Item "dist\recovery_uplift.exe" -Destination "$pkgDir\" -Force
 
-# Explicitly bundle pywin32 system DLLs dynamically to ensure Folder Monitoring works
+# Explicitly bundle pywin32 system DLLs
 Write-Host "Bundling pywin32 system components..."
-$pywin32SysDir = python -c "import os, win32api; print(os.path.dirname(win32api.__file__))"
-if (Test-Path $pywin32SysDir) {
-    # We need the DLLs from the pywin32_system32 folder which is usually adjacent to win32
-    $baseSite = Split-Path $pywin32SysDir -Parent
-    $dllDir = Join-Path $baseSite "pywin32_system32"
-    if (Test-Path $dllDir) {
-        Copy-Item "$dllDir\*.dll" -Destination "$pkgDir\"
-        Write-Host "COM Drivers (pywin32) bundled successfully from $dllDir."
-    } else {
-        Write-Host "Warning: Could not find pywin32_system32. Folder monitoring may be limited." -ForegroundColor Yellow
+try {
+    $pywin32SysDir = python -c "import os, win32api; print(os.path.dirname(win32api.__file__))"
+    if (Test-Path $pywin32SysDir) {
+        $baseSite = Split-Path $pywin32SysDir -Parent
+        $dllDir = Join-Path $baseSite "pywin32_system32"
+        if (Test-Path $dllDir) {
+            Copy-Item "$dllDir\*.dll" -Destination "$pkgDir\" -Force
+            Write-Host "COM Drivers (pywin32) bundled successfully."
+        }
     }
+} catch {
+    Write-Host "Warning: Optional pywin32 bundling skipped." -ForegroundColor Yellow
 }
 
 # Copy Documentation
 if (Test-Path "CHANGELOG.md") {
-    Copy-Item "CHANGELOG.md" -Destination "$pkgDir\"
+    Copy-Item "CHANGELOG.md" -Destination "$pkgDir\" -Force
 }
 
 Write-Host "Build complete! Your deployable package is in dist\SimpleProductivityBlocker"
