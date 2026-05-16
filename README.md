@@ -4,7 +4,6 @@
 ![Platform](https://img.shields.io/badge/platform-windows-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Status](https://img.shields.io/badge/status-stable-success.svg)
-![Status](https://img.shields.io/badge/status-stable-success.svg)
 
 A system-level focus and time management suite for Windows.
 
