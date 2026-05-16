@@ -293,6 +293,9 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
             if ad.get(k):
                 norm_domains.update(domains)
 
+    # Filter exceptions out of content filter redundancy domains (Exceptions > Content Filter)
+    norm_domains = {d for d in norm_domains if not _is_excepted(d, filter_exceptions)}
+
     return BlockingContext(
         manual_domains=set(tier1),
         filter_keywords=set(tier2),
