@@ -613,8 +613,6 @@ class DaemonOrchestrator:
                     self.subsystems.watchdog_dns(self.cur_domains)
                     dns_status = "Active" if self.subsystems.using_dns_proxy else ("Fallback" if self.cur_domains else "None")
                     logger.info(f"Heartbeat: [Admin={is_admin()}] [Protection={'Active' if self.subsystems.pm and self.subsystems.pm.is_active else 'Off'}] [DNS={dns_status}]")
-                    if os.name == 'nt' and self.subsystems.pm and self.subsystems.pm.is_active:
-                        self.subsystems.pm.synchronize_registry()
                     self.last_heartbeat = now
                 
                 poll_sleep = {"Passive": 5, "Balanced": 2, "Strict": 0.5}.get(self.cfg.cache.get("settings", {}).get("performance_mode", "Balanced"), 2)
