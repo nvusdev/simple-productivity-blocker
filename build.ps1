@@ -161,22 +161,6 @@ Copy-Item "build\out_app\SimpleProductivityBlocker\*" -Destination "$pkgDir\" -R
 # Copy SPB_Daemon
 Copy-Item "build\out_daemon\SPB_Daemon.exe" -Destination "$pkgDir\" -Force
 
-# Build installer (Bundles the assembled app as payload)
-Write-Host "Building spb_installer.exe..."
-python -m PyInstaller --clean --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
-    --distpath "build\out_installer" `
-    --add-data "$pkgDir/*;." `
-    --hidden-import=pywintypes `
-    --hidden-import=pythoncom `
-    --hidden-import=win32com `
-    --hidden-import=win32api `
-    --hidden-import=win32file `
-    --hidden-import=win32con `
-    --hidden-import=win32event `
-    --hidden-import=win32security `
-    --hidden-import=ntsecuritycon `
-    --name "spb_installer" spb_installer.py
-
 # Build uninstaller (Isolated to build\out_uninstaller)
 Write-Host "Building spb_uninstaller.exe..."
 python -m PyInstaller --clean --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
@@ -204,20 +188,38 @@ python -m PyInstaller --clean --noconfirm --onefile --console --uac-admin --icon
     --name "recovery_uplift" recovery_uplift.py
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Error: Failed to build recovery_uplift.exe." -ForegroundColor Red
+    Write-Host "Error: Failed to build auxiliary tools." -ForegroundColor Red
     exit 1
 }
 
-# Final Assembly: Collect all binaries into the final dist and package directories
+# Copy auxiliary tools to package directory before building installer
+Copy-Item "build\out_uninstaller\spb_uninstaller.exe" -Destination "$pkgDir\" -Force
+Copy-Item "build\out_recovery\recovery_uplift.exe" -Destination "$pkgDir\" -Force
+
+# Build installer (Bundles the assembled app as payload)
+Write-Host "Building spb_installer.exe..."
+python -m PyInstaller --clean --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
+    --distpath "build\out_installer" `
+    --add-data "$pkgDir/*;." `
+    --hidden-import=pywintypes `
+    --hidden-import=pythoncom `
+    --hidden-import=win32com `
+    --hidden-import=win32api `
+    --hidden-import=win32file `
+    --hidden-import=win32con `
+    --hidden-import=win32event `
+    --hidden-import=win32security `
+    --hidden-import=ntsecuritycon `
+    --name "spb_installer" spb_installer.py
+
+# Final Assembly: Collect all binaries into the final dist directory
 Write-Host "Finalizing distribution package..."
 Copy-Item "build\out_installer\spb_installer.exe" -Destination "dist\" -Force
 Copy-Item "build\out_uninstaller\spb_uninstaller.exe" -Destination "dist\" -Force
 Copy-Item "build\out_recovery\recovery_uplift.exe" -Destination "dist\" -Force
 
-# Also copy into the package directory for bundling
+# Ensure the installer is also inside the pkgDir for users who zip the directory
 Copy-Item "build\out_installer\spb_installer.exe" -Destination "$pkgDir\" -Force
-Copy-Item "build\out_uninstaller\spb_uninstaller.exe" -Destination "$pkgDir\" -Force
-Copy-Item "build\out_recovery\recovery_uplift.exe" -Destination "$pkgDir\" -Force
 
 # Explicitly bundle pywin32 system DLLs
 Write-Host "Bundling pywin32 system components..."
