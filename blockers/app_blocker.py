@@ -585,4 +585,5 @@ class ProcessMonitor:
         # Re-sync internal lists
         self.blocked_file_paths = {p for p in self.blocked_file_paths if p not in paths}
         self.blocked_folder_roots = [p for p in self.blocked_folder_roots if p not in paths]
+        self.blocked_folder_prefixes = [(r if r.endswith(os.path.sep) else r + os.path.sep) for r in self.blocked_folder_roots]
         self._lock_files() # Refresh handle locks
