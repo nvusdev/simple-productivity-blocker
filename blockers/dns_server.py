@@ -76,8 +76,7 @@ class DomainMatcher:
                 
             if "*" not in p and "." in p:
                 self.exact_set.add(p)
-                # Still add to regex for subdomain matching if it's a base domain
-                regex_parts.append(self.compile_pattern_str(p))
+                # DO NOT add to regex_parts. This ensures "youtube.com" does NOT match "www.youtube.com"
             else:
                 regex_parts.append(self.compile_pattern_str(p))
         
@@ -114,9 +113,8 @@ class DomainMatcher:
         
         # Anchor to boundaries (Start, dot, backslash, or forward slash)
         # Suffix boundaries: End, dot, backslash, or forward slash
-        # This ensures 'microsoft.com' matches 'microsoft.com' but not 'notmicrosoft.com'
-        # and 'co' matches 'co.uk' but not 'google.com'
-        return f"(?:^|\\.|\\\\|/){core_regex}(?:\\.|\\\\|/|$)"
+        # This ensures 'youtube' matches 'youtube.com' but not 'myyoutube.com'
+        return rf"(?:^|\.|\\|/){core_regex}(?:\.|\\|/|$)"
 
     def matches(self, domain: str) -> bool:
         if not domain: return False
