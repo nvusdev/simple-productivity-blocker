@@ -17,6 +17,9 @@ if os.name == 'nt':
     import win32file
     import win32con
 
+# Absolute safety guardrails for essential Windows processes.
+# These names must never be blocked, terminated, or locked by SPB enforcement code.
+# Modifying this set can cause system instability or loss of administrative recovery paths.
 SYSTEM_SAFETY_EXCLUSIONS = {
     "explorer.exe", "taskmgr.exe", "services.exe", "lsass.exe", "csrss.exe",
     "wininit.exe", "winlogon.exe", "spoolsv.exe", "svchost.exe",
