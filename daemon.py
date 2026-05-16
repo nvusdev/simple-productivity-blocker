@@ -45,16 +45,16 @@ handler = get_platform_handler()
 
 _INTERNAL_HOSTS_FILE = handler.get_hosts_path()
 
-# Placeholder functions that will be replaced by actual implementations if imports succeed
-def flush_dns(): pass
-def apply_blocks(*a, **k): pass
-def remove_blocks(*a, **k): pass
-def apply_browser_policies(*a, **k): pass
-def sync_website_protection(*a, **k): pass
-def detect_system_dns(): return []
+# Global references for subsystems
 ProcessMonitor = None
 DNSProxyServer = None
-HOSTS_FILE = _INTERNAL_HOSTS_FILE # Default global
+HOSTS_FILE = _INTERNAL_HOSTS_FILE
+apply_blocks = None
+remove_blocks = None
+apply_browser_policies = None
+sync_website_protection = None
+flush_dns = None
+detect_system_dns = None
 
 try:
     from blockers.app_blocker import ProcessMonitor
@@ -77,9 +77,26 @@ try:
     flush_dns = _flush_dns
     detect_system_dns = _detect_dns
 except ImportError as e:
+    # --- FAIL-CLOSED HARDENING ---
     logger = logging.getLogger("SPB_Daemon")
-    logger.error(f"CRITICAL: Background modules failed to load. Basic protection is inactive: {e}")
-    # orchestrator will use the no-op fallbacks defined above
+    logger.critical(f"FATAL: Protection modules failed to load: {e}")
+    
+    # Signal failure to health monitor
+    try:
+        base_data = handler.get_data_dir()
+        os.makedirs(base_data, exist_ok=True)
+        with open(os.path.join(base_data, "dns_health.signal"), "w") as f:
+            f.write("CRITICAL ERROR")
+    except: pass
+    
+    # Native Notification
+    if os.name == 'nt':
+        try:
+            msg = f"Simple Productivity Blocker cannot start because a critical protection module is missing or corrupted.\n\nError: {e}\n\nPlease reinstall the application."
+            ctypes.windll.user32.MessageBoxW(0, msg, "SPB - Critical Startup Error", 0x10) # 0x10 = MB_ICONERROR
+        except: pass
+    
+    sys.exit(1)
 
 # Constants
 if "SPB_DATA_DIR" in os.environ:
