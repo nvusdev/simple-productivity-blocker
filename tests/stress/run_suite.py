@@ -54,7 +54,7 @@ def main():
             path = os.path.join(base_dir, name)
             if not run_test(path, args):
                 all_passed = False
-                break
+                # continue to next test
     finally:
         print("\n" + "="*42)
         print("   INITIATING AUTOMATED RECOVERY UPLIFT   ")
