@@ -116,7 +116,8 @@ def restore_hosts():
             run_system_command(['icacls', hosts_path, '/grant', 'Administrators:(F)', '/c', '/q'], check=False)
             # 3. Reset inheritance and remove all deny rules
             run_system_command(['icacls', hosts_path, '/reset', '/c', '/q'], check=False)
-        except: pass
+        except Exception as e:
+            print(f"  [!] Warning: Failed to force-clear hosts ACLs during restoration: {e}")
 
     if os.path.exists(backup_path):
         try:
@@ -161,8 +162,8 @@ def restore_dns_state():
             run_system_command(["powershell", "-NoProfile", "-Command", ps], check=False)
         try:
             os.remove(state_path)
-        except:
-            pass
+        except Exception as e:
+            print(f"  [!] Note: Could not remove DNS state file: {e}")
         print("Adapter DNS state restored.")
     except Exception as e:
         print(f"Failed to restore adapter DNS state: {e}")
@@ -203,8 +204,8 @@ def remove_files():
         print("Removing desktop shortcut...")
         try:
             os.remove(shortcut_path)
-        except:
-            pass
+        except Exception as e:
+            print(f"  [!] Note: Could not remove desktop shortcut: {e}")
 
 def cleanup_acls():
     """Removes all NTFS ACL blocks before uninstallation to prevent permanent lockouts."""
@@ -224,7 +225,8 @@ def cleanup_acls():
                     data = json.load(f)
                     if isinstance(data, list):
                         paths.update(data)
-            except: pass
+            except Exception as e:
+                print(f"  [!] Warning: Failed to parse recovery history file '{fname}': {e}")
 
     # Always add the hosts file to the cleanup set
     hosts_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'drivers', 'etc', 'hosts')
@@ -293,8 +295,10 @@ def main():
         
         # 1. Verify Task is gone
         task_check = run_system_command(['schtasks', '/query', '/tn', 'SPB_Daemon'], check=False)
-        if task_check.returncode == 0:
+        if task_check is not None and task_check.returncode == 0:
             errors.append("Scheduled Task 'SPB_Daemon' still exists.")
+        elif task_check is None:
+            errors.append("Failed to query scheduled task state (Command timed out or failed).")
             
         # 2. Verify Hosts is clean
         hosts_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'drivers', 'etc', 'hosts')
@@ -317,8 +321,8 @@ def main():
     finally:
         try:
             pythoncom.CoUninitialize()
-        except:
-            pass
+        except Exception:
+            pass # CoUninitialize failure is non-critical at script exit
 
     if not is_silent:
         input("\nPress Enter to exit...")
