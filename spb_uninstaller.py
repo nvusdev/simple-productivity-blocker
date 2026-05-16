@@ -8,6 +8,7 @@ import uuid
 from ctypes import wintypes
 
 from core.win32_utils import is_admin, get_program_files_path, get_desktop_path
+from core.subprocess_utils import run_system_command
 
 SPB_BEGIN = "# SPB BEGIN"
 SPB_END = "# SPB END"
@@ -43,26 +44,43 @@ def kill_processes():
     procs_to_kill = ["SimpleProductivityBlocker.exe", "SPB_Daemon.exe", "python.exe", "pythonw.exe"]
     try:
         import psutil
-        for proc in psutil.process_iter(['name', 'cmdline']):
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
             try:
                 name = proc.info['name']
                 cmd = proc.info['cmdline'] or []
+                pid = proc.info['pid']
+                
+                should_kill = False
                 if name in ["python.exe", "pythonw.exe"]:
                     if any("SimpleProductivityBlocker" in s or "main.py" in s or "daemon.py" in s for s in cmd):
-                        proc.kill()
+                        should_kill = True
                 elif name in ["SimpleProductivityBlocker.exe", "SPB_Daemon.exe"]:
+                    should_kill = True
+                
+                if should_kill:
+                    print(f"  - Killing {name} (PID: {pid})...")
                     proc.kill()
-            except:
+                    # Verify death
+                    try:
+                        proc.wait(timeout=3)
+                    except psutil.TimeoutExpired:
+                        print(f"  [!] WARNING: Process {pid} did not exit gracefully. Force killing...")
+                        proc.kill() # Second attempt or aggressive terminate
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-    except:
-        pass
+            except Exception as e:
+                print(f"  [!] Error killing process: {e}")
+    except ImportError:
+        print("  [!] psutil not available, skipping advanced process termination.")
+    except Exception as e:
+        print(f"  [!] Process termination encountered an error: {e}")
     time.sleep(2)
 
 def cleanup_persistence():
     print("Removing Scheduled Tasks and Registry entries...")
     try:
         # 1. Remove Task
-        subprocess.run(['schtasks', '/delete', '/tn', 'SPB_Daemon', '/f'], capture_output=True)
+        run_system_command(['schtasks', '/delete', '/tn', 'SPB_Daemon', '/f'], check=False)
         
         # 2. Clear registry for ALL user profiles
         import winreg
@@ -93,18 +111,18 @@ def restore_hosts():
     if os.name == 'nt':
         try:
             # 1. Take ownership if we are locked out
-            subprocess.run(['takeown', '/f', hosts_path, '/a'], capture_output=True, creationflags=0x08000000)
+            run_system_command(['takeown', '/f', hosts_path, '/a'], check=False)
             # 2. Grant full access to Administrators
-            subprocess.run(['icacls', hosts_path, '/grant', 'Administrators:(F)', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+            run_system_command(['icacls', hosts_path, '/grant', 'Administrators:(F)', '/c', '/q'], check=False)
             # 3. Reset inheritance and remove all deny rules
-            subprocess.run(['icacls', hosts_path, '/reset', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+            run_system_command(['icacls', hosts_path, '/reset', '/c', '/q'], check=False)
         except: pass
 
     if os.path.exists(backup_path):
         try:
             # Attempt to unlock backup too if it exists
             if os.name == 'nt':
-                subprocess.run(['icacls', backup_path, '/reset', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+                run_system_command(['icacls', backup_path, '/reset', '/c', '/q'], check=False)
             
             shutil.copy2(backup_path, hosts_path)
             print("Hosts file restored from backup.")
@@ -116,7 +134,7 @@ def restore_hosts():
         _manual_clean_hosts(hosts_path)
             
     print("Flushing DNS...")
-    subprocess.run(["ipconfig", "/flushdns"], capture_output=True, creationflags=0x08000000)
+    run_system_command(["ipconfig", "/flushdns"], check=False)
 
 def restore_dns_state():
     print("Restoring adapter DNS state...")
@@ -140,7 +158,7 @@ def restore_dns_state():
                 ps = f"Set-DnsClientServerAddress -InterfaceIndex {int(idx)} -ServerAddresses @({quoted})"
             else:
                 ps = f"Set-DnsClientServerAddress -InterfaceIndex {int(idx)} -ResetServerAddresses"
-            subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, creationflags=0x08000000)
+            run_system_command(["powershell", "-NoProfile", "-Command", ps], check=False)
         try:
             os.remove(state_path)
         except:
@@ -218,20 +236,21 @@ def cleanup_acls():
         if os.path.exists(path):
             try:
                 # 1. Take ownership (The Sledgehammer)
-                subprocess.run(['takeown', '/f', path, '/a'], capture_output=True, creationflags=0x08000000)
+                run_system_command(['takeown', '/f', path, '/a'], check=False)
                 
                 # 2. Grant Administrators full control
-                subprocess.run(['icacls', path, '/grant', 'Administrators:(F)', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+                run_system_command(['icacls', path, '/grant', 'Administrators:(F)', '/c', '/q'], check=False)
 
                 # 3. Restore inheritance (Critical for UI access)
-                subprocess.run(['icacls', path, '/inheritance:e', '/c', '/q'], capture_output=True, creationflags=0x08000000)
+                run_system_command(['icacls', path, '/inheritance:e', '/c', '/q'], check=False)
                 
                 # 4. Explicitly remove everyone-deny
-                subprocess.run(['icacls', path, '/remove:d', target, '/c', '/q'], capture_output=True, creationflags=0x08000000)
+                run_system_command(['icacls', path, '/remove:d', target, '/c', '/q'], check=False)
                 
                 # 5. Reset to default state if possible
-                subprocess.run(['icacls', path, '/reset', '/c', '/q'], capture_output=True, creationflags=0x08000000)
-            except: pass
+                run_system_command(['icacls', path, '/reset', '/c', '/q'], check=False)
+            except Exception as e:
+                print(f"  [!] Failed to release block on {path}: {e}")
     
     print("Physical blocks released successfully.")
 
@@ -268,6 +287,26 @@ def main():
         cleanup_acls()
         remove_files()
         
+        # --- Post-Condition Audit ---
+        print("\n[*] Auditing system state...")
+        errors = []
+        
+        # 1. Verify Task is gone
+        task_check = run_system_command(['schtasks', '/query', '/tn', 'SPB_Daemon'], check=False)
+        if task_check.returncode == 0:
+            errors.append("Scheduled Task 'SPB_Daemon' still exists.")
+            
+        # 2. Verify Hosts is clean
+        hosts_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'drivers', 'etc', 'hosts')
+        if os.path.exists(hosts_path):
+            with open(hosts_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+                if "# SPB BEGIN" in content or "# --- SPB Block Begin ---" in content:
+                    errors.append("SPB markers still present in hosts file.")
+        
+        if errors:
+            raise RuntimeError("Uninstallation audit failed:\n  " + "\n  ".join(errors))
+            
         print("\nUninstallation Complete.")
         print("All files, blocks, and configurations have been successfully removed.")
     except Exception as e:
