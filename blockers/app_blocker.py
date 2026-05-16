@@ -575,3 +575,14 @@ class ProcessMonitor:
             self.logger.info(
                 f"ProcessMonitor synchronized: active={self.is_active}, {len(apps)} apps, {len(files)} files, {len(folders)} folders."
             )
+
+    def batch_unlock(self, paths: list):
+        """Optimized batch unlock for recovery scenarios."""
+        if not paths: return
+        self.logger.info(f"BATCH UNLOCK: Processing {len(paths)} paths...")
+        for path in paths:
+            self._set_acl_lock(path, False)
+        # Re-sync internal lists
+        self.blocked_file_paths = {p for p in self.blocked_file_paths if p not in paths}
+        self.blocked_folder_roots = [p for p in self.blocked_folder_roots if p not in paths]
+        self._lock_files() # Refresh handle locks
