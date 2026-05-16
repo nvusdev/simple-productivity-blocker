@@ -13,7 +13,7 @@ def run_test(script_path, extra_args=None):
 
 def main():
     print("==========================================")
-    print("   SPB v1.4.3 GOLD MASTER STRESS SUITE   ")
+    print("   SPB v1.4.4 GOLD MASTER STRESS SUITE   ")
     print("==========================================")
     
     tests = [
@@ -36,6 +36,7 @@ def main():
         "privilege_acl_test.py",
         "schedule_edge_cases.py",
         ("config_corruption.py", ["--confirm"]),
+        "installation_corruption.py",
         ("dns_proxy_failure.py", ["--confirm"]),
         "wmi_com_recovery.py",
         "safe_mode_audit.py",
