@@ -16,6 +16,24 @@ foreach ($p in $procs) {
     Get-Process $p -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
+# Aggressive search for any process running from the build/dist directories or orphaned PyInstaller instances
+try {
+    $currentDir = (Get-Location).Path
+    $buildPath = Join-Path $currentDir "build"
+    $distPath = Join-Path $currentDir "dist"
+    
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { 
+        ($_.ExecutablePath -like "$buildPath*") -or 
+        ($_.ExecutablePath -like "$distPath*") -or
+        ($_.Name -eq "python.exe" -and $_.CommandLine -like "*PyInstaller*")
+    } | ForEach-Object {
+        Write-Host "Killing locking/orphaned process: $($_.Name) (PID: $($_.ProcessId))" -ForegroundColor Yellow
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+} catch {
+    # Fallback if CimInstance is unavailable or restricted
+}
+
 # Wait for file handles to release with retries
 $maxRetries = 5
 $retryCount = 0
@@ -24,10 +42,13 @@ $cleaned = $false
 while (-not $cleaned -and $retryCount -lt $maxRetries) {
     try {
         if (Test-Path "dist") { 
-            Remove-Item -Recurse -Force "dist" -ErrorAction Stop
+            # Use cmd rmdir for more aggressive cleanup than PowerShell's Remove-Item
+            cmd /c "rmdir /s /q dist" 2>$null
+            if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" -ErrorAction Stop }
         }
         if (Test-Path "build") { 
-            Remove-Item -Recurse -Force "build" -ErrorAction Stop
+            cmd /c "rmdir /s /q build" 2>$null
+            if (Test-Path "build") { Remove-Item -Recurse -Force "build" -ErrorAction Stop }
         }
         $cleaned = $true
     } catch {
@@ -36,8 +57,14 @@ while (-not $cleaned -and $retryCount -lt $maxRetries) {
             # Shadow Rename Fallback
             Write-Host "Aggressive cleanup failed. Attempting shadow rename..." -ForegroundColor Yellow
             $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-            if (Test-Path "dist") { Rename-Item "dist" "dist_old_$timestamp" -ErrorAction SilentlyContinue }
-            if (Test-Path "build") { Rename-Item "build" "build_old_$timestamp" -ErrorAction SilentlyContinue }
+            if (Test-Path "dist") { 
+                Rename-Item "dist" "dist_old_$timestamp" -ErrorAction SilentlyContinue 
+                Write-Host "Renamed 'dist' to 'dist_old_$timestamp'" -ForegroundColor Gray
+            }
+            if (Test-Path "build") { 
+                Rename-Item "build" "build_old_$timestamp" -ErrorAction SilentlyContinue 
+                Write-Host "Renamed 'build' to 'build_old_$timestamp'" -ForegroundColor Gray
+            }
             $cleaned = $true 
         } else {
             Write-Host "Wait... Files are still locked (Attempt $retryCount/$maxRetries). Retrying in 2 seconds..." -ForegroundColor Cyan
@@ -50,6 +77,8 @@ if (-not $cleaned) {
     Write-Host "Error: Could not clean build directory. Please check if files are open in another program." -ForegroundColor Red
     exit 1
 }
+
+Start-Sleep -Seconds 5
 
 # Prepare icon from newlogo.png
 $iconPng = Join-Path $PSScriptRoot "newlogo.png"
@@ -80,9 +109,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 Remove-Item $scriptPath -Force
 
-# Build the main app (Bundled with assets for a clean dist folder)
+# Build the main app (Isolated to build\out_app to avoid dist locks)
 Write-Host "Building SimpleProductivityBlocker.exe..."
-python -m PyInstaller --noconfirm --onedir --windowed --uac-admin `
+python -m PyInstaller --clean --noconfirm --onedir --windowed --uac-admin `
+    --distpath "build\out_app" `
     --icon="$tempIco" `
     --add-data "newlogo.png;." `
     --add-data "icon.ico;." `
@@ -97,9 +127,15 @@ python -m PyInstaller --noconfirm --onedir --windowed --uac-admin `
     --exclude-module opentelemetry `
     --name "SimpleProductivityBlocker" main.py
 
-# Build the daemon (Stripped of Tkinter/UI for 15MB+ savings)
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path "build\out_app\SimpleProductivityBlocker\_internal")) {
+    Write-Host "Error: Main application build failed or critical _internal directory is missing." -ForegroundColor Red
+    exit 1
+}
+
+# Build the daemon (Isolated to build\out_daemon)
 Write-Host "Building SPB_Daemon.exe..."
-python -m PyInstaller --noconfirm --onefile --windowed `
+python -m PyInstaller --clean --noconfirm --onefile --windowed `
+    --distpath "build\out_daemon" `
     --icon="$tempIco" `
     --collect-all dnslib `
     --hidden-import=pywintypes `
@@ -115,16 +151,21 @@ python -m PyInstaller --noconfirm --onefile --windowed `
     --exclude-module opentelemetry `
     --name "SPB_Daemon" daemon.py
 
-# Assemble the package
-Write-Host "Assembling package..."
+# Assemble the initial package directory
+Write-Host "Assembling package components..."
 $pkgDir = "dist\SimpleProductivityBlocker"
-# Copy SPB_Daemon (onefile - just the exe)
-Copy-Item "dist\SPB_Daemon.exe" -Destination "$pkgDir\"
+if (-not (Test-Path $pkgDir)) { New-Item -Path $pkgDir -ItemType Directory -Force }
 
-# Build installer (Bundles the app as payload)
+# Copy Main App files
+Copy-Item "build\out_app\SimpleProductivityBlocker\*" -Destination "$pkgDir\" -Recurse -Force
+# Copy SPB_Daemon
+Copy-Item "build\out_daemon\SPB_Daemon.exe" -Destination "$pkgDir\" -Force
+
+# Build installer (Bundles the assembled app as payload)
 Write-Host "Building spb_installer.exe..."
-python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
-    --add-data "dist/SimpleProductivityBlocker/*;." `
+python -m PyInstaller --clean --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
+    --distpath "build\out_installer" `
+    --add-data "$pkgDir/*;." `
     --hidden-import=pywintypes `
     --hidden-import=pythoncom `
     --hidden-import=win32com `
@@ -136,9 +177,10 @@ python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempI
     --hidden-import=ntsecuritycon `
     --name "spb_installer" spb_installer.py
 
-# Build uninstaller (Logic only, NO payload)
+# Build uninstaller (Isolated to build\out_uninstaller)
 Write-Host "Building spb_uninstaller.exe..."
-python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
+python -m PyInstaller --clean --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
+    --distpath "build\out_uninstaller" `
     --hidden-import=pywintypes `
     --hidden-import=pythoncom `
     --hidden-import=win32com `
@@ -148,9 +190,10 @@ python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempI
     --hidden-import=win32event `
     --name "spb_uninstaller" spb_uninstaller.py
 
-# Build emergency recovery helper
+# Build emergency recovery helper (Isolated to build\out_recovery)
 Write-Host "Building recovery_uplift.exe..."
-python -m PyInstaller --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
+python -m PyInstaller --clean --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
+    --distpath "build\out_recovery" `
     --hidden-import=pywintypes `
     --hidden-import=pythoncom `
     --hidden-import=win32com `
@@ -165,11 +208,16 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# Final Assembly: Copy installer and uninstaller into the package directory
+# Final Assembly: Collect all binaries into the final dist and package directories
 Write-Host "Finalizing distribution package..."
-Copy-Item "dist\spb_installer.exe" -Destination "$pkgDir\" -Force
-Copy-Item "dist\spb_uninstaller.exe" -Destination "$pkgDir\" -Force
-Copy-Item "dist\recovery_uplift.exe" -Destination "$pkgDir\" -Force
+Copy-Item "build\out_installer\spb_installer.exe" -Destination "dist\" -Force
+Copy-Item "build\out_uninstaller\spb_uninstaller.exe" -Destination "dist\" -Force
+Copy-Item "build\out_recovery\recovery_uplift.exe" -Destination "dist\" -Force
+
+# Also copy into the package directory for bundling
+Copy-Item "build\out_installer\spb_installer.exe" -Destination "$pkgDir\" -Force
+Copy-Item "build\out_uninstaller\spb_uninstaller.exe" -Destination "$pkgDir\" -Force
+Copy-Item "build\out_recovery\recovery_uplift.exe" -Destination "$pkgDir\" -Force
 
 # Explicitly bundle pywin32 system DLLs
 Write-Host "Bundling pywin32 system components..."
