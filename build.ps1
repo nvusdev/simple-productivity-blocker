@@ -180,11 +180,10 @@ if ($LASTEXITCODE -ne 0) {
 Copy-Item "build\out_uninstaller\spb_uninstaller.exe" -Destination "$pkgDir\" -Force
 Copy-Item "build\out_recovery\recovery_uplift.exe" -Destination "$pkgDir\" -Force
 
-# Build installer (Bundles the assembled app as payload)
-Write-Host "Building spb_installer.exe..."
+# Build installer (Lightweight - no embedded payload, NSIS handles packaging)
+Write-Host "Building lightweight spb_installer.exe..."
 python -m PyInstaller --clean --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
     --distpath "build\out_installer" `
-    --add-data "$pkgDir/*;." `
     --hidden-import=pywintypes `
     --hidden-import=pythoncom `
     --hidden-import=win32com `
@@ -196,13 +195,8 @@ python -m PyInstaller --clean --noconfirm --onefile --console --uac-admin --icon
     --hidden-import=ntsecuritycon `
     --name "spb_installer" spb_installer.py
 
-# Final Assembly: Collect all binaries into the final dist directory
-Write-Host "Finalizing distribution package..."
-Copy-Item "build\out_installer\spb_installer.exe" -Destination "dist\" -Force
-Copy-Item "build\out_uninstaller\spb_uninstaller.exe" -Destination "dist\" -Force
-Copy-Item "build\out_recovery\recovery_uplift.exe" -Destination "dist\" -Force
-
-# Ensure the installer is also inside the pkgDir for users who zip the directory
+# Final Assembly: Collect all binaries into the final stage directory
+Write-Host "Finalizing staging components..."
 Copy-Item "build\out_installer\spb_installer.exe" -Destination "$pkgDir\" -Force
 
 # Explicitly bundle pywin32 system DLLs
@@ -226,11 +220,72 @@ if (Test-Path "CHANGELOG.md") {
     Copy-Item "CHANGELOG.md" -Destination "$pkgDir\" -Force
 }
 
-Write-Host "Build complete! Your deployable package is in dist\SimpleProductivityBlocker"
-Write-Host "Zip the 'dist\SimpleProductivityBlocker' folder to distribute it to users."
+# Native Setup Compiler using NSIS
+Write-Host "Generating NSIS installer script..."
+$nsiScript = @"
+!include "MUI2.nsh"
+
+Name "Simple Productivity Blocker"
+OutFile "dist\spb_setup.exe"
+InstallDir "`$PROGRAMFILES64\Simple Productivity Blocker"
+RequestExecutionLevel admin
+
+# MUI Settings
+!define MUI_ICON "icon.ico"
+!define MUI_UNICON "icon.ico"
+
+# Pages
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_PAGE_FINISH
+
+# Languages
+!insertmacro MUI_LANGUAGE "English"
+
+Section "Install"
+  SetOutPath "`$INSTDIR"
+  
+  # Stage files recursively
+  File /r "dist\SimpleProductivityBlocker\*"
+  
+  # Run the lightweight python installer to register tasks and harden permissions
+  ExecWait '"`$INSTDIR\spb_installer.exe" --silent'
+  
+  # Register the application in Add/Remove Programs
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayName" "Simple Productivity Blocker"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "UninstallString" '"`$INSTDIR\spb_uninstaller.exe"'
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "QuietUninstallString" '"`$INSTDIR\spb_uninstaller.exe" --silent'
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "Publisher" "nvusdev"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayVersion" "1.4.5"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayIcon" '"`$INSTDIR\SimpleProductivityBlocker.exe",0'
+  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "NoModify" 1
+  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "NoRepair" 1
+SectionEnd
+"@
+
+$nsiFile = Join-Path $PSScriptRoot "installer.nsi"
+Set-Content -Path $nsiFile -Value $nsiScript -Encoding UTF8
+
+Write-Host "Compiling native installer using NSIS..."
+$nsisCompiler = "C:\Program Files (x86)\NSIS\makensis.exe"
+if (-not (Test-Path $nsisCompiler)) {
+    Write-Host "Error: makensis.exe not found at $nsisCompiler." -ForegroundColor Red
+    exit 1
+}
+
+# Run NSIS Compiler
+& $nsisCompiler $nsiFile
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Error: NSIS setup compilation failed." -ForegroundColor Red
+    exit $LASTEXITCODE
+}
+
+Write-Host "Build complete! Your deployable setup installer is at dist\spb_setup.exe"
 
 # Post-build Cleanup
 Write-Host "Cleaning up build artifacts..."
 Remove-Item -Recurse -Force "build" -ErrorAction SilentlyContinue
 Get-ChildItem -Path $PSScriptRoot -Filter "*.spec" | Remove-Item -Force
+if (Test-Path $nsiFile) { Remove-Item $nsiFile -Force }
 Write-Host "Cleanup complete."
