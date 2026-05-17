@@ -58,7 +58,7 @@ export default function Hero({
   return (
     <section className="relative pt-20 pb-20 overflow-hidden bg-zinc-950">
       {/* Background Glow */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.05),transparent_70%)] pointer-events-none" />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[350px] bg-blue-500/10 blur-[150px] pointer-events-none rounded-full" />
 
       <div className="max-w-6xl mx-auto px-8 grid grid-cols-1 md:grid-cols-2 gap-8 items-center relative z-10">
         <div className="text-left">
@@ -93,7 +93,7 @@ export default function Hero({
               onClick={() => scrollToSection("installation")}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              className="bg-blue-500 hover:bg-blue-600 transition-colors text-zinc-950 px-8 py-4 rounded-xl font-bold flex items-center justify-center gap-3 shadow-[0_0_20px_rgba(59,130,246,0.2)]"
+              className="bg-blue-500 hover:bg-blue-600 transition-colors text-zinc-950 px-8 py-4 rounded-xl font-bold flex items-center justify-center gap-3 shadow-[0_0_20px_rgba(59,130,246,0.2)] animate-pulse-glow"
             >
               <Download size={20} /> Download for Windows
             </motion.button>

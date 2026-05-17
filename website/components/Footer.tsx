@@ -1,9 +1,13 @@
 "use client";
-import { motion } from "framer-motion";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
+  const pathname = usePathname();
+
+  const privacyUrl = `/privacy?from=${encodeURIComponent(pathname || "/")}`;
+  const eulaUrl = `/eula?from=${encodeURIComponent(pathname || "/")}`;
 
   return (
     <footer className="py-12 border-t border-zinc-900 bg-zinc-950">
@@ -24,6 +28,10 @@ export default function Footer() {
               <a href="https://github.com/nvusdev/simple-productivity-blocker" target="_blank" rel="noopener noreferrer" className="hover:text-blue-500 transition-colors">GitHub</a>
               <a href="https://github.com/nvusdev/simple-productivity-blocker/releases" target="_blank" rel="noopener noreferrer" className="hover:text-blue-500 transition-colors">Releases</a>
               <a href="https://github.com/nvusdev/simple-productivity-blocker/issues" target="_blank" rel="noopener noreferrer" className="hover:text-blue-500 transition-colors">Support</a>
+            </div>
+            <div className="flex items-center gap-4 text-xs text-zinc-600">
+              <Link href={privacyUrl} className="hover:text-blue-500 transition-colors">Privacy Policy</Link>
+              <Link href={eulaUrl} className="hover:text-blue-500 transition-colors">EULA Agreement</Link>
             </div>
           </div>
         </div>

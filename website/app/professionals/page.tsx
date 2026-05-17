@@ -1,5 +1,6 @@
 import Hero from "@/components/Hero";
 import Comparison from "@/components/Comparison";
+import TechnicalHardening from "@/components/TechnicalHardening";
 import Solutions from "@/components/Solutions";
 import Installation from "@/components/Installation";
 import Footer from "@/components/Footer";
@@ -24,9 +25,10 @@ export default function ProfessionalsPage() {
         }
       />
       <Comparison />
+      <TechnicalHardening />
       <Solutions highlightTitle="Professionals" />
       
-      <section className="py-24 border-t border-zinc-900 bg-zinc-950/50">
+      <section className="py-24 bg-zinc-950/50">
         <div className="max-w-4xl mx-auto px-8">
           <h2 className="text-3xl font-bold mb-8 text-zinc-100">High-Performance Office Productivity</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12 text-zinc-400 leading-relaxed">
