@@ -53,7 +53,7 @@ export default function PrivacyPolicyPage() {
       color: "text-rose-500 bg-rose-500/10 border-rose-500/20",
       content: (
         <div className="space-y-3">
-          <p>SPB requires Administrative privileges to perform its core functions. These elevated privileges are used **strictly** to enforce your productivity rules:</p>
+          <p>SPB requires Administrative privileges to perform its core functions. These elevated privileges are used <strong>strictly</strong> to enforce your productivity rules:</p>
           <ul className="list-disc pl-5 space-y-1.5 text-zinc-400">
             <li>Modifying local adapter DNS settings to point to the local DNS proxy.</li>
             <li>Managing Windows Scheduled Tasks for persistent startup enforcement.</li>
@@ -151,7 +151,7 @@ export default function PrivacyPolicyPage() {
           <div>
             <h3 className="text-base font-bold text-blue-400 mb-2">Absolute Local Privacy</h3>
             <p className="text-zinc-300 text-sm leading-relaxed">
-              Simple Productivity Blocker functions as an offline system utility. We believe your productivity rules are private; therefore, **no cloud synchronization, backend telemetries, or diagnostic analytics** are ever integrated.
+              Simple Productivity Blocker functions as an offline system utility. We believe your productivity rules are private; therefore, <strong>no cloud synchronization, backend telemetries, or diagnostic analytics</strong> are ever integrated.
             </p>
           </div>
         </motion.div>
