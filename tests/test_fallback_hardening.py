@@ -65,5 +65,50 @@ class TestFallbackHardening(unittest.TestCase):
         self.assertNotIn("safe.com", resolved)
         self.assertNotIn("allowed-cloud.com", resolved)
 
+    def test_sync_website_protection_enforces_strict_line_cap(self):
+        from blockers.website_blocker import apply_blocks
+        from unittest.mock import patch, mock_open
+
+        # Mock the open calls to read an empty hosts file and write captured lines
+        mock_hosts_content = "127.0.0.1 localhost\n::1 localhost\n"
+        m = mock_open(read_data=mock_hosts_content)
+
+        # 50 domains to trigger the limit of 10 lines
+        domains = [f"domain{i}.com" for i in range(50)]
+
+        with patch("builtins.open", m), \
+             patch("core.config_manager.load_config", return_value={"settings": {"max_domains_cap": 10}}):
+            apply_blocks(domains, block_doh=False)
+
+        # Retrieve the arguments passed to writelines
+        handle = m()
+        write_calls = handle.writelines.call_args_list
+        self.assertTrue(len(write_calls) > 0)
+        
+        # Merge all writelines outputs
+        written_lines = write_calls[0][0][0]
+        
+        # Check that the block exists and has the correct marker structure
+        block_begin_idx = -1
+        block_end_idx = -1
+        for idx, line in enumerate(written_lines):
+            if "# --- SPB Block Begin ---" in line:
+                block_begin_idx = idx
+            elif "# --- SPB Block End ---" in line:
+                block_end_idx = idx
+
+        self.assertNotEqual(block_begin_idx, -1)
+        self.assertNotEqual(block_end_idx, -1)
+        
+        # The number of lines written inside the block (including markers) must be <= 10 (max_domains_cap)
+        block_lines_count = block_end_idx - block_begin_idx + 1
+        self.assertLessEqual(block_lines_count, 10)
+        
+        # Since MAX_LINES = 10, max_domains = (10 - 2) // 2 = 4 domains.
+        # Each domain produces 2 entries (www and non-www), but since the input has no www,
+        # it adds www and non-www (so each original domain has 2 domains, each taking 2 lines = 4 lines per original domain).
+        # Thus, only 2 unique domains (each with base and www) can fit, generating 8 lines of host blocks + 2 marker lines = 10 lines total.
+        self.assertEqual(block_lines_count, 10)
+
 if __name__ == "__main__":
     unittest.main()
