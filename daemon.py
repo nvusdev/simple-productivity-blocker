@@ -237,11 +237,11 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
 
     for _, gdata in config.get("groups", {}).items():
         if not gdata.get("enabled", True): continue
-        active = is_active(gdata)
+        active = is_active(gdata, clm)
         ad = gdata.get("adblocker", {})
         ad_on = ad.get("enabled", False)
         ad_persist = ad.get("persist_all_day", False)
-        day_on = is_day_active(gdata.get("schedule", {}))
+        day_on = is_day_active(gdata.get("schedule", {}), clm)
         
         ad_active = ad_on and day_on and (ad_persist or active)
 
@@ -293,8 +293,13 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
         if not gdata.get("enabled", True): continue
         ad = gdata.get("adblocker", {})
         if not ad.get("enabled", False): continue
-        day_on = is_day_active(gdata.get("schedule", {}))
-        if not day_on: continue
+        
+        active = is_active(gdata, clm)
+        ad_persist = ad.get("persist_all_day", False)
+        day_on = is_day_active(gdata.get("schedule", {}), clm)
+        
+        ad_active = day_on and (ad_persist or active)
+        if not ad_active: continue
         
         for k, domains in NORMALIZED_FILTER_MAP.items():
             if ad.get(k):
@@ -527,7 +532,7 @@ class SubsystemOrchestrator:
             logger.debug(f"DNS redirect health check failed: {e}")
             return False
 
-    def _check_dns_recovery(self, manual_domains, normalized_filter_domains, cloud_allowlist, filter_exceptions):
+    def _check_dns_recovery(self, manual_domains, filter_keywords, normalized_filter_domains, cloud_allowlist, filter_exceptions):
         """Asynchronous recovery check for Port 53."""
         if self.using_dns_proxy:
             return
@@ -539,7 +544,7 @@ class SubsystemOrchestrator:
             
             logger.info("DNS Proxy Recovery: Port 53 is now available. Restarting DNS Subsystem...")
             # Re-initialize DNS Server
-            self.sync_dns(manual_domains, set(), cloud_allowlist, filter_exceptions, False, normalized_filter_domains=normalized_filter_domains)
+            self.sync_dns(manual_domains, filter_keywords, cloud_allowlist, filter_exceptions, False, normalized_filter_domains=normalized_filter_domains)
             if self.using_dns_proxy:
                 logger.info("DNS Proxy Recovery SUCCESS: Subsystem active and hosts bloat cleared.")
                 self._update_health_signal("Active")
@@ -586,10 +591,13 @@ class SubsystemOrchestrator:
             self.using_dns_proxy = False
         
         # Determine Redundancy Set (Critical domains kept in hosts even with proxy active)
-        # We merge manual domains with a subset of the normalized filter domains
-        redundancy_set = set(manual_domains)
-        if normalized_filter_domains:
-            redundancy_set.update(normalized_filter_domains)
+        # We only keep the global manual blocks as redundancy in the hosts file during proxy mode.
+        # This keeps the hosts file clean of all other categories while proxy is healthy.
+        # Both redundancy_set and active_domains are cloud-filtered to ensure policy consistency.
+        redundancy_set = set()
+        for domain in manual_domains:
+            if not _pattern_matches(cloud_allowlist, domain):
+                redundancy_set.add(domain)
 
         active_domains = _resolve_hosts_fallback_domains(
             manual_domains,
@@ -616,10 +624,10 @@ class SubsystemOrchestrator:
                 f.write(status)
         except: pass
 
-    def watchdog_dns(self, manual_domains, normalized_filter_domains, cloud_allowlist, filter_exceptions):
+    def watchdog_dns(self, manual_domains, filter_keywords, normalized_filter_domains, cloud_allowlist, filter_exceptions):
         if not self.using_dns_proxy or not self.dns_server:
             # Task 4: Attempt recovery if in fallback mode
-            self._check_dns_recovery(manual_domains, normalized_filter_domains, cloud_allowlist, filter_exceptions)
+            self._check_dns_recovery(manual_domains, filter_keywords, normalized_filter_domains, cloud_allowlist, filter_exceptions)
             return
 
         if self.dns_server.is_healthy() and self._dns_redirect_healthy():
@@ -728,6 +736,7 @@ class DaemonOrchestrator:
         self.cur_apps, self.cur_files, self.cur_folders = ctx.processes, ctx.files, ctx.folders
         self.cur_domains, self.cur_exceptions, self.cur_cloud = total_filter.union(ctx.manual_domains), ctx.filter_exceptions, ctx.cloud_allowlist
         self.cur_manual_domains = ctx.manual_domains
+        self.cur_filter_keywords = total_filter
         self.cur_normalized_filter_domains = ctx.normalized_filter_domains
         self.first_run = False
 
@@ -737,7 +746,7 @@ class DaemonOrchestrator:
                 self.sync()
                 now = time.time()
                 if now - self.last_heartbeat >= 60.0:
-                    self.subsystems.watchdog_dns(self.cur_manual_domains, getattr(self, 'cur_normalized_filter_domains', set()), self.cur_cloud, self.cur_exceptions)
+                    self.subsystems.watchdog_dns(self.cur_manual_domains, getattr(self, 'cur_filter_keywords', set()), getattr(self, 'cur_normalized_filter_domains', set()), self.cur_cloud, self.cur_exceptions)
                     dns_status = "Active" if self.subsystems.using_dns_proxy else ("Fallback" if self.cur_domains else "None")
                     logger.info(f"Heartbeat: [Admin={is_admin()}] [Protection={'Active' if self.subsystems.pm and self.subsystems.pm.is_active else 'Off'}] [DNS={dns_status}]")
                     self.last_heartbeat = now
@@ -748,7 +757,7 @@ class DaemonOrchestrator:
                 logger.error(f"Orchestrator error: {e}", exc_info=True)
                 time.sleep(5)
 
-VERSION = "1.4.4"
+VERSION = "1.4.5"
 
 def main():
     from core.win32_utils import is_safe_mode
