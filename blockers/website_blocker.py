@@ -199,17 +199,20 @@ def apply_blocks(websites, block_doh=True):
                 final_domains.add(d)
                 final_domains.add("www." + d)
 
-        # Task 2: Implement hard cap to prevent hosts file bloat
+        # Task 2: Implement hard cap on generated lines to prevent hosts file bloat
         try:
             from core.config_manager import load_config
             config = load_config()
-            MAX_DOMAINS = config.get("settings", {}).get("max_domains_cap", 1000)
+            MAX_LINES = config.get("settings", {}).get("max_domains_cap", 1000)
         except Exception:
-            MAX_DOMAINS = 1000
-        if len(final_domains) > MAX_DOMAINS:
+            MAX_LINES = 1000
+        # Each domain writes 2 lines (IPv4 + IPv6). Plus 2 lines for markers.
+        # Thus, total block lines = 2 * len(domains) + 2 <= MAX_LINES
+        max_domains = max(0, (MAX_LINES - 2) // 2)
+        if len(final_domains) > max_domains:
             if logger: 
-                logger.critical(f"CRITICAL WARNING: Hosts file bloat detected. Truncating {len(final_domains)} domains to {MAX_DOMAINS} limit.")
-            final_domains = set(list(sorted(final_domains))[:MAX_DOMAINS])
+                logger.critical(f"CRITICAL WARNING: Hosts file bloat detected. Truncating {len(final_domains)} domains to fit {MAX_LINES} lines cap.")
+            final_domains = set(list(sorted(final_domains))[:max_domains])
 
         if final_domains:
             block_lines = [BLOCK_BEGIN + "\n"]
