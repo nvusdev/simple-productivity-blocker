@@ -222,12 +222,12 @@ if (Test-Path "CHANGELOG.md") {
 
 # Native Setup Compiler using NSIS
 Write-Host "Generating NSIS installer script..."
-$nsiScript = @"
+$nsiScript = @'
 !include "MUI2.nsh"
 
 Name "Simple Productivity Blocker"
 OutFile "dist\spb_setup.exe"
-InstallDir "`$PROGRAMFILES64\Simple Productivity Blocker"
+InstallDir "$PROGRAMFILES64\Simple Productivity Blocker"
 RequestExecutionLevel admin
 
 # MUI Settings
@@ -240,29 +240,51 @@ RequestExecutionLevel admin
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 
+# Uninstaller Pages
+!insertmacro MUI_UNPAGE_WELCOME
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+!insertmacro MUI_UNPAGE_FINISH
+
 # Languages
 !insertmacro MUI_LANGUAGE "English"
 
 Section "Install"
-  SetOutPath "`$INSTDIR"
+  SetOutPath "$INSTDIR"
   
   # Stage files recursively
   File /r "dist\SimpleProductivityBlocker\*"
   
   # Run the lightweight python installer silently to register tasks and harden permissions without console popups
-  nsExec::Exec '"`$INSTDIR\spb_installer.exe" --silent'
+  nsExec::Exec '"$INSTDIR\spb_installer.exe" --silent'
   
-  # Register the application in Add/Remove Programs
+  # Write the native uninstaller binary
+  WriteUninstaller "$INSTDIR\uninstall.exe"
+  
+  # Register the application in Add/Remove Programs (pointing to native uninstall.exe)
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayName" "Simple Productivity Blocker"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "UninstallString" '"`$INSTDIR\spb_uninstaller.exe"'
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "QuietUninstallString" '"`$INSTDIR\spb_uninstaller.exe" --silent'
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "UninstallString" '"$INSTDIR\uninstall.exe"'
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "QuietUninstallString" '"$INSTDIR\uninstall.exe" /S'
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "Publisher" "nvusdev"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayVersion" "1.4.5"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayIcon" '"`$INSTDIR\SimpleProductivityBlocker.exe",0'
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayIcon" '"$INSTDIR\SimpleProductivityBlocker.exe",0'
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "NoModify" 1
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "NoRepair" 1
 SectionEnd
-"@
+
+Section "Uninstall"
+  # Run the python uninstaller silently in the background to release scheduled tasks, blocks, and configurations
+  nsExec::Exec '"$INSTDIR\spb_uninstaller.exe" --silent'
+  
+  # Natively remove files and parent directories compiled in installation folder
+  Delete "$INSTDIR\uninstall.exe"
+  Delete "$INSTDIR\*.*"
+  RMDir /r "$INSTDIR"
+  
+  # Clean up Windows Add/Remove Programs registry key
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker"
+SectionEnd
+'@
 
 $nsiFile = Join-Path $PSScriptRoot "installer.nsi"
 Set-Content -Path $nsiFile -Value $nsiScript -Encoding UTF8
