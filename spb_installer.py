@@ -88,23 +88,26 @@ def install_files(dest_dir):
             continue
             
         if os.path.isfile(s):
-            shutil.copy2(s, d)
+            if os.path.abspath(s) != os.path.abspath(d):
+                shutil.copy2(s, d)
         elif os.path.isdir(s) and item not in ["build", "dist", "__pycache__", ".git"]:
-            if os.path.exists(d):
-                try:
-                    shutil.rmtree(d)
-                except Exception:
-                    pass
-            shutil.copytree(s, d)
+            if os.path.abspath(s) != os.path.abspath(d):
+                if os.path.exists(d):
+                    try:
+                        shutil.rmtree(d)
+                    except Exception:
+                        pass
+                shutil.copytree(s, d)
     
     # Surgical deployment of _internal folders from binaries
     # In --onedir builds, _internal is shared or adjacent.
     internal_src = os.path.join(src_dir, "_internal")
     if os.path.isdir(internal_src):
         internal_dest = os.path.join(dest_dir, "_internal")
-        if not os.path.exists(internal_dest):
-            print("Deploying system assets...")
-            shutil.copytree(internal_src, internal_dest)
+        if os.path.abspath(internal_src) != os.path.abspath(internal_dest):
+            if not os.path.exists(internal_dest):
+                print("Deploying system assets...")
+                shutil.copytree(internal_src, internal_dest)
 
 def harden_install_dir(dest_dir):
     """Locks the installation directory so only System/Admins can write to it using native Win32 API for speed."""
