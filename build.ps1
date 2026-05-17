@@ -255,6 +255,11 @@ Section "Install"
   # Stage files recursively
   File /r "dist\SimpleProductivityBlocker\*"
   
+  # Hide internal helper binaries to keep the installation folder visually clean
+  SetFileAttributes "$INSTDIR\spb_installer.exe" HIDDEN
+  SetFileAttributes "$INSTDIR\spb_uninstaller.exe" HIDDEN
+  SetFileAttributes "$INSTDIR\SPB_Daemon.exe" HIDDEN
+  
   # Run the lightweight python installer silently to register tasks and harden permissions without console popups
   nsExec::Exec '"$INSTDIR\spb_installer.exe" --silent'
   
