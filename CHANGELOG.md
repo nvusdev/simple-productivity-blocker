@@ -1,5 +1,14 @@
 # Simple Productivity Blocker - Version History
 
+## [1.4.5] - 2026-05-17
+### Added
+- **Hosts File Domain Cap**: Introduced a configurable cap (1000 to 5000 domains) in settings to limit the number of blocked domains in the hosts file, minimizing system-level DNS resolution latency.
+- **Robust Watchdog Recovery**: DNS watchdog and recovery check now preserve the full set of content filter keywords upon port recovery, restoring category restrictions seamlessly.
+
+### Fixed
+- **DNS Redundancy Inconsistency**: Ensured the redundancy list written to the hosts file is pattern-filtered against the cloud allowlist, keeping critical system access unrestricted.
+- **Fallback Schedule Accuracy**: Enhanced normalized domains calculation to respect the group's full schedule window and `persist_all_day` settings rather than day active state alone.
+
 ## [1.4.4] - 2026-05-16
 ### Added
 - **Transactional Installation**: Implemented a LIFO rollback stack in `spb_installer.py` for atomic installation states.
