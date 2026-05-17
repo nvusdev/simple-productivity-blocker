@@ -200,7 +200,12 @@ def apply_blocks(websites, block_doh=True):
                 final_domains.add("www." + d)
 
         # Task 2: Implement hard cap to prevent hosts file bloat
-        MAX_DOMAINS = 1000
+        try:
+            from core.config_manager import load_config
+            config = load_config()
+            MAX_DOMAINS = config.get("settings", {}).get("max_domains_cap", 1000)
+        except Exception:
+            MAX_DOMAINS = 1000
         if len(final_domains) > MAX_DOMAINS:
             if logger: 
                 logger.critical(f"CRITICAL WARNING: Hosts file bloat detected. Truncating {len(final_domains)} domains to {MAX_DOMAINS} limit.")
