@@ -501,9 +501,9 @@ class ProductivityApp(ctk.CTk):
         ui_seg.set(s.get("ui_mode", "Smooth"))
         ui_seg.pack(fill="x", padx=25, pady=10)
 
-        # Hosts File Domain Cap
-        ctk.CTkLabel(c, text="Hosts File Domain Cap", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
-        ctk.CTkLabel(c, text="Limit the number of blocked domains in the hosts file to prevent resolution latency.", text_color="gray").pack(anchor="w", padx=25, pady=(0, 10))
+        # Hosts File Line Cap
+        ctk.CTkLabel(c, text="Hosts File Line Cap", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
+        ctk.CTkLabel(c, text="Limit the total lines written to the hosts file to prevent resolution latency.", text_color="gray").pack(anchor="w", padx=25, pady=(0, 10))
         def on_cap(val):
             self.config_data["settings"]["max_domains_cap"] = int(val)
             self.trigger_save()
