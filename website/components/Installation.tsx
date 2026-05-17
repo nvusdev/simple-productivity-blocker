@@ -6,39 +6,39 @@ import { Download, FolderOpen, ShieldAlert, Settings, Trash2, ShieldCheck } from
 const steps = [
   {
     title: "Download",
-    description: "Get the latest system-level build directly from our GitHub repository.",
+    description: "Get the native installer executable directly from our GitHub release page.",
     icon: Download,
-    details: "Supports Windows 10 & 11 (x64)",
+    details: "spb_setup.exe (82.4 MB)",
   },
   {
-    title: "Extract",
-    description: "Unzip the archive to a permanent folder on your local drive.",
+    title: "Install",
+    description: "Run the setup wizard to compile and configure system pathways silently.",
     icon: FolderOpen,
-    details: "No complex installer required",
+    details: "Nullsoft NSIS Setup Wizard",
   },
   {
     title: "Deploy",
-    description: "Run the main application as Administrator to initialize kernel locks.",
-    icon: ShieldAlert,
+    description: "Run the desktop dashboard to register rules and security descriptors.",
+    icon: ShieldCheck,
     details: "Admin rights required for enforcement",
   },
   {
     title: "Secure",
-    description: "Configure your blocklists and engage the Triple-Lock suite.",
+    description: "Engage Triple-Lock enforcement and active scheduled filtering.",
     icon: Settings,
     details: "Start your focus session instantly",
   }
 ];
 
 export default function Installation() {
-  const [latestReleaseUrl, setLatestReleaseUrl] = useState("https://github.com/nvusdev/simple-productivity-blocker/releases/latest/download/SimpleProductivityBlocker.zip");
+  const [latestReleaseUrl, setLatestReleaseUrl] = useState("https://github.com/nvusdev/simple-productivity-blocker/releases/latest/download/spb_setup.exe");
 
   useEffect(() => {
     async function fetchLatestRelease() {
       try {
         const response = await fetch("https://api.github.com/repos/nvusdev/simple-productivity-blocker/releases/latest");
         const data = await response.json();
-        const asset = data.assets.find((a: any) => a.name.endsWith(".zip"));
+        const asset = data.assets.find((a: any) => a.name.endsWith(".exe"));
         if (asset) {
           setLatestReleaseUrl(asset.browser_download_url);
         }
@@ -99,7 +99,7 @@ export default function Installation() {
                 <Download className="text-blue-500" /> Get the Latest Build
               </h3>
               <p className="text-zinc-400 text-sm mb-8 leading-relaxed">
-                Download the complete executable package. SPB runs as a portable tool that registers itself with Windows services only when active.
+                Download the native, highly-compressed setup wizard. The compiled installer registers custom system services, security descriptors, and policy overrides safely.
               </p>
               <motion.a
                 href={latestReleaseUrl}
@@ -107,7 +107,7 @@ export default function Installation() {
                 whileTap={{ scale: 0.98 }}
                 className="bg-zinc-100 text-zinc-950 hover:bg-white px-8 py-4 rounded-xl font-bold flex items-center justify-center gap-3 transition-colors shadow-lg"
               >
-                <Download size={20} /> Download Latest .zip
+                <Download size={20} /> Download Latest Installer
               </motion.a>
               <p className="text-zinc-600 text-[10px] mt-4 text-center">
                 Always fetches the most recent release from GitHub
@@ -124,15 +124,15 @@ export default function Installation() {
               <ul className="space-y-3 text-xs text-zinc-400">
                 <li className="flex gap-2">
                   <span className="text-blue-500 font-bold">•</span>
-                  <span>Run <strong>spb_uninstaller.exe</strong> in the installation directory.</span>
+                  <span>Use standard <strong>Windows Add/Remove Programs</strong> or run <strong>uninstall.exe</strong> in the installation folder.</span>
                 </li>
                 <li className="flex gap-2">
                   <span className="text-blue-500 font-bold">•</span>
-                  <span>The uninstaller will restore Windows file permissions and reset network settings.</span>
+                  <span>The uninstaller runs in safe temporary workspace to release file locks and sweep folders completely.</span>
                 </li>
                 <li className="flex gap-2">
                   <span className="text-blue-500 font-bold">•</span>
-                  <span>It will clean up background tasks before removing files.</span>
+                  <span>Restores all system DNS configurations, hosts buffers, and file permissions to default.</span>
                 </li>
               </ul>
             </div>

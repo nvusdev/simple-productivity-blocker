@@ -31,7 +31,7 @@ export default function Footer() {
             </div>
             <div className="flex items-center gap-4 text-xs text-zinc-600">
               <Link href={privacyUrl} className="hover:text-blue-500 transition-colors">Privacy Policy</Link>
-              <Link href={eulaUrl} className="hover:text-blue-500 transition-colors">EULA Agreement</Link>
+              <Link href={eulaUrl} className="hover:text-blue-500 transition-colors">EULA</Link>
             </div>
           </div>
         </div>
