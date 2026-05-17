@@ -13,7 +13,7 @@ from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, 
 from core.platform_handler import get_platform_handler
 handler = get_platform_handler()
 
-VERSION = "1.4.4"
+VERSION = "1.4.5"
 
 def resource_path(relative_path):
     try:
@@ -500,6 +500,16 @@ class ProductivityApp(ctk.CTk):
         ui_seg = ctk.CTkSegmentedButton(c, values=["Fast", "Smooth", "Ultra"], command=on_ui, height=38)
         ui_seg.set(s.get("ui_mode", "Smooth"))
         ui_seg.pack(fill="x", padx=25, pady=10)
+
+        # Hosts File Domain Cap
+        ctk.CTkLabel(c, text="Hosts File Domain Cap", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
+        ctk.CTkLabel(c, text="Limit the number of blocked domains in the hosts file to prevent resolution latency.", text_color="gray").pack(anchor="w", padx=25, pady=(0, 10))
+        def on_cap(val):
+            self.config_data["settings"]["max_domains_cap"] = int(val)
+            self.trigger_save()
+        cap_seg = ctk.CTkSegmentedButton(c, values=["1000", "2000", "3000", "4000", "5000"], command=on_cap, height=38)
+        cap_seg.set(str(s.get("max_domains_cap", 1000)))
+        cap_seg.pack(fill="x", padx=25, pady=10)
 
         # Persistence
         ctk.CTkLabel(c, text="Persistence", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
