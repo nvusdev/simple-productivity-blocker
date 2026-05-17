@@ -249,8 +249,8 @@ Section "Install"
   # Stage files recursively
   File /r "dist\SimpleProductivityBlocker\*"
   
-  # Run the lightweight python installer to register tasks and harden permissions
-  ExecWait '"`$INSTDIR\spb_installer.exe" --silent'
+  # Run the lightweight python installer silently to register tasks and harden permissions without console popups
+  nsExec::Exec '"`$INSTDIR\spb_installer.exe" --silent'
   
   # Register the application in Add/Remove Programs
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayName" "Simple Productivity Blocker"
