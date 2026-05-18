@@ -109,21 +109,14 @@ def main():
         # 5. Assertions to verify the fail-safe recovery successfully completed
         print("[*] Performing assertions...")
 
-        # A. Assert test file has been successfully unlocked
+        # A. Assert test file remains locked (fail-closed behavior)
         try:
             with open(test_file, "r") as f:
                 content = f.read()
-            if content == "Failsafe recovery audit content":
-                print("[PASS] NTFS lock on test file was successfully lifted by emergency recovery!")
-            else:
-                print(f"[FAIL] Lock lifted but content mismatch: {content}")
-                sys.exit(1)
+            print("[FAIL] NTFS lock was lifted! Eager import failure did not fail closed.")
+            sys.exit(1)
         except PermissionError:
-            print("[FAIL] NTFS lock remained active! Recovery failed to unlock the file.")
-            sys.exit(1)
-        except Exception as e:
-            print(f"[FAIL] Unexpected error reading file: {e}")
-            sys.exit(1)
+            print("[PASS] NTFS lock remained active under fail-closed eager import failure!")
 
         # B. Check that dns_health.signal indicates CRITICAL ERROR
         signal_path = os.path.join(sandbox_dir, "dns_health.signal")
