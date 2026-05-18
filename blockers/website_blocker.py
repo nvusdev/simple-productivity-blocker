@@ -118,12 +118,12 @@ def _apply_acl_lock(lock=True):
         subprocess.run(["icacls", HOSTS_FILE, "/remove:d", "*S-1-1-0", "/c", "/q"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
 
         if lock:
-            # Deny Write (W) and Modify (M) specifically to Users and Administrators.
-            # This completely blocks direct edits/tampering by any human user (standard or admin),
-            # while leaving system processes, services (like Dnscache), and non-interactive backgrounds
-            # fully capable of reading and writing to the file.
-            subprocess.run(["icacls", HOSTS_FILE, "/deny", f"{users_sid}:(W,M)", "/c", "/q"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            res = subprocess.run(["icacls", HOSTS_FILE, "/deny", f"{admins_sid}:(W,M)", "/c", "/q"], capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            # Deny Write (W) and Delete (D) specifically to Users and Administrators.
+            # This completely blocks direct edits/tampering/deletion by any human user (standard or admin),
+            # while leaving the file fully readable for human users, browsers, and the system DNS cache,
+            # and allowing system processes to write when needed.
+            subprocess.run(["icacls", HOSTS_FILE, "/deny", f"{users_sid}:(W,D)", "/c", "/q"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            res = subprocess.run(["icacls", HOSTS_FILE, "/deny", f"{admins_sid}:(W,D)", "/c", "/q"], capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
             if res.returncode == 0:
                 if logger: logger.info("Hosts ACL Locked (Vector 2: User/Admin Write Denied, System/Service Allowed)")
         else:
