@@ -147,6 +147,7 @@ class DNSProxyServer:
         self._state_path = state_path
         self._threads = []
         self._executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="DNSHandler")
+        self._semaphore = threading.Semaphore(100)
 
     def update_rules(self, manual_list, filter_list, cloud_list, filter_exceptions):
         self.manual_matcher = DomainMatcher(manual_list)
@@ -267,14 +268,26 @@ class DNSProxyServer:
         while self.running:
             try:
                 data, addr = sock.recvfrom(512)
-                # Offload to thread pool for non-blocking serving
-                self._executor.submit(self._handle_packet, sock, data, addr)
+                if self._semaphore.acquire(blocking=False):
+                    try:
+                        self._executor.submit(self._handle_packet_wrapper, sock, data, addr)
+                    except Exception as e:
+                        self._semaphore.release()
+                        logger.error(f"Executor submit failed: {e}")
+                else:
+                    logger.warning("DNS saturation detected. Packet dropped under memory pressure.")
             except socket.timeout:
                 continue
             except Exception as e:
                 if self.running:
                     logger.error(f"DNS serve error on {sock}: {e}")
                 continue
+
+    def _handle_packet_wrapper(self, sock: socket.socket, data: bytes, addr: tuple) -> None:
+        try:
+            self._handle_packet(sock, data, addr)
+        finally:
+            self._semaphore.release()
 
     def _handle_packet(self, sock: socket.socket, data: bytes, addr: tuple) -> None:
         """Processes a single DNS packet (runs in executor thread)."""
