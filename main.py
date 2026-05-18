@@ -569,6 +569,41 @@ class ProductivityApp(ctk.CTk):
         f_b.pack(pady=10)
         ctk.CTkButton(f_b, text="Backup Configuration", width=180, height=38, command=self._backup_settings).pack(side="left", padx=10)
         ctk.CTkButton(f_b, text="Restore Configuration", width=180, height=38, command=self._restore_settings).pack(side="left", padx=10)
+        
+        # Add Emergency Recovery button in Maintenance & Recovery
+        f_recovery = ctk.CTkFrame(c, fg_color="transparent")
+        f_recovery.pack(pady=(15, 10))
+        ctk.CTkButton(
+            f_recovery, 
+            text="🚨 Emergency Recovery", 
+            width=380, 
+            height=42, 
+            fg_color="#D32F2F", 
+            hover_color="#B71C1C",
+            font=ctk.CTkFont(weight="bold"),
+            command=self._run_emergency_recovery
+        ).pack(padx=10)
+
+    def _run_emergency_recovery(self):
+        # Find recovery_uplift.exe in production or fallback to recovery_uplift.py in development
+        exe_path = resource_path("recovery_uplift.exe")
+        if not os.path.exists(exe_path):
+            # Development fallback
+            py_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "recovery_uplift.py"))
+            if os.path.exists(py_path):
+                try:
+                    ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, f'"{py_path}"', None, 1)
+                    self.status_lbl.configure(text="Emergency Recovery launched", text_color="green")
+                except Exception as e:
+                    self.status_lbl.configure(text=f"Failed to launch: {e}", text_color="red")
+            else:
+                self.status_lbl.configure(text="Recovery tool not found", text_color="red")
+        else:
+            try:
+                ctypes.windll.shell32.ShellExecuteW(None, "runas", exe_path, "", None, 1)
+                self.status_lbl.configure(text="Emergency Recovery launched", text_color="green")
+            except Exception as e:
+                self.status_lbl.configure(text=f"Failed to launch: {e}", text_color="red")
 
     def _backup_settings(self):
         p = ctk.filedialog.asksaveasfilename(defaultextension=".spb", filetypes=[("SPB Backup", "*.spb")])
