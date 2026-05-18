@@ -5,6 +5,9 @@
 - **High-Integrity SYSTEM Daemon**: Transitioned the scheduled task execution from the interactive user context to the `NT AUTHORITY\SYSTEM` account, guaranteeing absolute privileges for writing to the hosts file and hardened config/log directories.
 - **Boot-Level AtStartup Trigger**: Added the `AtStartup` trigger alongside the `AtLogOn` trigger, ensuring the daemon starts instantly when Windows boots up, completely bypassing Fast Startup logon-bypass limitations.
 - **Power & Battery Resilience**: Strip power/battery restrictions natively from the scheduled task settings to ensure the protection stays active whether running on plugged-in power or battery.
+- **Strict Schedule-OFF Deactivation**: Re-engineered profile scheduling so that disabling a group's schedule explicitly turns off its group blocks (websites/apps/folders), removing "Always Active" fallbacks.
+- **Decoupled Content Filter Schedule Integration**: Refactored the Content Filter (Adblocker) logic to support independent 24/7 operation or strict group-schedule dependency via dedicated UI settings.
+- **Exhaustive Truth Table Permutations Validation**: Expanded the integration validation suite with a 13-scenario schedule confusion matrix and a 4-scenario adblocker schedule-dependency matrix.
 
 ### Fixed
 - **Permission Denied Logging**: Resolved log permission errors in hardened ProgramData environments by running as SYSTEM, eliminating the need to fall back to the `%TEMP%` directory.
