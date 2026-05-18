@@ -275,12 +275,28 @@ Section "Install"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayIcon" '"$INSTDIR\SimpleProductivityBlocker.exe",0'
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "NoModify" 1
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "NoRepair" 1
+
+  # Create Desktop shortcut
+  CreateShortcut "$DESKTOP\Simple Productivity Blocker.lnk" "$INSTDIR\SimpleProductivityBlocker.exe"
+  
+  # Create Start Menu directory and shortcuts
+  CreateDirectory "$SMPROGRAMS\Simple Productivity Blocker"
+  CreateShortcut "$SMPROGRAMS\Simple Productivity Blocker\Simple Productivity Blocker.lnk" "$INSTDIR\SimpleProductivityBlocker.exe"
+  CreateShortcut "$SMPROGRAMS\Simple Productivity Blocker\Emergency Recovery Helper.lnk" "$INSTDIR\recovery_uplift.exe"
+  CreateShortcut "$SMPROGRAMS\Simple Productivity Blocker\Uninstall Simple Productivity Blocker.lnk" "$INSTDIR\uninstall.exe"
 SectionEnd
 
 Section "Uninstall"
   # Run the python uninstaller silently in the background to release scheduled tasks, blocks, and configurations
   nsExec::Exec '"$INSTDIR\spb_uninstaller.exe" --silent'
   
+  # Clean up shortcuts
+  Delete "$DESKTOP\Simple Productivity Blocker.lnk"
+  Delete "$SMPROGRAMS\Simple Productivity Blocker\Simple Productivity Blocker.lnk"
+  Delete "$SMPROGRAMS\Simple Productivity Blocker\Emergency Recovery Helper.lnk"
+  Delete "$SMPROGRAMS\Simple Productivity Blocker\Uninstall Simple Productivity Blocker.lnk"
+  RMDir "$SMPROGRAMS\Simple Productivity Blocker"
+
   # Natively remove files and parent directories compiled in installation folder
   Delete "$INSTDIR\uninstall.exe"
   Delete "$INSTDIR\*.*"
