@@ -99,23 +99,34 @@ def _clear_file_lock():
         if logger: logger.info("Hosts file handle released.")
 
 def _apply_acl_lock(lock=True):
-    """Vector 2: NTFS ACL Denial for Everyone."""
+    """Vector 2: NTFS ACL Denial for Users & Administrators (Preserving System/Service Read & Write Access)."""
     if os.name != 'nt': return
-    if lock:
-        # LIFTED: Do not lock the hosts file, as removing inheritance or applying deny rules
-        # prevents the Windows DNS Client service from reading the hosts file contents.
-        return
-    target = "*S-1-1-0" # Everyone
+    users_sid = "*S-1-5-32-545"      # BUILTIN\Users
+    admins_sid = "*S-1-5-32-544"     # BUILTIN\Administrators
     try:
-        # 1. Take ownership first to ensure we can reset permissions
+        # Always take ownership first and ensure Administrators have full control before changes
         subprocess.run(["takeown", "/f", HOSTS_FILE, "/a"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        # 2. Grant Admins full control
         subprocess.run(["icacls", HOSTS_FILE, "/grant", "Administrators:(F)", "/c", "/q"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        # 3. Restore inheritance and remove Deny
-        args = ["icacls", HOSTS_FILE, "/inheritance:e", "/remove:d", target, "/c", "/q"]
         
-        res = subprocess.run(args, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        if res.returncode == 0:
+        # Ensure inheritance is enabled so default Read permissions for Dnscache, Users, and Services are active.
+        # Clean up any pre-existing deny ACEs for these target SIDs.
+        subprocess.run(["icacls", HOSTS_FILE, "/inheritance:e", "/c", "/q"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        subprocess.run(["icacls", HOSTS_FILE, "/remove:d", users_sid, "/c", "/q"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        subprocess.run(["icacls", HOSTS_FILE, "/remove:d", admins_sid, "/c", "/q"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        # Also clean legacy Everyone deny ACE if present
+        subprocess.run(["icacls", HOSTS_FILE, "/remove:d", "*S-1-1-0", "/c", "/q"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+
+        if lock:
+            # Deny Write (W) and Modify (M) specifically to Users and Administrators.
+            # This completely blocks direct edits/tampering by any human user (standard or admin),
+            # while leaving system processes, services (like Dnscache), and non-interactive backgrounds
+            # fully capable of reading and writing to the file.
+            subprocess.run(["icacls", HOSTS_FILE, "/deny", f"{users_sid}:(W,M)", "/c", "/q"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            res = subprocess.run(["icacls", HOSTS_FILE, "/deny", f"{admins_sid}:(W,M)", "/c", "/q"], capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            if res.returncode == 0:
+                if logger: logger.info("Hosts ACL Locked (Vector 2: User/Admin Write Denied, System/Service Allowed)")
+        else:
             if logger: logger.info("Hosts ACL Restored (Vector 2)")
     except Exception as e:
         if logger: logger.debug(f"ACL error: {e}")
