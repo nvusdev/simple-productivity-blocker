@@ -26,8 +26,29 @@ def terminate_spb_processes():
     time.sleep(1)
 
 
+def is_safe_path_to_unlock(path: str) -> bool:
+    """Validate path to ensure core Windows directories are protected, except hosts."""
+    try:
+        resolved = os.path.normcase(os.path.abspath(path))
+        system_root = os.path.normcase(os.environ.get('SystemRoot', 'C:\\Windows'))
+        hosts_file = os.path.normcase(os.path.join(system_root, 'System32', 'drivers', 'etc', 'hosts'))
+        
+        if resolved == hosts_file:
+            return True
+            
+        if resolved == system_root or resolved.startswith(system_root + os.path.sep):
+            return False
+    except Exception:
+        return False
+    return True
+
 def force_unlock(path):
     path = os.path.normpath(os.path.abspath(path))
+    
+    if not is_safe_path_to_unlock(path):
+        print(f"[!] Security rejection: Unlocking parent system directory '{path}' is not permitted.")
+        return False
+
     if not os.path.exists(path):
         print(f"[-] Path does not exist: {path}")
         return False
@@ -195,19 +216,7 @@ def _get_history(config_dir: str, filename: str) -> set:
                 return {str(item) for item in data if isinstance(item, str) and item.strip()}
             return set()
     except json.JSONDecodeError as e:
-        print(f"[!] Corruption detected in {filename}: {e}. Attempting raw string extraction.")
-        # Fallback: regex extraction if JSON is partially corrupted
-        import re
-        try:
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                raw_text = f.read()
-                # Extract anything that looks like a Windows path or basic string between quotes
-                matches = re.findall(r'"([a-zA-Z]:\\[^"\*<>\|]+)"', raw_text)
-                if matches:
-                    print(f"[*] Recovered {len(matches)} paths via raw extraction.")
-                    return set(matches)
-        except Exception:
-            pass
+        print(f"[!] Corruption detected in {filename}: {e}.")
         return set()
     except Exception as e:
         print(f"[!] Failed to read {filename}: {e}")
