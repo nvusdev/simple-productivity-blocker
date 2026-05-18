@@ -4,6 +4,8 @@
 ### Added
 - **Upgrade-Safe Setup Flow**: NSIS setup now detects prior installations, runs a preserve-config cleanup pass, and then proceeds with installation.
 - **Native Task Registration in Setup**: Installer now registers and starts `SPB_Daemon` directly via native NSIS command execution.
+- **Emergency Recovery Interface**: Added a dedicated warning-styled, bold **Emergency Recovery** button under the "Maintenance & Recovery" section of settings' About tab to run the native `recovery_uplift` tool with elevated UAC permissions.
+- **Expanded Fallback Content Filters**: Expanded `NORMALIZED_FILTER_MAP` to 75 high-impact fallback domains (including subdomains and TLD variants) to guarantee robust system-level blocking when the DNS Proxy server is unavailable.
 
 ### Fixed
 - **Daemon Schedule Crash**: Removed invalid scheduler context passing that caused `'CustomListManager' object has no attribute 'strftime'` and repeated sync-loop failures.
@@ -11,6 +13,8 @@
 - **Time Input Validation**: Schedule time fields now only persist valid `H:MM`/`HH:MM` values, warn on invalid entries, and ignore invalid values instead of saving broken times.
 - **Upgrade/Uninstall Lock Release**: Improved uninstall process handling for running installer processes, DNS loopback fallback reset, and locked installation directory cleanup.
 - **Install Health Verification**: Setup now aborts if `SPB_Daemon.exe` fails runtime verification after task registration/start.
+- **Default Profile Re-creation Bug**: Fixed configuration normalization to selectively deep-merge default keys, preventing `"Default Profile"` from being automatically re-created when custom profiles exist.
+- **Active Group Logging**: Corrected the background active group logging to print custom profile names (e.g. `"Joe Rage"`) using dictionary keys instead of a generic `"Unnamed"` label.
 
 ## [1.4.5] - 2026-05-17
 ### Added
