@@ -163,7 +163,20 @@ def normalize_config(data):
         data = migrated
         warnings.append("Legacy flat config migrated into Default Profile.")
 
-    _deep_merge_defaults(data, DEFAULT_CONFIG)
+    # Deep-merge top-level defaults, excluding "groups" to prevent "Default Profile" re-creation when other profiles exist
+    for k, v in DEFAULT_CONFIG.items():
+        if k == "groups":
+            if "groups" not in data or not isinstance(data["groups"], dict) or not data["groups"]:
+                data["groups"] = copy.deepcopy(DEFAULT_CONFIG["groups"])
+        else:
+            if isinstance(v, dict):
+                if k not in data or not isinstance(data.get(k), dict):
+                    data[k] = copy.deepcopy(v)
+                else:
+                    _deep_merge_defaults(data[k], v)
+            else:
+                if k not in data:
+                    data[k] = copy.deepcopy(v)
 
     for group_name, group_data in list(data.get("groups", {}).items()):
         if not isinstance(group_data, dict):
