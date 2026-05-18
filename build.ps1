@@ -299,9 +299,12 @@ Section "Install"
   Abort "Scheduled task registration failed."
 
   # Adjust task settings natively via PowerShell to add both triggers, allow running on battery, and disable execution time limits.
-  nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-ScheduledTask -TaskName \'SPB_Daemon\' -Trigger (New-ScheduledTaskTrigger -AtStartup), (New-ScheduledTaskTrigger -AtLogOn) -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit 0)"'
+  nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-ScheduledTask -TaskName \'\'SPB_Daemon\'\' -Trigger (New-ScheduledTaskTrigger -AtStartup), (New-ScheduledTaskTrigger -AtLogOn) -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit 0)"'
   Pop $0
   Pop $1
+  IntCmp $0 0 +3 0 0
+  DetailPrint "Task settings adjustment failed: $1"
+  Abort "Scheduled task settings adjustment failed."
 
   nsExec::ExecToStack 'schtasks /run /tn "SPB_Daemon"'
   Pop $0
