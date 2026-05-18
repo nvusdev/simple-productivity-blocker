@@ -196,6 +196,11 @@ class BlockingContext:
 
 def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> BlockingContext:
     cfg_dir = os.path.dirname(cfg_path)
+    # Extract and sanitize date_context from clm parameter if passed as datetime by test suites
+    date_context = None
+    if isinstance(clm, datetime):
+        date_context = clm
+
     tier1: List[str] = []
     tier2: List[str] = []
     all_apps: Set[str] = set()
@@ -237,11 +242,11 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
 
     for _, gdata in config.get("groups", {}).items():
         if not gdata.get("enabled", True): continue
-        active = is_active(gdata)
+        active = is_active(gdata, date_context=date_context)
         ad = gdata.get("adblocker", {})
         ad_on = ad.get("enabled", False)
         ad_persist = ad.get("persist_all_day", False)
-        day_on = is_day_active(gdata.get("schedule", {}))
+        day_on = is_day_active(gdata.get("schedule", {}), date_context=date_context)
         
         ad_active = ad_on and day_on and (ad_persist or active)
 
@@ -294,9 +299,9 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
         ad = gdata.get("adblocker", {})
         if not ad.get("enabled", False): continue
         
-        active = is_active(gdata)
+        active = is_active(gdata, date_context=date_context)
         ad_persist = ad.get("persist_all_day", False)
-        day_on = is_day_active(gdata.get("schedule", {}))
+        day_on = is_day_active(gdata.get("schedule", {}), date_context=date_context)
         
         ad_active = day_on and (ad_persist or active)
         if not ad_active: continue
