@@ -1,5 +1,15 @@
 # Simple Productivity Blocker - Version History
 
+## [1.4.7] - 2026-05-18
+### Added
+- **High-Integrity SYSTEM Daemon**: Transitioned the scheduled task execution from the interactive user context to the `NT AUTHORITY\SYSTEM` account, guaranteeing absolute privileges for writing to the hosts file and hardened config/log directories.
+- **Boot-Level AtStartup Trigger**: Added the `AtStartup` trigger alongside the `AtLogOn` trigger, ensuring the daemon starts instantly when Windows boots up, completely bypassing Fast Startup logon-bypass limitations.
+- **Power & Battery Resilience**: Strip power/battery restrictions natively from the scheduled task settings to ensure the protection stays active whether running on plugged-in power or battery.
+
+### Fixed
+- **Permission Denied Logging**: Resolved log permission errors in hardened ProgramData environments by running as SYSTEM, eliminating the need to fall back to the `%TEMP%` directory.
+- **Hosts File Write Protection**: Fixed the `Permission denied` hosts file write failures when the interactive user was non-elevated.
+
 ## [1.4.6] - 2026-05-18
 ### Added
 - **Upgrade-Safe Setup Flow**: NSIS setup now detects prior installations, runs a preserve-config cleanup pass, and then proceeds with installation.
