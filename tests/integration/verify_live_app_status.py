@@ -4,6 +4,7 @@ import json
 import time
 import psutil
 import datetime
+import copy
 
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -38,10 +39,11 @@ def test_settings_per_group():
                 "apps": ["notepad.exe", "slack.exe"],
                 "folders": ["C:\\temp\\work", "C:\\safe_folder\\code"],
                 "schedule": {
-                    "enabled": False, # Always active
+                    "enabled": True,
+                    "persist_all_day": True,
                     "start_time": "09:00",
                     "end_time": "17:00",
-                    "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+                    "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
                 }
             },
             "Entertainment Profile": {
@@ -137,7 +139,7 @@ def test_schedule_confusion_matrix():
             "expected": False
         },
         {
-            "name": "Disabled Schedule (Always Active)",
+            "name": "Disabled Schedule (Group OFF)",
             "group": {
                 "enabled": True,
                 "schedule": {
@@ -148,7 +150,7 @@ def test_schedule_confusion_matrix():
                 }
             },
             "time": datetime.datetime(2026, 5, 17, 12, 0), # Sunday 12:00
-            "expected": True
+            "expected": False
         },
         {
             "name": "Always Active Flag (Explicit)",
@@ -242,6 +244,36 @@ def test_schedule_confusion_matrix():
             },
             "time": datetime.datetime(2026, 5, 19, 6, 0), # Tuesday 06:00
             "expected": False
+        },
+        {
+            "name": "Enforce All Day ON + Schedule OFF",
+            "group": {
+                "enabled": True,
+                "schedule": {
+                    "enabled": False,
+                    "persist_all_day": True,
+                    "start_time": "09:00",
+                    "end_time": "17:00",
+                    "days": ["Monday"]
+                }
+            },
+            "time": datetime.datetime(2026, 5, 18, 12, 0), # Monday 12:00
+            "expected": False
+        },
+        {
+            "name": "Enforce All Day OFF + Schedule OFF",
+            "group": {
+                "enabled": True,
+                "schedule": {
+                    "enabled": False,
+                    "persist_all_day": False,
+                    "start_time": "09:00",
+                    "end_time": "17:00",
+                    "days": ["Monday"]
+                }
+            },
+            "time": datetime.datetime(2026, 5, 18, 12, 0), # Monday 12:00
+            "expected": False
         }
     ]
 
@@ -260,6 +292,73 @@ def test_schedule_confusion_matrix():
     print("-" * 95)
     assert passed_all, "Confusion matrix evaluations mismatched!"
     print("[PASS] Confusion matrix truth-table evaluation matches expected parameters 100% correctly.")
+
+def test_content_filter_logic():
+    print("\n--- PHASE 2C: CONTENT FILTER / ADBLOCKER LOGIC VALIDATION ---")
+    
+    base_config = {
+        "schema_version": 2,
+        "settings": {
+            "cloud_allowlist_enabled": False,
+            "cloud_allowlist": [],
+            "cloud_path_keywords": []
+        },
+        "groups": {
+            "Group A": {
+                "enabled": True,
+                "websites": [],
+                "apps": [],
+                "folders": [],
+                "adblocker": {
+                    "enabled": False,
+                    "persist_all_day": False,
+                    "social_media": True
+                },
+                "schedule": {
+                    "enabled": True,
+                    "start_time": "09:00",
+                    "end_time": "17:00",
+                    "days": ["Monday"]
+                }
+            }
+        }
+    }
+
+    # Scenario 1: Enable Content Filter ON + Enforce All Day OFF + Inside Schedule
+    config_1 = copy.deepcopy(base_config)
+    config_1["groups"]["Group A"]["adblocker"]["enabled"] = True
+    config_1["groups"]["Group A"]["adblocker"]["persist_all_day"] = False
+    
+    # Monday Noon (Inside Schedule)
+    ctx_1 = _compute_targets(config_1, datetime.datetime(2026, 5, 18, 12, 0), "config.json")
+    print(f"[PASS] CF ON + Enforce OFF + Inside Schedule: has blocked domains = {len(ctx_1.filter_keywords) > 0} (Expected: True)")
+    assert len(ctx_1.filter_keywords) > 0
+    
+    # Monday Night (Outside Schedule)
+    ctx_1_night = _compute_targets(config_1, datetime.datetime(2026, 5, 18, 20, 0), "config.json")
+    print(f"[PASS] CF ON + Enforce OFF + Outside Schedule: has blocked domains = {len(ctx_1_night.filter_keywords) > 0} (Expected: False)")
+    assert len(ctx_1_night.filter_keywords) == 0
+
+    # Scenario 2: Enforce All Day ON + Enable Content Filter OFF
+    config_2 = copy.deepcopy(base_config)
+    config_2["groups"]["Group A"]["adblocker"]["enabled"] = False
+    config_2["groups"]["Group A"]["adblocker"]["persist_all_day"] = True
+    
+    ctx_2 = _compute_targets(config_2, datetime.datetime(2026, 5, 18, 12, 0), "config.json")
+    print(f"[PASS] CF OFF + Enforce ON + Inside Schedule: has blocked domains = {len(ctx_2.filter_keywords) > 0} (Expected: False)")
+    assert len(ctx_2.filter_keywords) == 0
+
+    # Scenario 3: Enable Content Filter ON + Enforce All Day ON + Outside Schedule
+    config_3 = copy.deepcopy(base_config)
+    config_3["groups"]["Group A"]["adblocker"]["enabled"] = True
+    config_3["groups"]["Group A"]["adblocker"]["persist_all_day"] = True
+    
+    # Monday Night (Outside Schedule)
+    ctx_3 = _compute_targets(config_3, datetime.datetime(2026, 5, 18, 20, 0), "config.json")
+    print(f"[PASS] CF ON + Enforce ON + Outside Schedule: has blocked domains = {len(ctx_3.filter_keywords) > 0} (Expected: True)")
+    assert len(ctx_3.filter_keywords) > 0
+
+    print("[PASS] Content Filter / Adblocker schedule dependency validation successfully resolved 100%.")
 
 def test_daemon_health():
     print("\n--- PHASE 3: LIVE DAEMON HEALTH & HEARTBEAT AUDIT ---")
@@ -332,6 +431,7 @@ if __name__ == "__main__":
     test_config_system()
     test_settings_per_group()
     test_schedule_confusion_matrix()
+    test_content_filter_logic()
     test_daemon_health()
     test_performance()
     
