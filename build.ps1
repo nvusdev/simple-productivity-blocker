@@ -285,6 +285,11 @@ Section "Install"
   DetailPrint "Task registration failed: $1"
   Abort "Scheduled task registration failed."
 
+  # Adjust task settings natively via PowerShell to allow running on battery and disable execution time limits.
+  nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-ScheduledTask -TaskName \'SPB_Daemon\' -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit 0)"'
+  Pop $0
+  Pop $1
+
   nsExec::ExecToStack 'schtasks /run /tn "SPB_Daemon"'
   Pop $0
   Pop $1
