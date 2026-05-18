@@ -150,17 +150,44 @@ RECOVERY_FILE = os.path.join(base_data, "recovery_history.json")
 clm = CustomListManager(base_data)
 
 NORMALIZED_FILTER_MAP = {
-    "ads_trackers": ["doubleclick.net", "googleadservices.com", "googlesyndication.com"],
-    "malware_annoyances": ["coinhive.com", "miner.com"],
-    "social_media": ["facebook.com", "instagram.com", "x.com", "twitter.com", "tiktok.com", "reddit.com", "discord.com"],
-    "entertainment": ["youtube.com", "netflix.com", "twitch.tv", "googlevideo.com"],
-    "shopping": ["amazon.com", "ebay.com", "walmart.com"],
-    "gaming": ["steampowered.com", "roblox.com", "epicgames.com"],
-    "ai_tech": ["chatgpt.com", "openai.com", "claude.ai"],
-    "piracy_illegal": ["thepiratebay.org", "1337x.to"],
-    "adult_content": ["pornhub.com", "xvideos.com"],
-    "gambling": ["stake.com", "bet365.com"],
-    "music_podcasts": ["spotify.com", "soundcloud.com"]
+    "ads_trackers": [
+        "doubleclick.net", "googleadservices.com", "googlesyndication.com", 
+        "adnxs.com", "taboola.com", "outbrain.com", "criteo.com", "ads.google.com"
+    ],
+    "malware_annoyances": [
+        "coinhive.com", "miner.com", "cryptobloot.com", "popads.net", "propellerads.com"
+    ],
+    "social_media": [
+        "facebook.com", "fb.com", "instagram.com", "x.com", "twitter.com", "tiktok.com", 
+        "reddit.com", "discord.com", "linkedin.com", "pinterest.com", "threads.net"
+    ],
+    "entertainment": [
+        "youtube.com", "music.youtube.com", "netflix.com", "twitch.tv", "googlevideo.com", 
+        "vimeo.com", "dailymotion.com", "disneyplus.com", "crunchyroll.com"
+    ],
+    "shopping": [
+        "amazon.com", "ebay.com", "walmart.com", "target.com", "bestbuy.com", "aliexpress.com"
+    ],
+    "gaming": [
+        "steampowered.com", "roblox.com", "epicgames.com", "minecraft.net", "nintendo.com", "playstation.com"
+    ],
+    "ai_tech": [
+        "chatgpt.com", "openai.com", "claude.ai", "anthropic.com", "perplexity.ai", 
+        "gemini.google.com", "midjourney.com", "deepseek.com"
+    ],
+    "piracy_illegal": [
+        "thepiratebay.org", "1337x.to", "yts.mx", "rarbg.to", "rutracker.org"
+    ],
+    "adult_content": [
+        "pornhub.com", "xvideos.com", "redtube.com", "xnxx.com", "youporn.com"
+    ],
+    "gambling": [
+        "stake.com", "bet365.com", "roobet.com", "draftkings.com", "bovada.lv"
+    ],
+    "music_podcasts": [
+        "spotify.com", "soundcloud.com", "music.apple.com", "podcasts.apple.com", 
+        "deezer.com", "tidal.com", "music.amazon.com"
+    ]
 }
 
 def _base(domain):
@@ -735,7 +762,7 @@ class DaemonOrchestrator:
             logger.info(f"PM Subsystem Sync: {len(ctx.processes)} apps, {len(ctx.files)} files, {len(ctx.folders)} folders.")
 
         # Log active groups for user transparency
-        active_groups = [g.get("name", "Unnamed") for g in self.cfg.cache.get("groups", {}).values() if g.get("enabled", True) and is_active(g)]
+        active_groups = [gname for gname, g in self.cfg.cache.get("groups", {}).items() if g.get("enabled", True) and is_active(g)]
         logger.info(f"Active Groups: {', '.join(active_groups) if active_groups else 'None'}")
 
         self.cur_apps, self.cur_files, self.cur_folders = ctx.processes, ctx.files, ctx.folders
