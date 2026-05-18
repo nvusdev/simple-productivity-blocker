@@ -192,7 +192,7 @@ def normalize_config(data):
     existing = data.get("migration_warnings", [])
     if not isinstance(existing, list):
         existing = []
-    data["migration_warnings"] = list(dict.fromkeys(existing + warnings))
+    data["migration_warnings"] = list(dict.fromkeys(existing + warnings))[-50:]
     return data
 
 def _quarantine_bad_config(path):
