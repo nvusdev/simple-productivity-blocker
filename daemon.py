@@ -89,13 +89,6 @@ except ImportError as e:
     logger = logging.getLogger("SPB_Daemon")
     logger.critical(f"FATAL: Protection modules failed to load: {e}")
     
-    # Try automated recovery first so we fail open/failsafe before exiting
-    try:
-        import recovery_uplift
-        recovery_uplift.run_auto_recovery()
-    except Exception as recovery_err:
-        logger.critical(f"FATAL: Automated recovery failed: {recovery_err}")
-    
     # Signal failure to health monitor
     try:
         base_data = handler.get_data_dir()
@@ -379,8 +372,9 @@ def _resolve_hosts_fallback_domains(
     manual_domains: Set[str],
     normalized_filter_domains: Set[str],
     cloud_allowlist: Set[str],
+    want_custom: Set[str] = None,
 ) -> Set[str]:
-    """ONLY returns manual_domains and the critical normalized redundancy set."""
+    """ONLY returns manual_domains, critical normalized redundancy set, and custom domains."""
     resolved: Set[str] = set()
 
     for domain in manual_domains:
@@ -390,6 +384,11 @@ def _resolve_hosts_fallback_domains(
     for domain in normalized_filter_domains:
         if not _pattern_matches(cloud_allowlist, domain):
             resolved.add(domain)
+
+    if want_custom:
+        for domain in want_custom:
+            if not _pattern_matches(cloud_allowlist, domain):
+                resolved.add(domain)
 
     return resolved
 
@@ -664,8 +663,29 @@ class SubsystemOrchestrator:
             manual_domains,
             normalized_filter_domains if normalized_filter_domains is not None else set(),
             cloud_allowlist,
+            want_custom=filter_keywords
         )
         
+        # Consistently check and enforce max_domains_cap limit for health/logging
+        try:
+            config = load_config()
+            max_lines = config.get("settings", {}).get("max_domains_cap", 1000)
+        except Exception:
+            max_lines = 1000
+        max_domains = max(0, (max_lines - 2) // 2)
+
+        is_degraded = False
+        if not self.using_dns_proxy:
+            if len(active_domains) > max_domains:
+                dropped = len(active_domains) - max_domains
+                logger.critical(f"CRITICAL WARNING: Fallback hosts protection truncated. {dropped} domains dropped to fit max_domains_cap ({max_domains}).")
+                is_degraded = True
+        else:
+            if len(redundancy_set) > max_domains:
+                dropped = len(redundancy_set) - max_domains
+                logger.critical(f"CRITICAL WARNING: Hosts redundancy protection truncated. {dropped} domains dropped to fit max_domains_cap ({max_domains}).")
+                is_degraded = True
+
         # Pass redundancy_set to ensure core distractions are in hosts file
         sync_website_protection(
             list(active_domains), 
@@ -674,7 +694,8 @@ class SubsystemOrchestrator:
             redundancy_list=list(redundancy_set)
         )
         
-        self._update_health_signal("Active" if self.using_dns_proxy else "Fallback")
+        health_state = "Degraded" if is_degraded else ("Active" if self.using_dns_proxy else "Fallback")
+        self._update_health_signal(health_state)
         return True
 
     def _update_health_signal(self, status: str):
@@ -699,12 +720,8 @@ class SubsystemOrchestrator:
         self.dns_server = None
         self.using_dns_proxy = False
         
-        active_domains = _resolve_hosts_fallback_domains(
-            manual_domains,
-            normalized_filter_domains,
-            cloud_allowlist
-        )
-        sync_website_protection(list(active_domains), active=True, using_dns_proxy=False)
+        # Call sync_dns directly to consistently trigger fallback state, caps, and health signal updates
+        self.sync_dns(manual_domains, filter_keywords, cloud_allowlist, filter_exceptions, False, normalized_filter_domains=normalized_filter_domains)
 
     def sync_processes(self, processes, files, folders, first_run):
         if self.pm:
