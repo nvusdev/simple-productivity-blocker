@@ -544,28 +544,24 @@ class ConfigManager:
     def __init__(self, cfg_path: str):
         self.cfg_path = cfg_path
         self.cache: Dict[str, Any] = load_config(cfg_path)
-        self.stable_mtime = 0.0
-        self.pending_mtime = 0.0
-        self.debounce_counter = 0
+        self.last_hash = self._get_config_hash()
+
+    def _get_config_hash(self) -> str:
+        import hashlib
+        try:
+            if os.path.exists(self.cfg_path):
+                with open(self.cfg_path, 'rb') as f:
+                    return hashlib.sha256(f.read()).hexdigest()
+        except: pass
+        return ""
 
     def check_for_updates(self) -> bool:
         """Returns True if the config has changed and stabilized."""
-        try:
-            mtime = os.path.getmtime(self.cfg_path) if os.path.exists(self.cfg_path) else 0.0
-        except:
-            mtime = 0.0
-
-        if mtime != self.pending_mtime:
-            self.pending_mtime = mtime
-            self.debounce_counter = 0
+        curr_hash = self._get_config_hash()
+        if not curr_hash:
             return False
-        
-        if self.debounce_counter < 2:
-            self.debounce_counter += 1
-            return False
-        
-        if self.stable_mtime != mtime:
-            self.stable_mtime = mtime
+        if self.last_hash != curr_hash:
+            self.last_hash = curr_hash
             try:
                 self.cache = load_config(self.cfg_path)
                 return True
