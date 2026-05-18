@@ -277,16 +277,29 @@ Section "Install"
   Pop $0
   Pop $1
 
+  # Write the native uninstaller binary immediately after staging
+  WriteUninstaller "$INSTDIR\uninstall.exe"
+  
+  # Register the application in Add/Remove Programs (pointing to native uninstall.exe)
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayName" "Simple Productivity Blocker"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "UninstallString" '"$INSTDIR\uninstall.exe"'
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "QuietUninstallString" '"$INSTDIR\uninstall.exe" /S'
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "Publisher" "nvusdev"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayVersion" "1.4.7"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayIcon" '"$INSTDIR\SimpleProductivityBlocker.exe",0'
+  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "NoModify" 1
+  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "NoRepair" 1
+
   # Register/start daemon task natively to avoid subprocess-wrapper lock issues.
-  nsExec::ExecToStack 'schtasks /create /tn "SPB_Daemon" /tr "\"$INSTDIR\SPB_Daemon.exe\"" /sc onlogon /rl highest /f'
+  nsExec::ExecToStack 'schtasks /create /tn "SPB_Daemon" /tr "\"$INSTDIR\SPB_Daemon.exe\"" /sc onstart /ru "SYSTEM" /rl highest /f'
   Pop $0
   Pop $1
   IntCmp $0 0 +3 0 0
   DetailPrint "Task registration failed: $1"
   Abort "Scheduled task registration failed."
 
-  # Adjust task settings natively via PowerShell to allow running on battery and disable execution time limits.
-  nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-ScheduledTask -TaskName \'SPB_Daemon\' -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit 0)"'
+  # Adjust task settings natively via PowerShell to add both triggers, allow running on battery, and disable execution time limits.
+  nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-ScheduledTask -TaskName \'SPB_Daemon\' -Trigger (New-ScheduledTaskTrigger -AtStartup), (New-ScheduledTaskTrigger -AtLogOn) -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit 0)"'
   Pop $0
   Pop $1
 
@@ -296,27 +309,6 @@ Section "Install"
   IntCmp $0 0 +3 0 0
   DetailPrint "Task start failed: $1"
   Abort "SPB daemon failed to start."
-
-  Sleep 3000
-  nsExec::ExecToStack 'cmd /c tasklist /FI "IMAGENAME eq SPB_Daemon.exe" | find /I "SPB_Daemon.exe"'
-  Pop $0
-  Pop $1
-  IntCmp $0 0 +3 0 0
-  DetailPrint "Daemon runtime verification failed: $1"
-  Abort "SPB_Daemon.exe is not running. Setup aborted."
-  
-  # Write the native uninstaller binary
-  WriteUninstaller "$INSTDIR\uninstall.exe"
-  
-  # Register the application in Add/Remove Programs (pointing to native uninstall.exe)
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayName" "Simple Productivity Blocker"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "UninstallString" '"$INSTDIR\uninstall.exe"'
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "QuietUninstallString" '"$INSTDIR\uninstall.exe" /S'
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "Publisher" "nvusdev"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayVersion" "1.4.6"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayIcon" '"$INSTDIR\SimpleProductivityBlocker.exe",0'
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "NoModify" 1
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "NoRepair" 1
 
   # Create Desktop shortcut
   CreateShortcut "$DESKTOP\Simple Productivity Blocker.lnk" "$INSTDIR\SimpleProductivityBlocker.exe"
