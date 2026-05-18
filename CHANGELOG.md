@@ -15,7 +15,7 @@
 - **Install Health Verification**: Setup now aborts if `SPB_Daemon.exe` fails runtime verification after task registration/start.
 - **Default Profile Re-creation Bug**: Fixed configuration normalization to selectively deep-merge default keys, preventing `"Default Profile"` from being automatically re-created when custom profiles exist.
 - **Active Group Logging**: Corrected the background active group logging to print custom profile names (e.g. `"Joe Rage"`) using dictionary keys instead of a generic `"Unnamed"` label.
-- **Tamper-Proof Hosts File Locking**: Implemented refined NTFS deny write/modify ACLs specifically targeting `BUILTIN\Users` and `BUILTIN\Administrators` while keeping standard inheritance and exclusive handle locks lifted. This guarantees standard read access is preserved for the DNS Client service (`Dnscache`) and human users, and write/modify access is preserved for system/service processes, while completely blocking manual editing and tampering by human users (both standard and administrative).
+- **Tamper-Proof Hosts File Locking**: Implemented refined NTFS deny Write (W) and Delete (D) ACLs specifically targeting `BUILTIN\Users` and `BUILTIN\Administrators` while keeping standard inheritance and exclusive handle locks lifted. This guarantees standard read access is preserved for the DNS Client service (`Dnscache`) and human users (allowing website blocking to function perfectly on hosts fallback), while completely blocking manual editing, tampering, or deletion by human users (both standard and administrative).
 
 ## [1.4.5] - 2026-05-17
 ### Added
