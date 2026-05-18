@@ -40,6 +40,26 @@ class TestConfigNormalization(unittest.TestCase):
         self.assertIn("websites", group)
         self.assertIn("schedule", group)
 
+    def test_migration_warnings_cap_limits_to_fifty(self):
+        initial = {
+            "groups": {
+                "Default Profile": {
+                    "websites": [],
+                    "apps": [],
+                    "files": [],
+                    "folders": [],
+                    "adblocker": {"enabled": False, "exceptions": [], "custom_lists": []},
+                    "schedule": {"enabled": False},
+                    "security": {"enabled": False, "challenge_length": 32},
+                }
+            },
+            "migration_warnings": [f"warning-{i}" for i in range(60)]
+        }
+        normalized = cm.normalize_config(initial)
+        self.assertEqual(len(normalized["migration_warnings"]), 50)
+        self.assertIn("warning-59", normalized["migration_warnings"])
+        self.assertNotIn("warning-0", normalized["migration_warnings"])
+
 
 class TestConfigRecoveryAndPersistence(unittest.TestCase):
     def test_load_config_quarantines_invalid_json(self):
