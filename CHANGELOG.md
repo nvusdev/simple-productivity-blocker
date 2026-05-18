@@ -1,5 +1,17 @@
 # Simple Productivity Blocker - Version History
 
+## [1.4.6] - 2026-05-18
+### Added
+- **Upgrade-Safe Setup Flow**: NSIS setup now detects prior installations, runs a preserve-config cleanup pass, and then proceeds with installation.
+- **Native Task Registration in Setup**: Installer now registers and starts `SPB_Daemon` directly via native NSIS command execution.
+
+### Fixed
+- **Daemon Schedule Crash**: Removed invalid scheduler context passing that caused `'CustomListManager' object has no attribute 'strftime'` and repeated sync-loop failures.
+- **Installer Rollback Index Error**: Fixed rollback stack handling in `spb_installer.py` to prevent `list assignment index out of range` on existing-directory installs.
+- **Time Input Validation**: Schedule time fields now only persist valid `H:MM`/`HH:MM` values, warn on invalid entries, and ignore invalid values instead of saving broken times.
+- **Upgrade/Uninstall Lock Release**: Improved uninstall process handling for running installer processes, DNS loopback fallback reset, and locked installation directory cleanup.
+- **Install Health Verification**: Setup now aborts if `SPB_Daemon.exe` fails runtime verification after task registration/start.
+
 ## [1.4.5] - 2026-05-17
 ### Added
 - **Hosts File Domain Cap**: Introduced a configurable cap (1000 to 5000 domains) in settings to limit the number of blocked domains in the hosts file, minimizing system-level DNS resolution latency.

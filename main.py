@@ -2,6 +2,7 @@ import customtkinter as ctk
 import string
 import random
 import datetime
+import re
 import os
 import subprocess
 import psutil
@@ -13,7 +14,7 @@ from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, 
 from core.platform_handler import get_platform_handler
 handler = get_platform_handler()
 
-VERSION = "1.4.5"
+VERSION = "1.4.6"
 
 def resource_path(relative_path):
     try:
@@ -421,14 +422,18 @@ class ProductivityApp(ctk.CTk):
         f_time = ctk.CTkFrame(container, fg_color="transparent")
         f_time.pack(pady=5, anchor="w", padx=35)
         self.start_entry = ctk.CTkEntry(f_time, width=100, height=35)
-        self.start_entry.insert(0, schedule.get("start_time", "09:00"))
+        start_initial = self._normalize_schedule_time(schedule.get("start_time", "09:00")) or "09:00"
+        self.start_entry.insert(0, start_initial)
         self.start_entry.pack(side="left")
         ctk.CTkLabel(f_time, text="to", font=ctk.CTkFont(size=14)).pack(side="left", padx=15)
         self.end_entry = ctk.CTkEntry(f_time, width=100, height=35)
-        self.end_entry.insert(0, schedule.get("end_time", "17:00"))
+        end_initial = self._normalize_schedule_time(schedule.get("end_time", "17:00")) or "17:00"
+        self.end_entry.insert(0, end_initial)
         self.end_entry.pack(side="left")
         self.start_entry.bind("<KeyRelease>", lambda e: self.save_schedule())
         self.end_entry.bind("<KeyRelease>", lambda e: self.save_schedule())
+        self.schedule_feedback_lbl = ctk.CTkLabel(container, text="", text_color="gray", font=ctk.CTkFont(size=11))
+        self.schedule_feedback_lbl.pack(anchor="w", padx=35, pady=(4, 0))
         ctk.CTkLabel(container, text="Active Days:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=25, pady=(20, 5))
         self.days_vars = {}
         for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]:
@@ -436,12 +441,41 @@ class ProductivityApp(ctk.CTk):
             ctk.CTkCheckBox(container, text=day, variable=var, command=self.save_schedule).pack(anchor="w", pady=4, padx=40)
             self.days_vars[day] = var
 
+    def _normalize_schedule_time(self, value):
+        txt = str(value or "").strip()
+        match = re.fullmatch(r"(\d{1,2}):(\d{2})", txt)
+        if not match:
+            return None
+        hour = int(match.group(1))
+        minute = int(match.group(2))
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return f"{hour:02d}:{minute:02d}"
+        return None
+
     def save_schedule(self):
+        existing = self.config_data["groups"][self.group_name].get("schedule", {})
+        prev_start = self._normalize_schedule_time(existing.get("start_time", "09:00")) or "09:00"
+        prev_end = self._normalize_schedule_time(existing.get("end_time", "17:00")) or "17:00"
+        start_input = self.start_entry.get().strip()
+        end_input = self.end_entry.get().strip()
+        start_time = self._normalize_schedule_time(start_input)
+        end_time = self._normalize_schedule_time(end_input)
+
+        if start_time is None or end_time is None:
+            start_time = start_time or prev_start
+            end_time = end_time or prev_end
+            self.schedule_feedback_lbl.configure(
+                text="Invalid time format. Use H:MM or HH:MM (e.g., 16:00). Invalid value ignored.",
+                text_color="orange"
+            )
+        else:
+            self.schedule_feedback_lbl.configure(text="", text_color="gray")
+
         self.config_data["groups"][self.group_name]["schedule"] = {
             "enabled": self.sch_enabled.get() == 1,
             "persist_all_day": self.sch_persist.get() == 1,
-            "start_time": self.start_entry.get().strip(),
-            "end_time": self.end_entry.get().strip(),
+            "start_time": start_time,
+            "end_time": end_time,
             "days": [day for day, var in self.days_vars.items() if var.get()]
         }
         self.trigger_save()

@@ -41,7 +41,8 @@ def _strip_spb_block(lines):
 
 def kill_processes():
     print("Terminating background processes and ghost instances...")
-    procs_to_kill = ["SimpleProductivityBlocker.exe", "SPB_Daemon.exe", "python.exe", "pythonw.exe"]
+    current_pid = os.getpid()
+    procs_to_kill = ["SimpleProductivityBlocker.exe", "SPB_Daemon.exe", "spb_installer.exe", "python.exe", "pythonw.exe"]
     try:
         import psutil
         for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
@@ -57,7 +58,7 @@ def kill_processes():
                 elif name in ["SimpleProductivityBlocker.exe", "SPB_Daemon.exe"]:
                     should_kill = True
                 
-                if should_kill:
+                if should_kill and pid != current_pid:
                     print(f"  - Killing {name} (PID: {pid})...")
                     proc.kill()
                     # Verify death
@@ -75,6 +76,19 @@ def kill_processes():
     except Exception as e:
         print(f"  [!] Process termination encountered an error: {e}")
     time.sleep(2)
+
+def fallback_dns_reset():
+    print("Running DNS fallback loopback reset...")
+    try:
+        ps = (
+            "Get-DnsClientServerAddress | "
+            "Where-Object { $_.ServerAddresses -contains '127.0.0.1' -or $_.ServerAddresses -contains '::1' } | "
+            "ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.InterfaceIndex -ResetServerAddresses }"
+        )
+        run_system_command(["powershell", "-NoProfile", "-Command", ps], check=False)
+        print("DNS fallback loopback reset complete.")
+    except Exception as e:
+        print(f"  [!] DNS fallback loopback reset failed: {e}")
 
 def cleanup_persistence():
     print("Removing Scheduled Tasks and Registry entries...")
@@ -143,6 +157,7 @@ def restore_dns_state():
     state_path = os.path.join(config_dir, "dns_state.json")
     if not os.path.exists(state_path):
         print("No SPB DNS state file found.")
+        fallback_dns_reset()
         return
     try:
         import json
@@ -167,6 +182,7 @@ def restore_dns_state():
         print("Adapter DNS state restored.")
     except Exception as e:
         print(f"Failed to restore adapter DNS state: {e}")
+        fallback_dns_reset()
 
 def _manual_clean_hosts(hosts_path):
     try:
@@ -180,18 +196,57 @@ def _manual_clean_hosts(hosts_path):
     except Exception as e:
         print(f"Failed to clean hosts file: {e}")
 
-def remove_files():
+def _reset_path_access(path):
+    run_system_command(['takeown', '/f', path, '/a', '/r', '/d', 'Y'], check=False, timeout=30)
+    run_system_command(['icacls', path, '/grant', 'Administrators:(F)', '/t', '/c', '/q'], check=False, timeout=30)
+    run_system_command(['icacls', path, '/reset', '/t', '/c', '/q'], check=False, timeout=30)
+
+def _remove_installation_directory(dest_dir):
+    print(f"Removing installation directory: {dest_dir}")
+    _reset_path_access(dest_dir)
+    try:
+        shutil.rmtree(dest_dir)
+        return True
+    except Exception as first_err:
+        print(f"  [!] Initial directory removal failed: {first_err}")
+
+    # Surgical file cleanup retry for locked attributes/ACL drift.
+    for root, dirs, files in os.walk(dest_dir, topdown=False):
+        for name in files:
+            fpath = os.path.join(root, name)
+            try:
+                run_system_command(['icacls', fpath, '/grant', 'Administrators:(F)', '/c', '/q'], check=False)
+                run_system_command(['attrib', '-R', '-H', '-S', fpath], check=False)
+                os.chmod(fpath, 0o777)
+                os.remove(fpath)
+            except Exception as e:
+                print(f"  [!] Could not remove file '{fpath}': {e}")
+        for name in dirs:
+            dpath = os.path.join(root, name)
+            try:
+                run_system_command(['icacls', dpath, '/grant', 'Administrators:(F)', '/c', '/q'], check=False)
+                run_system_command(['attrib', '-R', '-H', '-S', dpath], check=False)
+                os.rmdir(dpath)
+            except Exception:
+                pass
+
+    try:
+        os.rmdir(dest_dir)
+        return True
+    except Exception as final_err:
+        print(f"Failed to remove installation directory: {final_err}")
+        return False
+
+def remove_files(preserve_config=False):
     base_prog_files = get_program_files_path()
     dest_dir = os.path.join(base_prog_files, "Simple Productivity Blocker")
     if os.path.exists(dest_dir):
-        print(f"Removing installation directory: {dest_dir}")
-        try:
-            shutil.rmtree(dest_dir)
-        except Exception as e:
-            print(f"Failed to remove installation directory: {e}")
-            
+        _remove_installation_directory(dest_dir)
+             
     config_dir = os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
-    if os.path.exists(config_dir):
+    if preserve_config:
+        print(f"Preserving configuration directory: {config_dir}")
+    elif os.path.exists(config_dir):
         print(f"Removing configuration and cache: {config_dir}")
         try:
             shutil.rmtree(config_dir)
@@ -257,12 +312,13 @@ def cleanup_acls():
     print("Physical blocks released successfully.")
 
 def main():
-    print("Simple Productivity Blocker v1.4.5 Uninstaller")
+    print("Simple Productivity Blocker v1.4.6 Uninstaller")
     print("-------------------------------------------------------")
     
     import pythoncom
     
     is_silent = "--silent" in sys.argv
+    preserve_config = "--preserve-config" in sys.argv
     
     if not is_admin():
         if is_silent:
@@ -287,7 +343,7 @@ def main():
         restore_dns_state()
         restore_hosts()
         cleanup_acls()
-        remove_files()
+        remove_files(preserve_config=preserve_config)
         
         # --- Post-Condition Audit ---
         print("\n[*] Auditing system state...")

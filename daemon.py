@@ -237,11 +237,11 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
 
     for _, gdata in config.get("groups", {}).items():
         if not gdata.get("enabled", True): continue
-        active = is_active(gdata, clm)
+        active = is_active(gdata)
         ad = gdata.get("adblocker", {})
         ad_on = ad.get("enabled", False)
         ad_persist = ad.get("persist_all_day", False)
-        day_on = is_day_active(gdata.get("schedule", {}), clm)
+        day_on = is_day_active(gdata.get("schedule", {}))
         
         ad_active = ad_on and day_on and (ad_persist or active)
 
@@ -294,9 +294,9 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
         ad = gdata.get("adblocker", {})
         if not ad.get("enabled", False): continue
         
-        active = is_active(gdata, clm)
+        active = is_active(gdata)
         ad_persist = ad.get("persist_all_day", False)
-        day_on = is_day_active(gdata.get("schedule", {}), clm)
+        day_on = is_day_active(gdata.get("schedule", {}))
         
         ad_active = day_on and (ad_persist or active)
         if not ad_active: continue
@@ -757,7 +757,7 @@ class DaemonOrchestrator:
                 logger.error(f"Orchestrator error: {e}", exc_info=True)
                 time.sleep(5)
 
-VERSION = "1.4.5"
+VERSION = "1.4.6"
 
 def main():
     from core.win32_utils import is_safe_mode
