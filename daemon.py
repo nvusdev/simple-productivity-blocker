@@ -266,9 +266,11 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
         ad = gdata.get("adblocker", {})
         ad_on = ad.get("enabled", False)
         ad_persist = ad.get("persist_all_day", False)
-        day_on = is_day_active(gdata.get("schedule", {}), date_context=date_context)
         
-        ad_active = ad_on and day_on and (ad_persist or active)
+        if ad_on and ad_persist:
+            ad_active = True
+        else:
+            ad_active = ad_on and active
 
         if active or ad_active:
             for e in gdata.get("exceptions", []) + ad.get("exceptions", []):
@@ -317,13 +319,17 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
     for _, gdata in config.get("groups", {}).items():
         if not gdata.get("enabled", True): continue
         ad = gdata.get("adblocker", {})
-        if not ad.get("enabled", False): continue
+        ad_on = ad.get("enabled", False)
+        if not ad_on: continue
         
         active = is_active(gdata, date_context=date_context)
         ad_persist = ad.get("persist_all_day", False)
-        day_on = is_day_active(gdata.get("schedule", {}), date_context=date_context)
         
-        ad_active = day_on and (ad_persist or active)
+        if ad_on and ad_persist:
+            ad_active = True
+        else:
+            ad_active = ad_on and active
+            
         if not ad_active: continue
         
         for k, domains in NORMALIZED_FILTER_MAP.items():
