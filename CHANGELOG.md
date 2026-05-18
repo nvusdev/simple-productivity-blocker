@@ -15,6 +15,7 @@
 - **Install Health Verification**: Setup now aborts if `SPB_Daemon.exe` fails runtime verification after task registration/start.
 - **Default Profile Re-creation Bug**: Fixed configuration normalization to selectively deep-merge default keys, preventing `"Default Profile"` from being automatically re-created when custom profiles exist.
 - **Active Group Logging**: Corrected the background active group logging to print custom profile names (e.g. `"Joe Rage"`) using dictionary keys instead of a generic `"Unnamed"` label.
+- **Hosts Locking Bypass Fix**: Lifted exclusive hosts file handle locks (`msvcrt.locking`) and NTFS deny-write ACL permissions to prevent blocking the Windows DNS Client service (`Dnscache`), ensuring Windows can successfully read and parse blocked domains like `youtube.com` without bypasses.
 
 ## [1.4.5] - 2026-05-17
 ### Added

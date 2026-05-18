@@ -85,19 +85,9 @@ def expand_keyword_list(websites):
     return list(set(expanded))
 
 def _apply_file_lock():
-    """Vector 1: Hold an exclusive handle on the hosts file."""
-    global _locked_hosts_handle
-    if os.name != 'nt' or _locked_hosts_handle: return
-    try:
-        _locked_hosts_handle = open(HOSTS_FILE, "r")
-        # Lock the entire file range (max 32-bit offset) to prevent any modifications
-        msvcrt.locking(_locked_hosts_handle.fileno(), msvcrt.LK_NBLCK, 0x7FFFFFFF)
-        if logger: logger.info("Hosts file locked (Vector 1)")
-    except Exception as e:
-        if logger: logger.debug(f"Failed to lock hosts file: {e}")
-        if _locked_hosts_handle:
-            _locked_hosts_handle.close()
-            _locked_hosts_handle = None
+    """Vector 1: Hold an exclusive handle on the hosts file (LIFTED)."""
+    # Lifted to prevent Windows DNS Client (Dnscache) from being blocked from reading hosts file contents.
+    return
 
 def _clear_file_lock():
     global _locked_hosts_handle
@@ -111,24 +101,22 @@ def _clear_file_lock():
 def _apply_acl_lock(lock=True):
     """Vector 2: NTFS ACL Denial for Everyone."""
     if os.name != 'nt': return
+    if lock:
+        # LIFTED: Do not lock the hosts file, as removing inheritance or applying deny rules
+        # prevents the Windows DNS Client service from reading the hosts file contents.
+        return
     target = "*S-1-1-0" # Everyone
     try:
-        if lock:
-            # Deny write/modify to everyone, grant full to System/Admins
-            args = ["icacls", HOSTS_FILE, "/inheritance:r", 
-                    "/grant:r", "System:(F)", "/grant:r", "Administrators:(F)",
-                    "/deny", f"{target}:(W,M)", "/c", "/q"]
-        else:
-            # 1. Take ownership first to ensure we can reset permissions
-            subprocess.run(["takeown", "/f", HOSTS_FILE, "/a"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            # 2. Grant Admins full control
-            subprocess.run(["icacls", HOSTS_FILE, "/grant", "Administrators:(F)", "/c", "/q"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            # 3. Restore inheritance and remove Deny
-            args = ["icacls", HOSTS_FILE, "/inheritance:e", "/remove:d", target, "/c", "/q"]
+        # 1. Take ownership first to ensure we can reset permissions
+        subprocess.run(["takeown", "/f", HOSTS_FILE, "/a"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        # 2. Grant Admins full control
+        subprocess.run(["icacls", HOSTS_FILE, "/grant", "Administrators:(F)", "/c", "/q"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        # 3. Restore inheritance and remove Deny
+        args = ["icacls", HOSTS_FILE, "/inheritance:e", "/remove:d", target, "/c", "/q"]
         
         res = subprocess.run(args, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
         if res.returncode == 0:
-            if logger: logger.info(f"Hosts ACL {'Locked' if lock else 'Restored'} (Vector 2)")
+            if logger: logger.info("Hosts ACL Restored (Vector 2)")
     except Exception as e:
         if logger: logger.debug(f"ACL error: {e}")
 
