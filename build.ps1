@@ -250,6 +250,18 @@ RequestExecutionLevel admin
 !insertmacro MUI_LANGUAGE "English"
 
 Section "Install"
+  # If upgrading, run prior uninstaller first (preserve user config).
+  IfFileExists "$INSTDIR\spb_uninstaller.exe" 0 +9
+  DetailPrint "Existing SPB installation detected. Running pre-upgrade cleanup..."
+  nsExec::ExecToStack '"$INSTDIR\spb_uninstaller.exe" --silent --preserve-config'
+  Pop $0
+  Pop $1
+  IntCmp $0 0 +4 0 0
+  DetailPrint "Pre-upgrade cleanup failed: $1"
+  MessageBox MB_ICONSTOP "Failed to clean previous installation. Run recovery_uplift.exe as Administrator, then retry setup."
+  Abort
+  Sleep 2000
+
   SetOutPath "$INSTDIR"
   
   # Stage files recursively
@@ -260,8 +272,33 @@ Section "Install"
   SetFileAttributes "$INSTDIR\spb_uninstaller.exe" HIDDEN
   SetFileAttributes "$INSTDIR\SPB_Daemon.exe" HIDDEN
   
-  # Run the lightweight python installer silently to register tasks and harden permissions without console popups
-  nsExec::Exec '"$INSTDIR\spb_installer.exe" --silent'
+  # Harden install directory ACLs natively.
+  nsExec::ExecToStack 'icacls "$INSTDIR" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)(F) /grant:r *S-1-5-32-544:(OI)(CI)(F) /grant:r *S-1-5-32-545:(OI)(CI)(RX)'
+  Pop $0
+  Pop $1
+
+  # Register/start daemon task natively to avoid subprocess-wrapper lock issues.
+  nsExec::ExecToStack 'schtasks /create /tn "SPB_Daemon" /tr "\"$INSTDIR\SPB_Daemon.exe\"" /sc onlogon /rl highest /f'
+  Pop $0
+  Pop $1
+  IntCmp $0 0 +3 0 0
+  DetailPrint "Task registration failed: $1"
+  Abort "Scheduled task registration failed."
+
+  nsExec::ExecToStack 'schtasks /run /tn "SPB_Daemon"'
+  Pop $0
+  Pop $1
+  IntCmp $0 0 +3 0 0
+  DetailPrint "Task start failed: $1"
+  Abort "SPB daemon failed to start."
+
+  Sleep 3000
+  nsExec::ExecToStack 'cmd /c tasklist /FI "IMAGENAME eq SPB_Daemon.exe" | find /I "SPB_Daemon.exe"'
+  Pop $0
+  Pop $1
+  IntCmp $0 0 +3 0 0
+  DetailPrint "Daemon runtime verification failed: $1"
+  Abort "SPB_Daemon.exe is not running. Setup aborted."
   
   # Write the native uninstaller binary
   WriteUninstaller "$INSTDIR\uninstall.exe"
@@ -271,7 +308,7 @@ Section "Install"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "UninstallString" '"$INSTDIR\uninstall.exe"'
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "QuietUninstallString" '"$INSTDIR\uninstall.exe" /S'
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "Publisher" "nvusdev"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayVersion" "1.4.5"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayVersion" "1.4.6"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayIcon" '"$INSTDIR\SimpleProductivityBlocker.exe",0'
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "NoModify" 1
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "NoRepair" 1
@@ -289,6 +326,7 @@ SectionEnd
 Section "Uninstall"
   # Run the python uninstaller silently in the background to release scheduled tasks, blocks, and configurations
   nsExec::Exec '"$INSTDIR\spb_uninstaller.exe" --silent'
+  nsExec::Exec 'schtasks /delete /tn "SPB_Daemon" /f'
   
   # Clean up shortcuts
   Delete "$DESKTOP\Simple Productivity Blocker.lnk"

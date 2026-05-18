@@ -160,6 +160,43 @@ def register_daemon_task(daemon_path, args=""):
         print(f"  [ERROR] Task registration failed: {e}")
         raise
 
+def verify_daemon_running():
+    """Ensures the daemon task is actually running after registration."""
+    for _ in range(8):
+        try:
+            for proc in psutil.process_iter(['name']):
+                if proc.info.get('name') == "SPB_Daemon.exe":
+                    return True
+        except Exception:
+            pass
+        time.sleep(1)
+    return False
+
+def uninstall_existing_installation(dest_dir):
+    """If a prior install is present, run the bundled uninstaller in preserve-config mode."""
+    if not os.path.isdir(dest_dir):
+        return
+
+    prior_uninstaller = os.path.join(dest_dir, "spb_uninstaller.exe")
+    print("\nDetected existing installation. Starting upgrade-safe uninstall...")
+    terminate_ghost_instances()
+    cleanup_legacy_registry()
+    run_system_command(['schtasks', '/delete', '/tn', 'SPB_Daemon', '/f'], check=False)
+
+    if os.path.isfile(prior_uninstaller):
+        result = run_system_command([prior_uninstaller, "--silent", "--preserve-config"], check=False, timeout=240)
+        if result is None or result.returncode != 0:
+            err = (result.stderr if result and hasattr(result, "stderr") else "").strip() if result else ""
+            raise RuntimeError(f"Existing uninstall failed before upgrade. {err}".strip())
+    else:
+        print("Prior uninstaller missing. Continuing with best-effort cleanup.")
+
+    # Wait briefly for file handles to clear after uninstall.
+    for _ in range(10):
+        if not os.path.exists(dest_dir):
+            break
+        time.sleep(1)
+
 def create_shortcut(target, shortcut_path, icon=None):
     """Creates a Windows shortcut (.lnk) using native COM via win32com."""
     try:
@@ -199,7 +236,7 @@ def create_shortcut(target, shortcut_path, icon=None):
             pass
 
 def main():
-    print("Simple Productivity Blocker v1.4.5 Installer")
+    print("Simple Productivity Blocker v1.4.6 Installer")
     print("---------------------------------------------")
     
     import pythoncom
@@ -225,6 +262,7 @@ def main():
         # 1. Resolve Secure Path
         base_prog_files = get_program_files_path()
         dest_dir = os.path.join(base_prog_files, "Simple Productivity Blocker")
+        uninstall_existing_installation(dest_dir)
 
         # 3. Create Directory
         if not os.path.exists(dest_dir):
@@ -241,7 +279,10 @@ def main():
                     shutil.rmtree(dest_dir, ignore_errors=True)
                 except: pass
             # Replace previous simple rmtree with hardened version
-            rollback_stack[-1] = _rollback_hardened_dir
+            if rollback_stack:
+                rollback_stack[-1] = _rollback_hardened_dir
+            else:
+                rollback_stack.append(_rollback_hardened_dir)
 
         # 5. Deploy Binaries
         install_files(dest_dir)
@@ -250,6 +291,8 @@ def main():
         daemon_exe = os.path.normpath(os.path.join(dest_dir, "SPB_Daemon.exe"))
         register_daemon_task(daemon_exe)
         rollback_stack.append(lambda: run_system_command(['schtasks', '/delete', '/tn', 'SPB_Daemon', '/f'], check=False))
+        if not verify_daemon_running():
+            raise RuntimeError("Daemon registration succeeded but SPB_Daemon.exe is not running.")
         
         # 7. Create Desktop Shortcut
         desktop = get_desktop_path()
