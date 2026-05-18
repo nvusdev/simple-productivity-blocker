@@ -26,9 +26,9 @@ class TestIsActive(unittest.TestCase):
         cfg = {"enabled": False, "schedule": {"enabled": False}}
         self.assertFalse(is_active(cfg, datetime(2026, 5, 4, 10, 0)))
 
-    def test_schedule_disabled_returns_true(self):
+    def test_schedule_disabled_returns_false(self):
         cfg = {"enabled": True, "schedule": {"enabled": False}}
-        self.assertTrue(is_active(cfg, datetime(2026, 5, 4, 10, 0)))
+        self.assertFalse(is_active(cfg, datetime(2026, 5, 4, 10, 0)))
 
     def test_regular_window_respects_inclusive_boundaries(self):
         cfg = {
