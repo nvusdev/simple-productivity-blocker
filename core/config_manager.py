@@ -8,6 +8,7 @@ import copy
 import base64
 import shutil
 from datetime import datetime
+import time
 
 def get_config_dir():
     if os.name == 'nt':
@@ -205,11 +206,20 @@ def _quarantine_bad_config(path):
         return None
     return None
 
+_repair_cooldowns = {}
+
 def repair_config(path=None):
     """Attempt to force-delete a corrupted/locked config via elevation.
     This is a failsafe for the end-user when NTFS ACLs or file locks block standard recovery.
     """
     cfg_file = path or CONFIG_FILE
+    
+    current_time = time.time()
+    if cfg_file in _repair_cooldowns:
+        last_attempt = _repair_cooldowns[cfg_file]
+        if current_time - last_attempt < 300: # 5 minutes cooldown
+            return False
+            
     if not os.path.exists(cfg_file):
         return True
         
@@ -224,9 +234,13 @@ def repair_config(path=None):
                 # Use powershell to force-remove the item with elevation
                 params = f'-NoProfile -Command "Remove-Item \'{cfg_file}\' -Force"'
                 res = ctypes.windll.shell32.ShellExecuteW(None, "runas", "powershell.exe", params, None, 0)
-                # res > 32 indicates success in launching
-                return res > 32
+                # res <= 32 indicates user cancellation or failure to elevate
+                if res <= 32:
+                    _repair_cooldowns[cfg_file] = current_time
+                    return False
+                return True
             except Exception:
+                _repair_cooldowns[cfg_file] = current_time
                 return False
         return False
 
