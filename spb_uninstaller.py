@@ -55,7 +55,7 @@ def kill_processes():
                 if name in ["python.exe", "pythonw.exe"]:
                     if any("SimpleProductivityBlocker" in s or "main.py" in s or "daemon.py" in s for s in cmd):
                         should_kill = True
-                elif name in ["SimpleProductivityBlocker.exe", "SPB_Daemon.exe"]:
+                elif name in ["SimpleProductivityBlocker.exe", "SPB_Daemon.exe", "spb_installer.exe"]:
                     should_kill = True
                 
                 if should_kill and pid != current_pid:
