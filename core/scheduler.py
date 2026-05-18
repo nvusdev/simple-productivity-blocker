@@ -22,7 +22,7 @@ def is_active(config, date_context=None):
         
     schedule = config.get("schedule", {})
     if not schedule.get("enabled", False):
-        return True # If schedule is not enabled, blocks are always active
+        return False # If schedule is not enabled, the group blocks are turned off
 
     if schedule.get("persist_all_day", False):
         return is_day_active(schedule, date_context=date_context)
