@@ -395,12 +395,39 @@ def _resolve_hosts_fallback_domains(
 
 def _get_history():
     h = set()
-    for f in ["recovery.json", "recovery_history.json"]:
-        p = os.path.join(base_data, f)
-        if os.path.exists(p):
-            try:
-                with open(p, "r") as fobj: h.update(json.load(fobj))
-            except: pass
+    legacy_path = os.path.join(base_data, "recovery.json")
+    history_path = os.path.join(base_data, "recovery_history.json")
+    
+    # 1. Load active history if exists
+    if os.path.exists(history_path):
+        try:
+            with open(history_path, "r") as fobj:
+                h.update(json.load(fobj))
+        except: pass
+        
+    # 2. Check and migrate legacy recovery.json
+    if os.path.exists(legacy_path):
+        try:
+            legacy_set = set()
+            with open(legacy_path, "r") as fobj:
+                legacy_set.update(json.load(fobj))
+            
+            if legacy_set:
+                h.update(legacy_set)
+                import tempfile
+                fd, tmp_path = tempfile.mkstemp(dir=base_data, prefix="recovery_tmp_", suffix=".json")
+                with os.fdopen(fd, "w") as f:
+                    json.dump(list(h), f)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, history_path)
+            
+            # Delete legacy file permanently to prevent zombie locks reloading
+            os.remove(legacy_path)
+            logger.info("Successfully migrated legacy recovery.json and deleted it from disk.")
+        except Exception as e:
+            logger.error(f"Failed to migrate legacy recovery.json: {e}")
+            
     return h
 
 def _save_history(new_paths):
