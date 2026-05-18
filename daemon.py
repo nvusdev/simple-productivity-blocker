@@ -482,7 +482,7 @@ def _on_acl_operation_complete(path, locked, success):
         except Exception as e:
             logger.error(f"Failed to update history after unlock: {e}")
 
-def _boot_sweep_task(initial_targets: set[str], pm_instance):
+def _boot_sweep_task(initial_targets: set[str], pm_instance, pm_lock):
     """Reconciles historical locks against current config on startup.
     Ensures that orphans from previous versions are unlocked.
     """
@@ -505,22 +505,23 @@ def _boot_sweep_task(initial_targets: set[str], pm_instance):
         else:
             to_unlock.append(p)
             
-    # Process unlocks first (Batched)
-    if to_unlock:
-        logger.info(f"Failsafe: Unlocking {len(to_unlock)} orphaned targets...")
-        if hasattr(pm_instance, 'batch_unlock'):
-            pm_instance.batch_unlock(to_unlock)
-        else:
-            for p in to_unlock:
-                pm_instance.synchronize_lock(p, False)
-        
-    # Re-verify existing locks (Batch)
-    if to_lock:
-        logger.info(f"Failsafe: Re-verifying {len(to_lock)} active locks.")
-        files = [p for p in to_lock if os.path.isfile(p)]
-        folders = [p for p in to_lock if os.path.isdir(p)]
-        if files: pm_instance.set_blocked_files(list(set(pm_instance.blocked_file_paths).union(set(files))))
-        if folders: pm_instance.set_blocked_folders(list(set(pm_instance.blocked_folder_roots).union(set(folders))))
+    with pm_lock:
+        # Process unlocks first (Batched)
+        if to_unlock:
+            logger.info(f"Failsafe: Unlocking {len(to_unlock)} orphaned targets...")
+            if hasattr(pm_instance, 'batch_unlock'):
+                pm_instance.batch_unlock(to_unlock)
+            else:
+                for p in to_unlock:
+                    pm_instance.synchronize_lock(p, False)
+            
+        # Re-verify existing locks (Batch)
+        if to_lock:
+            logger.info(f"Failsafe: Re-verifying {len(to_lock)} active locks.")
+            files = [p for p in to_lock if os.path.isfile(p)]
+            folders = [p for p in to_lock if os.path.isdir(p)]
+            if files: pm_instance.set_blocked_files(list(set(pm_instance.blocked_file_paths).union(set(files))))
+            if folders: pm_instance.set_blocked_folders(list(set(pm_instance.blocked_folder_roots).union(set(folders))))
 
     logger.info("Boot Sweep complete.")
 
@@ -580,6 +581,7 @@ class SubsystemOrchestrator:
     """Manages low-level protection subsystems (DNS, ProcessMonitor)."""
     def __init__(self):
         self.pm = ProcessMonitor() if ProcessMonitor else None
+        self.pm_lock = threading.RLock()
         self.dns_server = None
         self.using_dns_proxy = False
     
@@ -708,7 +710,8 @@ class SubsystemOrchestrator:
         if self.pm:
             app_paths = {a for a in processes if os.path.sep in a or (os.name == 'nt' and '/' in a)}
             _save_history(files.union(folders).union(app_paths))
-            self.pm.synchronize_all(list(processes), list(files), list(folders))
+            with self.pm_lock:
+                self.pm.synchronize_all(list(processes), list(files), list(folders))
 
 class DaemonOrchestrator:
     def __init__(self, cfg_path: str):
@@ -761,7 +764,7 @@ class DaemonOrchestrator:
             app_paths = {os.path.normpath(a) for a in ctx.processes if os.path.sep in a or (os.name == 'nt' and '/' in a)}
             initial_targets = ctx.files.union(ctx.folders).union(app_paths)
             if self.subsystems.pm:
-                threading.Thread(target=_boot_sweep_task, args=(initial_targets, self.subsystems.pm), daemon=True).start()
+                threading.Thread(target=_boot_sweep_task, args=(initial_targets, self.subsystems.pm, self.subsystems.pm_lock), daemon=True).start()
 
         # Update PM Settings
         settings = self.cfg.cache.get("settings", {})
