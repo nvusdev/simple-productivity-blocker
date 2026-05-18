@@ -312,7 +312,7 @@ def cleanup_acls():
     print("Physical blocks released successfully.")
 
 def main():
-    print("Simple Productivity Blocker v1.4.6 Uninstaller")
+    print("Simple Productivity Blocker v1.4.7 Uninstaller")
     print("-------------------------------------------------------")
     
     import pythoncom
