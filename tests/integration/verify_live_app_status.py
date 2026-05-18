@@ -90,6 +90,177 @@ def test_settings_per_group():
     
     print("[PASS] Group isolation and target compilation behaves flawlessly.")
 
+def test_schedule_confusion_matrix():
+    print("\n--- PHASE 2B: SCHEDULE CONFUSION MATRIX / TRUTH TABLE ---")
+    
+    scenarios = [
+        {
+            "name": "Enabled + Active Day + Active Hour",
+            "group": {
+                "enabled": True,
+                "schedule": {
+                    "enabled": True,
+                    "start_time": "09:00",
+                    "end_time": "17:00",
+                    "days": ["Monday"]
+                }
+            },
+            "time": datetime.datetime(2026, 5, 18, 12, 0), # Monday 12:00
+            "expected": True
+        },
+        {
+            "name": "Enabled + Active Day + Inactive Hour",
+            "group": {
+                "enabled": True,
+                "schedule": {
+                    "enabled": True,
+                    "start_time": "09:00",
+                    "end_time": "17:00",
+                    "days": ["Monday"]
+                }
+            },
+            "time": datetime.datetime(2026, 5, 18, 20, 0), # Monday 20:00
+            "expected": False
+        },
+        {
+            "name": "Enabled + Inactive Day + Active Hour",
+            "group": {
+                "enabled": True,
+                "schedule": {
+                    "enabled": True,
+                    "start_time": "09:00",
+                    "end_time": "17:00",
+                    "days": ["Monday"]
+                }
+            },
+            "time": datetime.datetime(2026, 5, 17, 12, 0), # Sunday 12:00
+            "expected": False
+        },
+        {
+            "name": "Disabled Schedule (Always Active)",
+            "group": {
+                "enabled": True,
+                "schedule": {
+                    "enabled": False,
+                    "start_time": "09:00",
+                    "end_time": "17:00",
+                    "days": ["Monday"]
+                }
+            },
+            "time": datetime.datetime(2026, 5, 17, 12, 0), # Sunday 12:00
+            "expected": True
+        },
+        {
+            "name": "Always Active Flag (Explicit)",
+            "group": {
+                "enabled": True,
+                "schedule": {
+                    "enabled": True,
+                    "always": True,
+                    "days": ["Monday"]
+                }
+            },
+            "time": datetime.datetime(2026, 5, 17, 12, 0), # Sunday 12:00
+            "expected": True
+        },
+        {
+            "name": "Persist All Day + Active Day",
+            "group": {
+                "enabled": True,
+                "schedule": {
+                    "enabled": True,
+                    "persist_all_day": True,
+                    "days": ["Monday"]
+                }
+            },
+            "time": datetime.datetime(2026, 5, 18, 23, 30), # Monday 23:30
+            "expected": True
+        },
+        {
+            "name": "Persist All Day + Inactive Day",
+            "group": {
+                "enabled": True,
+                "schedule": {
+                    "enabled": True,
+                    "persist_all_day": True,
+                    "days": ["Monday"]
+                }
+            },
+            "time": datetime.datetime(2026, 5, 17, 12, 0), # Sunday 12:00
+            "expected": False
+        },
+        {
+            "name": "Disabled Group Entirely",
+            "group": {
+                "enabled": False,
+                "schedule": {
+                    "enabled": True,
+                    "always": True
+                }
+            },
+            "time": datetime.datetime(2026, 5, 18, 12, 0), # Monday 12:00
+            "expected": False
+        },
+        {
+            "name": "Midnight Crossing + Inside Crossing",
+            "group": {
+                "enabled": True,
+                "schedule": {
+                    "enabled": True,
+                    "start_time": "22:00",
+                    "end_time": "04:00",
+                    "days": ["Monday"]
+                }
+            },
+            "time": datetime.datetime(2026, 5, 18, 23, 0), # Monday 23:00
+            "expected": True
+        },
+        {
+            "name": "Midnight Crossing + Next Day Morning",
+            "group": {
+                "enabled": True,
+                "schedule": {
+                    "enabled": True,
+                    "start_time": "22:00",
+                    "end_time": "04:00",
+                    "days": ["Monday"]
+                }
+            },
+            "time": datetime.datetime(2026, 5, 19, 2, 0), # Tuesday 02:00 (inside Monday night)
+            "expected": True
+        },
+        {
+            "name": "Midnight Crossing + Next Day Late",
+            "group": {
+                "enabled": True,
+                "schedule": {
+                    "enabled": True,
+                    "start_time": "22:00",
+                    "end_time": "04:00",
+                    "days": ["Monday"]
+                }
+            },
+            "time": datetime.datetime(2026, 5, 19, 6, 0), # Tuesday 06:00
+            "expected": False
+        }
+    ]
+
+    print(f"{'Scenario Description':<40} | {'Test Context (Time)':<25} | {'Expected':<8} | {'Actual':<8} | {'Status':<6}")
+    print("-" * 95)
+    
+    passed_all = True
+    for s in scenarios:
+        actual = is_active(s["group"], date_context=s["time"])
+        status = "OK" if actual == s["expected"] else "FAIL"
+        if status == "FAIL":
+            passed_all = False
+        time_str = s["time"].strftime("%A %H:%M")
+        print(f"{s['name']:<40} | {time_str:<25} | {str(s['expected']):<8} | {str(actual):<8} | [{status}]")
+        
+    print("-" * 95)
+    assert passed_all, "Confusion matrix evaluations mismatched!"
+    print("[PASS] Confusion matrix truth-table evaluation matches expected parameters 100% correctly.")
+
 def test_daemon_health():
     print("\n--- PHASE 3: LIVE DAEMON HEALTH & HEARTBEAT AUDIT ---")
     daemon_log_path = "C:\\ProgramData\\SimpleProductivityBlocker\\daemon.log"
@@ -160,6 +331,7 @@ if __name__ == "__main__":
     
     test_config_system()
     test_settings_per_group()
+    test_schedule_confusion_matrix()
     test_daemon_health()
     test_performance()
     
