@@ -22,6 +22,7 @@ from core.subprocess_utils import run_system_command
 def terminate_ghost_instances():
     """Surgically terminate any instances of the app or daemon."""
     print("\nStopping existing processes and legacy ghost instances...")
+    current_pid = os.getpid()
     for proc in psutil.process_iter(['name']):
         try:
             name = proc.info['name']
@@ -30,9 +31,10 @@ def terminate_ghost_instances():
                 if any("SimpleProductivityBlocker" in s or "main.py" in s or "daemon.py" in s for s in cmd):
                     print(f"Terminating {name} (PID: {proc.pid})...")
                     proc.kill()
-            elif name in ["SPB_Daemon.exe", "SimpleProductivityBlocker.exe"]:
-                print(f"Terminating {name} (PID: {proc.pid})...")
-                proc.kill()
+            elif name in ["SPB_Daemon.exe", "SimpleProductivityBlocker.exe", "spb_installer.exe"]:
+                if proc.pid != current_pid:
+                    print(f"Terminating {name} (PID: {proc.pid})...")
+                    proc.kill()
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
     time.sleep(1)
