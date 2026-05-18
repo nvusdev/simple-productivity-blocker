@@ -701,7 +701,6 @@ class ProductivityApp(ctk.CTk):
         sec("Block Events", "Fired when the daemon actively enforces a blocking rule.", [("on_block", "Notify on block rule applied", True), ("on_block_attempt", "Notify on blocked app kill", True), ("on_exception_bypass", "Notify on allowlist bypass", False)])
         sec("Schedule Events", "Notifications for profile schedule activation.", [("on_schedule_start", "Notify on profile start", True), ("on_schedule_end", "Notify on profile end", True), ("on_day_change", "Notify on day recalculation", False)])
         sec("Daemon Events", "General protection engine activity.", [("on_daemon_start", "Notify on engine start", True), ("on_config_reload", "Notify on sync/reload", False), ("on_hosts_write", "Notify on DNS/hosts update", False)])
-        sec("Update Events", "Version maintenance notifications.", [("on_update_available", "Notify on new version", True)])
 
     def add_new_group(self):
         name = self._prompt_text_dialog("New Profile", "Enter name for the new profile:")
