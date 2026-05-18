@@ -110,5 +110,50 @@ class TestFallbackHardening(unittest.TestCase):
         # Thus, only 2 unique domains (each with base and www) can fit, generating 8 lines of host blocks + 2 marker lines = 10 lines total.
         self.assertEqual(block_lines_count, 10)
 
+    def test_resolve_hosts_fallback_domains_includes_want_custom(self):
+        manual = {"blocked.com"}
+        normalized = {"another.com"}
+        cloud = {"safe.com"}
+        custom = {"customblock.com", "another-custom.com"}
+        
+        resolved = _resolve_hosts_fallback_domains(manual, normalized, cloud, want_custom=custom)
+        self.assertIn("blocked.com", resolved)
+        self.assertIn("another.com", resolved)
+        self.assertIn("customblock.com", resolved)
+        self.assertIn("another-custom.com", resolved)
+
+    def test_sync_dns_emits_degraded_when_truncated(self):
+        from daemon import SubsystemOrchestrator
+        from unittest.mock import patch, mock_open
+
+        # Setup an orchestrator
+        orchestrator = SubsystemOrchestrator()
+        
+        # Patch the dependencies
+        mock_hosts_content = "127.0.0.1 localhost\n::1 localhost\n"
+        m = mock_open(read_data=mock_hosts_content)
+        
+        # Patch sync_website_protection and load_config to return max_domains_cap of 10 (4 max domains)
+        # and we pass 10 manual domains (exceeds cap)
+        manual = {f"domain{i}.com" for i in range(10)}
+        
+        with patch("builtins.open", m), \
+             patch("daemon.load_config", return_value={"settings": {"max_domains_cap": 10}}), \
+             patch("daemon.sync_website_protection") as mock_sync_protect, \
+             patch.object(orchestrator, "_update_health_signal") as mock_update_signal:
+             
+             # Call sync_dns with 10 manual domains, which will trigger degradation (using_dns_proxy = False)
+             orchestrator.sync_dns(
+                 manual_domains=manual,
+                 filter_keywords=set(),
+                 cloud_allowlist=set(),
+                 filter_exceptions=set(),
+                 first_run=False,
+                 normalized_filter_domains=set()
+             )
+             
+             # Assert that _update_health_signal was called with "Degraded"
+             mock_update_signal.assert_called_with("Degraded")
+
 if __name__ == "__main__":
     unittest.main()
