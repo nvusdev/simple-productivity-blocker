@@ -51,7 +51,8 @@ class ProcessMonitor:
         self._acl_sync_lock = threading.RLock()
         self._acl_queue = queue.Queue()
         self._username = getpass.getuser() if os.name == 'nt' else None
-        self._path_cache = {}
+        from collections import OrderedDict
+        self._path_cache = OrderedDict()
         self.logger = logging.getLogger("SPB_AppBlocker")
         
         self._acl_worker = None
@@ -92,15 +93,17 @@ class ProcessMonitor:
     def _normalize_path(self, path):
         if not path: return ""
         if path in self._path_cache:
+            self._path_cache.move_to_end(path)
             return self._path_cache[path]
         
         try:
             norm = os.path.normcase(os.path.abspath(path))
             self._path_cache[path] = norm
             if len(self._path_cache) > 2000:
-                self._path_cache.clear()
+                self._path_cache.popitem(last=False)
             return norm
-        except Exception:
+        except Exception as e:
+            self.logger.debug(f"Normalization failed for {path}: {e}")
             return path.lower()
 
     def _looks_like_path(self, value):
@@ -414,8 +417,12 @@ class ProcessMonitor:
         """Release all exclusive handles."""
         if os.name != 'nt': return
         for h in self._locked_files:
-            try: win32file.CloseHandle(h)
-            except: pass
+            try:
+                win32file.CloseHandle(h)
+            except OSError as e:
+                self.logger.debug(f"CloseHandle failed: {e}")
+            except Exception as e:
+                self.logger.debug(f"Unexpected CloseHandle exception: {e}")
         self._locked_files.clear()
 
     def _check_shell_windows(self, shell):
@@ -429,13 +436,20 @@ class ProcessMonitor:
                         path_norm = self._normalize_path(path)
                         if self._is_in_blocked_folder(path_norm):
                             targets.append(window)
-                except Exception: continue
+                except Exception as e:
+                    self.logger.debug(f"Shell window URL query error: {e}")
+                    continue
             for window in targets:
-                try: window.Quit()
-                except Exception:
-                    try: window.Navigate("C:\\")
-                    except Exception: pass
-        except Exception: pass
+                try:
+                    window.Quit()
+                except Exception as e:
+                    self.logger.debug(f"Failed to Quit window: {e}")
+                    try:
+                        window.Navigate("C:\\")
+                    except Exception as ex:
+                        self.logger.debug(f"Failed to Navigate window: {ex}")
+        except Exception as e:
+            self.logger.debug(f"Shell windows check failed: {e}")
 
     def _should_terminate_proc(self, proc, now, last_handle_check):
         try:
@@ -508,12 +522,20 @@ class ProcessMonitor:
                     if self._is_in_blocked_folder(cwd_norm):
                         self.logger.info(f"TERMINATING: {name_lower} (CWD in Blocked Folder: {cwd_norm})")
                         return True
-            except: pass
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as e:
+                self.logger.debug(f"Failed to read CWD for process {proc.pid}: {e}")
+            except Exception as e:
+                self.logger.debug(f"Unexpected exception reading CWD for process {proc.pid}: {e}")
 
             # Note: Vector 4 (aggressive termination on handle access) is disabled on Windows 
             # to prevent kernel deadlocks caused by psutil.open_files().
             return False
-        except: return False
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as e:
+            self.logger.debug(f"Process query error for {proc.pid}: {e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Unexpected error in _should_terminate_proc: {e}", exc_info=True)
+            return False
 
     def _watch_processes(self):
         shell = None
@@ -521,7 +543,8 @@ class ProcessMonitor:
             try:
                 pythoncom.CoInitialize()
                 shell = win32com.client.Dispatch("Shell.Application")
-            except: pass
+            except Exception as e:
+                self.logger.debug(f"CoInitialize/Dispatch failed: {e}")
             
         last_handle_check = 0.0
         while not self._stop_event.is_set():
@@ -531,10 +554,17 @@ class ProcessMonitor:
                 self._check_shell_windows(shell)
 
             if self.blocked_app_names or self.blocked_app_paths or self.blocked_file_paths or self.blocked_folder_roots:
-                for proc in psutil.process_iter(['name', 'exe', 'cmdline']):
-                    if self._should_terminate_proc(proc, now, last_handle_check):
-                        try: proc.kill()
-                        except: pass
+                try:
+                    for proc in psutil.process_iter(['name', 'exe', 'cmdline']):
+                        if self._should_terminate_proc(proc, now, last_handle_check):
+                            try:
+                                proc.kill()
+                            except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                                self.logger.debug(f"Failed to kill process {proc.pid}: {e}")
+                            except Exception as e:
+                                self.logger.error(f"Unexpected error killing process {proc.pid}: {e}")
+                except Exception as e:
+                    self.logger.error(f"Error iterating processes: {e}")
                 
                 if (now - last_handle_check) >= 10.0:
                     last_handle_check = now
