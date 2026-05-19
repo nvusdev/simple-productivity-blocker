@@ -16,6 +16,23 @@ def main():
     print("   SPB v1.4.7 GOLD MASTER STRESS SUITE   ")
     print("==========================================")
     
+    import tempfile
+    import json
+    sandbox_dir = os.path.join(tempfile.gettempdir(), "spb_stress_sandbox")
+    os.makedirs(sandbox_dir, exist_ok=True)
+    os.environ["SPB_DATA_DIR"] = sandbox_dir
+    
+    # Initialize a clean default config inside the sandbox directory
+    config_path = os.path.join(sandbox_dir, "config.json")
+    try:
+        import sys
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+        from core.config_manager import DEFAULT_CONFIG
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(DEFAULT_CONFIG, f, indent=4)
+    except Exception as e:
+        print(f"[*] Sandbox config init warning: {e}")
+    
     tests = [
         # Integration & Logic Checks
         ("../integration/verify_sandbox.py", ["--force"]),
