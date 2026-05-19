@@ -46,6 +46,20 @@ class TestProcessSafetyExclusions(unittest.TestCase):
         proc = FakeProcess("notepadplusplus.exe", r"C:\Apps\notepadplusplus.exe")
         self.assertTrue(pm._should_terminate_proc(proc, 0.0, 0.0))
 
+    def test_literal_keyword_allowlist_matching(self):
+        pm = ProcessMonitor()
+        # Set up global allowlisted keywords containing ".git"
+        pm._global_allowlisted_keywords = [".git"]
+        
+        # Test a path that would match ".git" under regex (e.g. dot matches 'r' in "gitrepo") but should NOT match literally
+        proc_gitrepo = FakeProcess("someprocess.exe", r"A:\gitrepo\app.exe")
+        pm.set_blocked_apps([r"A:\gitrepo\app.exe"])
+        self.assertTrue(pm._should_terminate_proc(proc_gitrepo, 0.0, 0.0))
+        
+        # Test a path that actually contains the literal ".git" folder/file (should match literally and be allowed)
+        proc_dot_git = FakeProcess("git.exe", r"A:\gitrepo\.git\hooks\pre-commit")
+        self.assertFalse(pm._should_terminate_proc(proc_dot_git, 0.0, 0.0))
+
 
 if __name__ == "__main__":
     unittest.main()
