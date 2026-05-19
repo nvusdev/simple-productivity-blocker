@@ -273,28 +273,60 @@ class ProcessMonitor:
                 return True
         return False
 
+    def _path_exists_safe(self, path: str) -> bool:
+        path_norm = self._normalize_path(path)
+        if path_norm in {self._normalize_path(p) for p in self.blocked_folder_roots} or path_norm in {self._normalize_path(p) for p in self.blocked_file_paths}:
+            return True
+        try:
+            os.stat(path)
+            return True
+        except PermissionError:
+            return True
+        except OSError:
+            return False
+
+    def _path_isdir_safe(self, path: str) -> bool:
+        path_norm = self._normalize_path(path)
+        if path_norm in {self._normalize_path(p) for p in self.blocked_folder_roots}:
+            return True
+        if path_norm in {self._normalize_path(p) for p in self.blocked_file_paths}:
+            return False
+        try:
+            import win32file
+            attrs = win32file.GetFileAttributes(path)
+            return bool(attrs & win32file.FILE_ATTRIBUTE_DIRECTORY)
+        except Exception:
+            try:
+                return os.path.isdir(path)
+            except OSError:
+                return False
+
+    def _path_isfile_safe(self, path: str) -> bool:
+        path_norm = self._normalize_path(path)
+        if path_norm in {self._normalize_path(p) for p in self.blocked_file_paths}:
+            return True
+        if path_norm in {self._normalize_path(p) for p in self.blocked_folder_roots}:
+            return False
+        if not self._path_exists_safe(path):
+            return False
+        return not self._path_isdir_safe(path)
+
     def _apply_acl_internal(self, path, lock=True):
         if os.name != 'nt': return
         
         path = os.path.normpath(os.path.abspath(path))
         path_lower = path.lower()
 
-        # 1. Global Allowlist Check
+        # 1. Global Allowlist Check - strictly as literal substrings
         is_global_exempt = False
         if os.path.basename(path_lower) in self._global_allowlisted_processes:
             is_global_exempt = True
         else:
             if self._global_allowlisted_keywords:
-                import re
                 for kw in self._global_allowlisted_keywords:
-                    try:
-                        if re.search(kw, path_lower, re.IGNORECASE):
-                            is_global_exempt = True
-                            break
-                    except re.error:
-                        if kw in path_lower:
-                            is_global_exempt = True
-                            break
+                    if kw in path_lower:
+                        is_global_exempt = True
+                        break
                             
         if is_global_exempt:
             self.logger.info(f"Global Allowlist Override: Unlocking {path}")
@@ -315,20 +347,13 @@ class ProcessMonitor:
                 if os.path.basename(path_lower) in self._allowlisted_processes:
                     is_exempt = True
                     reason = "Process Exempted"
-                # Check by path keywords (with regex support)
+                # Check by path keywords (strictly as literal substrings)
                 else:
-                    import re
                     for kw in self._allowlisted_keywords:
-                        try:
-                            if re.search(kw, path_lower, re.IGNORECASE):
-                                is_exempt = True
-                                reason = "Path Keyword Exempted (Regex)"
-                                break
-                        except re.error:
-                            if kw in path_lower:
-                                is_exempt = True
-                                reason = "Path Keyword Exempted"
-                                break
+                        if kw in path_lower:
+                            is_exempt = True
+                            reason = "Path Keyword Exempted"
+                            break
                 
                 if is_exempt:
                     self.logger.info(f"Allowlist Override: Unlocking {path} ({reason})")
@@ -338,7 +363,7 @@ class ProcessMonitor:
             self.logger.error(f"CRITICAL PATH VIOLATION: Refusing to lock system-critical path: {path}")
             return False
         target = "*S-1-1-0" # Everyone
-        is_dir = os.path.isdir(path)
+        is_dir = self._path_isdir_safe(path)
         try:
             if lock:
                 perm_flags = "(OI)(CI)(F)" if is_dir else "(F)"
@@ -384,11 +409,12 @@ class ProcessMonitor:
         self._unlock_files()
         
         targets = set()
-        targets.update(self.blocked_file_paths)
+        # Decouple exclusive file handle locking: skip blocked_file_paths (so they rely purely on NTFS ACL Access Denied dialog)
+        # Only exclusively lock binaries/executables in blocked_app_paths
         targets.update(self.blocked_app_paths)
         
         for path in targets:
-            if not os.path.exists(path) or os.path.isdir(path): continue
+            if not self._path_exists_safe(path) or self._path_isdir_safe(path): continue
             if os.path.basename(path).lower() in SYSTEM_SAFETY_EXCLUSIONS:
                 self.logger.warning(f"Safety exclusion: refusing to lock protected executable: {path}")
                 continue
@@ -470,12 +496,8 @@ class ProcessMonitor:
             if name_lower in self._global_allowlisted_processes: return False
             if self._global_allowlisted_keywords:
                 search = exe + " " + " ".join(str(a).lower() for a in cmdline)
-                import re
                 for kw in self._global_allowlisted_keywords:
-                    try:
-                        if re.search(kw, search, re.IGNORECASE): return False
-                    except re.error:
-                        if kw in search: return False
+                    if kw in search: return False
 
             # 1. Explicit App/File Blocks (Override Allowlist)
             if name_lower in self.blocked_app_names:
@@ -502,12 +524,8 @@ class ProcessMonitor:
                 if name_lower in self._allowlisted_processes: return False
                 if self._allowlisted_keywords:
                     search = exe + " " + " ".join(str(a).lower() for a in cmdline)
-                    import re
                     for kw in self._allowlisted_keywords:
-                        try:
-                            if re.search(kw, search, re.IGNORECASE): return False
-                        except re.error:
-                            if kw in search: return False
+                        if kw in search: return False
 
             # 3. Folder Blocks (Can be bypassed by Allowlist)
             if exe:
@@ -578,19 +596,19 @@ class ProcessMonitor:
         This method is SURGICAL and ADDITIVE to support recovery loops.
         """
         if not should_be_locked:
-            if os.path.isfile(path):
-                new_list = [p for p in self.blocked_file_paths if p != path]
+            if self._path_isfile_safe(path):
+                new_list = [p for p in self.blocked_file_paths if self._normalize_path(p) != self._normalize_path(path)]
                 self.set_blocked_files(new_list)
-            elif os.path.isdir(path):
-                new_list = [p for p in self.blocked_folder_roots if p != path]
+            elif self._path_isdir_safe(path):
+                new_list = [p for p in self.blocked_folder_roots if self._normalize_path(p) != self._normalize_path(path)]
                 self.set_blocked_folders(new_list)
             return True # Successfully queued
 
         # Additive blocking
-        if os.path.isfile(path):
+        if self._path_isfile_safe(path):
             new_list = list(set(self.blocked_file_paths).union({path}))
             self.set_blocked_files(new_list)
-        elif os.path.isdir(path):
+        elif self._path_isdir_safe(path):
             new_list = list(set(self.blocked_folder_roots).union({path}))
             self.set_blocked_folders(new_list)
     def synchronize_all(self, apps, files, folders):
