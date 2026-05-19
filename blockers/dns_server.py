@@ -59,6 +59,28 @@ def _ensure_state_dir(path: str) -> None:
 def audit_dns_safety(state_path=None):
     return handler.audit_dns_safety(state_path)
 
+def detect_conflicting_services() -> Optional[str]:
+    """Scan running processes for conflicting DNS proxies, VPNs, or firewalls.
+    Returns the name of the first matching process or None.
+    Uses psutil process iteration (highly performant and native).
+    """
+    try:
+        # psutil.process_iter is highly performant when passing specific attributes
+        for proc in psutil.process_iter(['pid', 'name']):
+            try:
+                name = proc.info.get('name')
+                if not name: continue
+                name_lower = name.lower()
+                for kw in CONFLICT_SERVICE_KEYWORDS:
+                    kw_lower = kw.lower()
+                    if kw_lower in name_lower:
+                        return f"{name} (PID: {proc.info['pid']})"
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+    except Exception as e:
+        logger.debug(f"Error in detect_conflicting_services: {e}")
+    return None
+
 class DomainMatcher:
     def __init__(self, patterns):
         self.exact_set = set()
