@@ -11,6 +11,8 @@ from datetime import datetime
 import time
 
 def get_config_dir():
+    if "SPB_DATA_DIR" in os.environ:
+        return os.environ["SPB_DATA_DIR"]
     if os.name == 'nt':
         return os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'SimpleProductivityBlocker')
     else:
