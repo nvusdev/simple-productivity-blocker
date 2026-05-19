@@ -42,6 +42,15 @@ def is_safe_path_to_unlock(path: str) -> bool:
         return False
     return True
 
+def path_exists_safe(path):
+    try:
+        os.stat(path)
+        return True
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
 def force_unlock(path):
     path = os.path.normpath(os.path.abspath(path))
     
@@ -49,7 +58,7 @@ def force_unlock(path):
         print(f"[!] Security rejection: Unlocking parent system directory '{path}' is not permitted.")
         return False
 
-    if not os.path.exists(path):
+    if not path_exists_safe(path):
         print(f"[-] Path does not exist: {path}")
         return False
 
