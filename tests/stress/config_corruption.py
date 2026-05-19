@@ -8,7 +8,7 @@ def main():
     parser.add_argument("--confirm", action="store_true", help="Corrupt config.json")
     args = parser.parse_args()
 
-    cfg_dir = os.path.join(os.environ.get("PROGRAMDATA", "C:\\ProgramData"), "SimpleProductivityBlocker")
+    cfg_dir = os.environ.get("SPB_DATA_DIR") or os.path.join(os.environ.get("PROGRAMDATA", "C:\\ProgramData"), "SimpleProductivityBlocker")
     cfg_path = os.path.join(cfg_dir, "config.json")
 
     if not args.confirm:
