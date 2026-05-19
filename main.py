@@ -794,36 +794,99 @@ class ProductivityApp(ctk.CTk):
         self.clear_screen()
         f = ctk.CTkFrame(self)
         f.pack(fill="both", expand=True)
+        
         # Use a diverse set of common keyboard characters (excluding alt-code combinations)
         chars = string.ascii_letters + string.digits + "|+[{;':\",.<>?/!@#$%^&*()-_="
-        self.challenge_string = "".join(random.choices(chars, k=self.config_data["groups"][self.group_name]["security"]["challenge_length"]))
-        ctk.CTkLabel(f, text="Enter security challenge to edit this profile:", font=ctk.CTkFont(size=17, weight="bold")).pack(pady=(70, 15))
-        l = ctk.CTkLabel(f, text=self.challenge_string, font=ctk.CTkFont(family="Consolas", size=26, weight="bold"), text_color="#bbbbbb")
-        l.pack(pady=25)
+        challenge_len = self.config_data["groups"][self.group_name]["security"]["challenge_length"]
+        self.challenge_string = "".join(random.choices(chars, k=challenge_len))
         
-        # Lighter Grey Input Container
-        t_container = ctk.CTkFrame(f, fg_color="#3d3d3d", width=540, height=56, corner_radius=10)
-        t_container.pack(pady=12)
-        t_container.pack_propagate(False)
+        ctk.CTkLabel(f, text="Enter Security Challenge", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=(30, 5))
+        ctk.CTkLabel(f, text="For security, long challenges are segmented into 32-character scrollable chunks.", font=ctk.CTkFont(size=13), text_color="#aaaaaa").pack(pady=(0, 15))
         
-        # Shadow/Guide Label (Visible Guide)
-        shadow_guide = ctk.CTkLabel(t_container, text=self.challenge_string, font=ctk.CTkFont(family="Consolas", size=20), text_color="#666666")
-        shadow_guide.place(relx=0.5, rely=0.5, anchor="center")
+        # Break down the challenge string into 32-character chunks
+        chunks = [self.challenge_string[i:i+32] for i in range(0, len(self.challenge_string), 32)]
         
-        # Typing Entry (Transparent to reveal the guide underneath)
-        t = ctk.CTkEntry(t_container, font=ctk.CTkFont(family="Consolas", size=20), justify="center", fg_color="transparent", border_width=0)
-        t.pack(fill="both", expand=True, padx=10, pady=5)
-        t.focus_set()
+        # Scrollable container for segment cards
+        scroll_frame = ctk.CTkScrollableFrame(f, width=560, height=320, fg_color="transparent")
+        scroll_frame.pack(pady=10, fill="both", expand=True, padx=20)
         
-        def v(e=None):
-            if t.get().strip() == self.challenge_string:
-                n()
+        entries = []
+        cards = []
+        
+        def check_segment(idx):
+            entry = entries[idx]
+            card = cards[idx]
+            target = chunks[idx]
+            val = entry.get()
+            
+            if val == target:
+                card.configure(border_color="#2ecc71", border_width=2)
+                # Auto-focus the next entry if it exists
+                if idx + 1 < len(chunks):
+                    entries[idx + 1].focus_set()
+                else:
+                    # Check if ALL entries match
+                    all_ok = True
+                    for i, ent in enumerate(entries):
+                        if ent.get() != chunks[i]:
+                            all_ok = False
+                            break
+                    if all_ok:
+                        n()
+            elif val and not target.startswith(val):
+                card.configure(border_color="#e74c3c", border_width=2)
             else:
-                t_container.configure(border_color="red", border_width=2)
+                card.configure(border_color="#555555", border_width=1)
+                
+        for i, chunk in enumerate(chunks):
+            # Segment card container
+            card = ctk.CTkFrame(scroll_frame, border_color="#555555", border_width=1, corner_radius=8, fg_color="#2b2b2b")
+            card.pack(pady=10, fill="x", padx=10)
+            cards.append(card)
+            
+            # Header with Segment index and progress
+            header_text = f"Segment {i+1} of {len(chunks)} ({len(chunk)} characters)"
+            ctk.CTkLabel(card, text=header_text, font=ctk.CTkFont(size=12, weight="bold"), text_color="#10b981").pack(anchor="w", padx=15, pady=(8, 2))
+            
+            # Display target chunk
+            ctk.CTkLabel(card, text=chunk, font=ctk.CTkFont(family="Consolas", size=18, weight="bold"), text_color="#ffffff", justify="left")
+            card.winfo_children()[-1].pack(anchor="w", padx=15, pady=(2, 6))
+            
+            # Entry Container
+            entry_container = ctk.CTkFrame(card, fg_color="#1e1e1e", height=45, corner_radius=6)
+            entry_container.pack(fill="x", padx=15, pady=(0, 10))
+            entry_container.pack_propagate(False)
+            
+            # Typing Entry
+            entry = ctk.CTkEntry(entry_container, font=ctk.CTkFont(family="Consolas", size=16), fg_color="transparent", border_width=0, placeholder_text="Type segment here...")
+            entry.pack(fill="both", expand=True, padx=10, pady=5)
+            entries.append(entry)
+            
+            # Bind key release for real-time validation and autofocus
+            entry.bind("<KeyRelease>", lambda e, idx=i: check_segment(idx))
+            
+        # Focus the first entry
+        if entries:
+            entries[0].focus_set()
+            
+        def manual_unlock():
+            # Check all
+            all_ok = True
+            for i, entry in enumerate(entries):
+                if entry.get() == chunks[i]:
+                    cards[i].configure(border_color="#2ecc71", border_width=2)
+                else:
+                    cards[i].configure(border_color="#e74c3c", border_width=2)
+                    all_ok = False
+            if all_ok:
+                n()
+                
+        # Action Buttons
+        btn_frame = ctk.CTkFrame(f, fg_color="transparent")
+        btn_frame.pack(pady=20, fill="x")
         
-        t.bind("<Return>", v)
-        ctk.CTkButton(f, text="Unlock Settings", width=220, height=45, command=v).pack(pady=30)
-        ctk.CTkButton(f, text="Cancel", fg_color="transparent", command=self.show_dashboard).pack()
+        ctk.CTkButton(btn_frame, text="Unlock Settings", width=200, height=40, command=manual_unlock, fg_color="#10b981", hover_color="#059669").pack(side="left", expand=True, padx=10)
+        ctk.CTkButton(btn_frame, text="Cancel", width=200, height=40, fg_color="transparent", border_color="#555555", border_width=1, hover_color="#333333", command=self.show_dashboard).pack(side="right", expand=True, padx=10)
 
 if __name__ == "__main__":
     from core.win32_utils import is_safe_mode
