@@ -19,7 +19,7 @@ def test_compute_targets():
             "group1": {
                 "name": "Work",
                 "enabled": True,
-                "schedule": {"enabled": False}, # Always active
+                "schedule": {"enabled": True, "always": True}, # Always active
                 "websites": ["facebook.com", "git.com", "google.com", "safe.com"],
                 "apps": ["notepad.exe", "git.exe"],
                 "folders": ["C:\\temp\\work", "C:\\workspace\\project"]
