@@ -74,7 +74,7 @@ try:
         HOSTS_FILE as _REAL_HOSTS_FILE, 
         flush_dns as _flush_dns
     )
-    from blockers.dns_server import DNSProxyServer, detect_system_dns as _detect_dns
+    from blockers.dns_server import DNSProxyServer, detect_system_dns as _detect_dns, detect_conflicting_services as _detect_conflicts
     
     # Successfully imported - bind to the global names used in the orchestrator
     apply_blocks = _apply_blocks
@@ -84,6 +84,7 @@ try:
     HOSTS_FILE = _REAL_HOSTS_FILE
     flush_dns = _flush_dns
     detect_system_dns = _detect_dns
+    detect_conflicting_services = _detect_conflicts
 except ImportError as e:
     # --- FAIL-CLOSED HARDENING ---
     logger = logging.getLogger("SPB_Daemon")
@@ -599,6 +600,12 @@ class SubsystemOrchestrator:
         if self.using_dns_proxy:
             return
 
+        # Preemptive check: do not recover DNS Proxy if there is a running conflicting service
+        conflict = detect_conflicting_services()
+        if conflict:
+            logger.debug(f"DNS Proxy Recovery bypassed: Conflicting service '{conflict}' is running.")
+            return
+
         # Simple non-destructive bind check
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -626,7 +633,16 @@ class SubsystemOrchestrator:
             self._update_health_signal("None")
             return False
 
-        if not self.dns_server:
+        # Preemptive check: check for conflicting services
+        conflict = detect_conflicting_services()
+        if conflict:
+            logger.info(f"Conflict detected with superior network/DNS service '{conflict}'. Falling back to hosts-file blocking.")
+            if self.dns_server:
+                self.dns_server.stop()
+                self.dns_server = None
+            self.using_dns_proxy = False
+        
+        elif not self.dns_server:
             self.dns_server = DNSProxyServer(
                 list(manual_domains),
                 list(filter_keywords),
@@ -714,16 +730,19 @@ class SubsystemOrchestrator:
             self._check_dns_recovery(manual_domains, filter_keywords, normalized_filter_domains, cloud_allowlist, filter_exceptions)
             return
 
-        if self.dns_server.is_healthy() and self._dns_redirect_healthy():
-            return
-
-        logger.error("DNS watchdog detected an unhealthy proxy or adapter DNS drift. Restoring DNS and switching to hosts fallback.")
-        self.dns_server.stop()
-        self.dns_server = None
-        self.using_dns_proxy = False
-        
-        # Call sync_dns directly to consistently trigger fallback state, caps, and health signal updates
-        self.sync_dns(manual_domains, filter_keywords, cloud_allowlist, filter_exceptions, False, normalized_filter_domains=normalized_filter_domains)
+        # Preemptive conflict check in watchdog
+        conflict = detect_conflicting_services()
+        if conflict or not self.dns_server.is_healthy() or not self._dns_redirect_healthy():
+            if conflict:
+                logger.warning(f"DNS watchdog detected conflict with '{conflict}'. Switch to hosts fallback.")
+            else:
+                logger.error("DNS watchdog detected an unhealthy proxy or adapter DNS drift. Restoring DNS and switching to hosts fallback.")
+            self.dns_server.stop()
+            self.dns_server = None
+            self.using_dns_proxy = False
+            
+            # Call sync_dns directly to consistently trigger fallback state, caps, and health signal updates
+            self.sync_dns(manual_domains, filter_keywords, cloud_allowlist, filter_exceptions, False, normalized_filter_domains=normalized_filter_domains)
 
     def sync_processes(self, processes, files, folders, first_run):
         if self.pm:
