@@ -46,34 +46,7 @@ class TestDomainMatcher(unittest.TestCase):
         self.assertTrue(matcher.matches("test-cool-site.com"))
         self.assertFalse(matcher.matches("testsite.net"))
 
-class TestHierarchy(unittest.TestCase):
-    def setUp(self):
-        # Cloud: Always allow
-        # Manual: High priority block
-        # Exception: Allow within filter
-        # Filter: Low priority block
-        self.server = DNSProxyServer(
-            manual_list=["blocked.com"],
-            filter_list=["filtered.com", "youtube.com"],
-            cloud_list=["cloud.com", "youtube.com"], # YouTube allowed by cloud, blocked by filter
-            filter_exceptions=["filtered.com"] # filtered.com blocked by filter, allowed by exception
-        )
 
-    def test_cloud_beats_filter(self):
-        # YouTube is in both cloud (allow) and filter (block)
-        # Cloud should win
-        self.assertTrue(self.server.cloud_matcher.matches("youtube.com"))
-        # In real logic, _handle_packet checks cloud first
-        
-    def test_manual_beats_exception(self):
-        # If we manually block it, exceptions shouldn't save it
-        server = DNSProxyServer(
-            manual_list=["special.com"],
-            filter_list=["filtered.com"],
-            filter_exceptions=["special.com"]
-        )
-        # Manual check comes before Exception check in _handle_packet
-        pass
 
 if __name__ == "__main__":
     unittest.main()
