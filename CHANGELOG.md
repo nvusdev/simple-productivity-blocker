@@ -1,5 +1,14 @@
 # Simple Productivity Blocker - Version History
 
+## [1.4.9] - 2026-05-20
+### Fixed
+- **Wildcard DNS Coverage**: `DomainMatcher` now treats `*.domain.com` as matching both the base domain and all subdomains, which restores the intended blocking behavior for common wildcard rules.
+- **System Safety Exclusions Consistency**: Synchronized `SYSTEM_SAFETY_EXCLUSIONS` across the daemon and app blocker so SPB will not terminate its own executables or core recovery tools.
+- **Test Consolidation**: Removed weak placeholder hierarchy tests and relied on the comprehensive DNS hierarchy suite to avoid redundant coverage.
+
+### Verified
+- Full test suite passes after the version update and logic fixes.
+
 ## [1.4.8] - 2026-05-20
 ### Added
 - **Portmaster and VPN Compatibility**: SPB now detects conflicting DNS services (Portmaster, VPNs, DoH clients) at startup using a layered scan: psutil port-53 listener check first, then process keyword matching, then platform registry fallback. When a conflict is detected the DNS proxy aborts cleanly and SPB falls back to hosts-file blocking automatically, preserving all critical domain blocks without breaking network connectivity.
