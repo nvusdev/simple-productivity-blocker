@@ -18,7 +18,7 @@ def snapshot_dns_state(adapters=None, state_path=None):
     wh = WindowsHandler()
     if adapters is not None:
         wh._run_powershell_json = lambda script: adapters
-    return wh._snapshot_dns_state(state_path)
+    return wh._snapshot_dns_state()
 
 def apply_local_dns(state, local_ip="127.0.0.1", state_path=None):
     wh = WindowsHandler()
@@ -129,7 +129,7 @@ class TestGroupTargetsAndGlobalSettings(unittest.TestCase):
                     "apps": ["active.exe"],
                     "files": [],
                     "folders": [],
-                    "schedule": {"enabled": False},
+                    "schedule": {"enabled": True, "always": True},
                     "adblocker": {"enabled": False},
                 },
                 "inactive": {
