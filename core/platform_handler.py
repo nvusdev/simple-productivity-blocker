@@ -106,7 +106,7 @@ class WindowsHandler(PlatformHandler):
         if not state_path: state_path = self.get_dns_state_file()
         try:
             if activate:
-                state = self._snapshot_dns_state(state_path=state_path)
+                state = self._snapshot_dns_state()
                 if state.get("warnings"):
                     for warning in state["warnings"]:
                         logger.warning(f"DNS safety: {warning}")
@@ -117,7 +117,21 @@ class WindowsHandler(PlatformHandler):
             logger.error(f"Failed to modify system DNS: {e}")
             return False
 
-    def _snapshot_dns_state(self, state_path):
+    def _is_dns_healthy(self, ip_address, timeout=0.5):
+        import socket
+        try:
+            family = socket.AF_INET6 if ":" in ip_address else socket.AF_INET
+            with socket.socket(family, socket.SOCK_DGRAM) as s:
+                s.settimeout(timeout)
+                # Raw DNS query for 'google.com' A record
+                q = b'\xaa\xaa\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x06google\x03com\x00\x00\x01\x00\x01'
+                s.sendto(q, (ip_address, 53))
+                s.recvfrom(512)
+                return True
+        except Exception:
+            return False
+
+    def _snapshot_dns_state(self):
         script = r"""
 $items = Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | ForEach-Object {
   $idx = $_.ifIndex
@@ -136,15 +150,46 @@ $items | ConvertTo-Json -Depth 4
                 "alias": str(item.get("alias", "")),
                 "description": str(item.get("description", "")),
                 "index": int(item.get("index", 0)),
-                "ipv4": item.get("ipv4", []),
-                "ipv6": item.get("ipv6", [])
+                "ipv4": [],
+                "ipv6": []
             }
             haystack = (adapter["alias"] + " " + adapter["description"]).lower()
             protected = any(k in haystack for k in self.PROTECTED_ADAPTER_KEYWORDS)
+            
             if protected:
                 warnings.append(f"Skipping protected adapter: {adapter['alias']}")
-            elif adapter["index"] > 0:
-                eligible.append(adapter["index"])
+            else:
+                if adapter["index"] > 0:
+                    eligible.append(adapter["index"])
+                
+                # Health validate IPs to prevent dirty Portmaster/VPN snapshots
+                import ipaddress
+                for ip in item.get("ipv4", []):
+                    try:
+                        if not ipaddress.ip_address(ip).is_private:
+                            adapter["ipv4"].append(ip)
+                            continue
+                    except ValueError:
+                        pass
+                        
+                    if self._is_dns_healthy(ip):
+                        adapter["ipv4"].append(ip)
+                    else:
+                        warnings.append(f"Discarded dead private IPv4 DNS on {adapter['alias']}: {ip}")
+                        
+                for ip in item.get("ipv6", []):
+                    try:
+                        if not ipaddress.ip_address(ip).is_private:
+                            adapter["ipv6"].append(ip)
+                            continue
+                    except ValueError:
+                        pass
+                        
+                    if self._is_dns_healthy(ip):
+                        adapter["ipv6"].append(ip)
+                    else:
+                        warnings.append(f"Discarded dead private IPv6 DNS on {adapter['alias']}: {ip}")
+            
             normalized.append(adapter)
         
         return {
@@ -187,7 +232,7 @@ $items | ConvertTo-Json -Depth 4
 
     def audit_dns_safety(self, state_path=None):
         if not state_path: state_path = self.get_dns_state_file()
-        state = self._snapshot_dns_state(state_path)
+        state = self._snapshot_dns_state()
         conflicts = []
         pattern = "|".join(self.CONFLICT_SERVICE_KEYWORDS)
         script = f"Get-Service | Where-Object {{$_.Name -match '{pattern}' -or $_.DisplayName -match '{pattern}'}} | Select-Object Name,DisplayName,Status | ConvertTo-Json"
@@ -213,7 +258,7 @@ $items | ConvertTo-Json -Depth 4
             allowed_loopbacks = {"127.0.0.1", "::1"}
             if local_ip:
                 allowed_loopbacks.add(str(local_ip).strip())
-            state = self._snapshot_dns_state(state_path)
+            state = self._snapshot_dns_state()
             eligible = set(state.get("eligible", []))
             if not eligible:
                 return True

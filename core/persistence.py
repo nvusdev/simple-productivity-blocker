@@ -55,7 +55,7 @@ def register_task(task_name, exe_path, args="", working_dir=None):
     # Run now and verify
     result = subprocess.run(['schtasks', '/run', '/tn', task_name], capture_output=True, creationflags=0x08000000)
     if result.returncode != 0:
-        raise RuntimeError(f"Failed to start task {task_name}: {result.stderr.decode()}")
+        raise RuntimeError(f"Failed to start task {task_name}: {result.stderr.decode(errors='replace')}")
 
 def _set_startup_windows(enabled: bool, name: str):
     """

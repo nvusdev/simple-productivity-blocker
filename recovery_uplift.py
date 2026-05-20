@@ -89,21 +89,49 @@ def force_unlock(path):
         print(f"[!] Error unlocking {path}: {e}")
         return False
 
+def check_dns_connectivity():
+    import socket
+    try:
+        socket.gethostbyname('google.com')
+        return True
+    except socket.error:
+        return False
+
 def fallback_dns_reset():
     print("[*] Running DNS fallback loopback check...")
+    
+    # 1. Reset explicit loopbacks
     try:
-        # Scan for adapters currently pointing to a local loopback address (e.g. 127.0.0.1 or ::1) and explicitly clear them (DHCP)
-        ps = (
+        ps_loopback = (
             "Get-DnsClientServerAddress | "
             "Where-Object { $_.ServerAddresses -contains '127.0.0.1' -or $_.ServerAddresses -contains '::1' } | "
             "ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.InterfaceIndex -ResetServerAddresses }"
         )
-        run_system_command(["powershell", "-NoProfile", "-Command", ps], check=False)
-        print("[+] DNS fallback loopback reset complete.")
-        return True
-    except Exception as fallback_err:
-        print(f"[!] DNS fallback loopback reset failed: {fallback_err}")
-        return False
+        run_system_command(["powershell", "-NoProfile", "-Command", ps_loopback], check=False)
+    except Exception as e:
+        print(f"[!] Error resetting loopback DNS: {e}")
+        
+    # 2. Check general DNS connectivity, if it fails, aggressively reset ALL up adapters to DHCP
+    print("[*] Verifying system DNS connectivity...")
+    if not check_dns_connectivity():
+        print("[!] DNS connectivity test failed. Aggressively resetting ALL active network adapters to DHCP...")
+        try:
+            ps_all = (
+                "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | "
+                "ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ResetServerAddresses }"
+            )
+            run_system_command(["powershell", "-NoProfile", "-Command", ps_all], check=False)
+            
+            if check_dns_connectivity():
+                print("[+] DNS connectivity successfully restored via DHCP fallback.")
+            else:
+                print("[-] DHCP fallback applied, but DNS still cannot be resolved. Check your router/network connection.")
+        except Exception as e:
+            print(f"[!] Aggressive DHCP fallback failed: {e}")
+    else:
+        print("[+] System DNS connectivity is functional.")
+        
+    return True
 
 def restore_dns_state(config_dir):
     state_path = os.path.join(config_dir, "dns_state.json")
