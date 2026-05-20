@@ -298,8 +298,8 @@ Section "Install"
   DetailPrint "Task registration failed: $1"
   Abort "Scheduled task registration failed."
 
-  # Adjust task settings natively via PowerShell to add both triggers, allow running on battery, and disable execution time limits.
-  nsExec::ExecToStack `powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-ScheduledTask -TaskName 'SPB_Daemon' -Trigger (New-ScheduledTaskTrigger -AtStartup), (New-ScheduledTaskTrigger -AtLogOn) -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit 0)"`
+  # Adjust task settings natively via PowerShell to add both triggers, allow running on battery, and disable execution time limits. Fall back to direct XML export/modify/import if CIM/WMI is broken.
+  nsExec::ExecToStack `powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Set-ScheduledTask -TaskName 'SPB_Daemon' -Trigger (New-ScheduledTaskTrigger -AtStartup), (New-ScheduledTaskTrigger -AtLogOn) -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit 0) } catch { write-host 'CIM failed, attempting XML fallback...'; $$xmlPath = Join-Path $$env:TEMP 'spb_task.xml'; schtasks /query /tn SPB_Daemon /xml | Out-File -FilePath $$xmlPath -Encoding utf8; $$xml = Get-Content -Raw $$xmlPath; $$xml = $$xml -replace '<DisallowStartIfOnBatteries>true</DisallowStartIfOnBatteries>', '<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>'; $$xml = $$xml -replace '<StopIfGoingOnBatteries>true</StopIfGoingOnBatteries>', '<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>'; $$xml | Out-File -FilePath $$xmlPath -Encoding utf8; schtasks /create /tn SPB_Daemon /xml $$xmlPath /f; Remove-Item -Path $$xmlPath -Force }"`
   Pop $0
   Pop $1
   IntCmp $0 0 +3 0 0

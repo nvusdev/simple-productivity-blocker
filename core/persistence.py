@@ -48,7 +48,28 @@ def register_task(task_name, exe_path, args="", working_dir=None):
         fallback_args = ["schtasks", "/create", "/tn", task_name, "/tr", f'"{exe_path}" {args}'.strip(), "/sc", "onstart", "/ru", "SYSTEM", "/rl", "highest", "/f"]
         try:
             subprocess.run(fallback_args, check=True, capture_output=True, text=True)
-            print("[+] Fallback registration successful.")
+            # Robust XML modification fallback for battery settings
+            try:
+                import tempfile
+                xml_temp_dir = tempfile.gettempdir()
+                xml_path = os.path.join(xml_temp_dir, f"spb_task_{task_name}.xml")
+                # Export XML
+                export_res = subprocess.run(["schtasks", "/query", "/tn", task_name, "/xml"], capture_output=True, text=True, check=True)
+                xml_content = export_res.stdout
+                # Modify XML
+                xml_content = xml_content.replace("<DisallowStartIfOnBatteries>true</DisallowStartIfOnBatteries>", "<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>")
+                xml_content = xml_content.replace("<StopIfGoingOnBatteries>true</StopIfGoingOnBatteries>", "<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>")
+                # Write XML (UTF-8)
+                with open(xml_path, "w", encoding="utf-8") as f:
+                    f.write(xml_content)
+                # Re-import XML
+                subprocess.run(["schtasks", "/create", "/tn", task_name, "/xml", xml_path, "/f"], check=True, capture_output=True, text=True)
+                # Cleanup
+                if os.path.exists(xml_path):
+                    os.remove(xml_path)
+                print("[+] Fallback registration and XML configuration successful.")
+            except Exception as xml_err:
+                print(f"[-] Fallback XML modification failed: {xml_err}. Task remains registered with default settings.")
         except subprocess.CalledProcessError as f_err:
             raise RuntimeError(f"Complete registration failure. PS: {err_msg} | schtasks: {f_err.stderr}")
 
