@@ -1,9 +1,31 @@
 # Simple Productivity Blocker - Version History
 
-## [1.4.8] - 2026-05-19
+## [1.4.8] - 2026-05-20
 ### Added
-- **Pre-Snapshot DNS Health Validation & Public IP Trust**: Implemented rapid UDP DNS queries against adapter IPs before capturing them in `dns_state.json`. Any manually configured Public IPs (e.g. `8.8.8.8`) are unconditionally trusted. Private IPs are health-tested to ensure SPB never captures and restores "dirty" or dead local proxy IPs left behind by conflicting services (e.g. Portmaster).
-- **Aggressive DNS Recovery Uplift**: Enhanced the emergency recovery tool to run a connectivity test. If it detects a broken DNS state preventing resolution of standard domains, it now aggressively forces all network adapters back to DHCP automatic resolution, even if the IPs are not standard loopbacks.
+- **Portmaster and VPN Compatibility**: SPB now detects conflicting DNS services (Portmaster, VPNs, DoH clients) at startup using a layered scan: psutil port-53 listener check first, then process keyword matching, then platform registry fallback. When a conflict is detected the DNS proxy aborts cleanly and SPB falls back to hosts-file blocking automatically, preserving all critical domain blocks without breaking network connectivity.
+- **Deterministic Conflict Detection**: `detect_conflicting_services()` in `blockers/dns_server.py` tracks whether psutil ran successfully. If it did and returned no results, the platform registry scan is skipped entirely, making test mocking reliable and eliminating false positives from stale registry entries.
+- **Structured Security Appliance API**: Added `detect_security_appliances()` to `core/platform_handler.py` returning a structured dict with detection status, recommended action, matched items (name, PID, detection method, evidence), warnings, and eligible adapters.
+- **UI Compatibility Warning**: The About tab now calls `detect_conflicting_services()` on open and displays an orange warning when a conflict is active, naming the detected service and explaining the hosts-file fallback. Includes a "Learn More" link and an advanced-user note about `force_dns_proxy`.
+- **force_dns_proxy Config Override**: Added `force_dns_proxy` (default `false`) to `core/config_manager.py` settings. Expert users can set it to `true` to force proxy startup even when a conflict is detected. The override is documented in the UI warning.
+- **Watchdog and Recovery Conflict Awareness**: `watchdog_dns()` and `_check_dns_recovery()` in `daemon.py` pre-check for conflicts before attempting recovery. If a superior service is still present, recovery is skipped and the fallback state is held, avoiding spurious retry cycles.
+- **Pre-Snapshot DNS Health Validation and Public IP Trust**: Rapid UDP DNS queries against adapter IPs before capturing state in `dns_state.json`. Public IPs (e.g. `8.8.8.8`) are unconditionally trusted. Private IPs are health-tested so SPB never captures and restores dead local proxy IPs left behind by conflicting services.
+- **Aggressive DNS Recovery Uplift**: Emergency recovery now runs a connectivity test. If broken DNS state is detected, all network adapters are forced back to DHCP automatic resolution even if the IPs are not standard loopbacks.
+
+### Tests
+- `tests/test_conflict_detection.py` (new): deterministic mocking of all three detection paths; verifies port-53 detection and no false positives on empty process list.
+- `tests/test_dns_proxy_start.py` (new): verifies proxy aborts on conflict and that `force_dns_proxy=true` attempts startup regardless.
+- `tests/test_ui_conflict_warning.py` (new): verifies About tab warning displays with service name when conflict is mocked.
+- `tests/test_subsystem_stability.py`: updated to mock `psutil.net_connections()` and `detect_security_appliances()` alongside `psutil.process_iter()` for full determinism.
+- `tests/integration/dummy_bind.py` (new): simulates Portmaster by binding TCP/UDP port 53 as a background process.
+- `tests/integration/integration_run.py` (new): end-to-end harness that starts the dummy binder, instantiates `DaemonOrchestrator`, runs one sync, and inspects `dns_health.signal`.
+- `tests/integration/run_integration_elevated.ps1` (new): PowerShell wrapper to run the integration harness as Administrator.
+- `tests/integration/README.md` (new): usage instructions, safety warnings, and artifact preservation notes for the integration harness.
+- `tests/integration/test_reliability_safety.py`: fixed `_snapshot_dns_state` call signature and updated schedule fixture to use `always: true` for deterministic group activation.
+
+### Verified
+- 39/39 unit tests passing
+- Integration harness: conflict detected, DNS proxy aborted, hosts fallback active, `dns_health.signal = Fallback`
+- Build: `dist\spb_setup.exe` (86.5 MB NSIS native installer) compiled clean with all 5 binaries
 
 ## [1.4.7] - 2026-05-18
 ### Added
