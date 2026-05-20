@@ -24,7 +24,7 @@ proc = None
 
 def start_binder():
     global proc
-    cmd = [sys.executable, DUMMY]
+    cmd = [sys.executable, '-u', DUMMY]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     # Wait for binder to report bound sockets or timeout
     start = time.time()
