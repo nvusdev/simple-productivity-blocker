@@ -27,7 +27,7 @@ except Exception:
     def detect_conflicting_services():
         return None
 
-VERSION = "1.4.8"
+VERSION = "1.4.9"
 
 def resource_path(relative_path):
     try:
