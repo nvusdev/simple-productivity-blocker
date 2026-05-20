@@ -161,7 +161,7 @@ class DomainMatcher:
     def compile_pattern_str(self, p: str) -> str:
         """Returns the regex string for a pattern (without compiling).
         Handles:
-        - *.domain.com: All subdomains
+        - *.domain.com: All subdomains and the base domain
         - word*: Segment prefix
         - *word: Segment suffix
         - keyword: Any segment starting with keyword (boundary-aware)
@@ -172,7 +172,7 @@ class DomainMatcher:
         # 1. Special Case: Domain Wildcard (*.domain.com)
         if p.startswith("*."):
             base = re.escape(p[2:])
-            return f"(?:^|.*\\.){base}$"
+            return f"^(?:.+\\.)?{base}$"
 
         # 2. Convert glob-style pattern to boundary-aware regex
         # We want '*' to match anything within a segment (not crossing dots or slashes)
