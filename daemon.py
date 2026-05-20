@@ -919,7 +919,7 @@ class DaemonOrchestrator:
                 logger.error(f"Orchestrator error: {e}", exc_info=True)
                 time.sleep(5)
 
-VERSION = "1.4.8"
+VERSION = "1.4.9"
 
 def main():
     from core.win32_utils import is_safe_mode
