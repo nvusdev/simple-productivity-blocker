@@ -67,6 +67,55 @@ ADBLOCK_LISTS = {
     "gambling":      _dec(_GAMBLE), # Sensitive/Explicit/Illegal -> Encrypted
 }
 
+import http.client
+
+class BoundHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, target_ip, host, *args, **kwargs):
+        self.target_ip = target_ip
+        super().__init__(host, *args, **kwargs)
+
+    def connect(self):
+        self.sock = self._create_connection(
+            (self.target_ip, self.port), self.timeout, self.source_address
+        )
+        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        if self._tunnel_host:
+            self._tunnel()
+
+class BoundHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, target_ip, host, *args, **kwargs):
+        self.target_ip = target_ip
+        super().__init__(host, *args, **kwargs)
+
+    def connect(self):
+        self.sock = self._create_connection(
+            (self.target_ip, self.port), self.timeout, self.source_address
+        )
+        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        if self._tunnel_host:
+            self._tunnel()
+        try:
+            server_hostname = self._tunnel_host if self._tunnel_host else self.host
+            self.sock = self.context.wrap_socket(self.sock, server_hostname=server_hostname)
+        except Exception:
+            self.sock.close()
+            raise
+
+class BoundHTTPHandler(urllib.request.HTTPHandler):
+    def __init__(self, target_ip):
+        super().__init__()
+        self.target_ip = target_ip
+    def http_open(self, req):
+        return self.do_open(lambda host, **kw: BoundHTTPConnection(self.target_ip, host, **kw), req)
+
+class BoundHTTPSHandler(urllib.request.HTTPSHandler):
+    def __init__(self, target_ip, context=None):
+        super().__init__(context=context)
+        self.target_ip = target_ip
+    def https_open(self, req):
+        return self.do_open(lambda host, **kw: BoundHTTPSConnection(self.target_ip, host, **kw), req,
+            context=self._context, check_hostname=self._check_hostname)
+
 class CustomListManager:
     def __init__(self, base_data):
         self.base_data = base_data
@@ -88,6 +137,7 @@ class CustomListManager:
         
         is_url = list_path.startswith(("http://", "https://"))
         fetch_host = None
+        target_ip = None
         actual_url = list_path
 
         if is_url:
@@ -98,7 +148,6 @@ class CustomListManager:
                 try:
                     port = parsed.port or (443 if parsed.scheme == 'https' else 80)
                     infos = socket.getaddrinfo(host, port)
-                    target_ip = None
                     for info in infos:
                         ip = info[4][0]
                         # Block local, loopback, link-local, and private ranges
@@ -119,25 +168,21 @@ class CustomListManager:
         elif "://" in list_path: return []
 
         # Security: Check for symlinks and restrict local paths to config dir
-        if os.path.islink(list_path): return []
         if "://" not in list_path:
+            if os.path.islink(list_path): return []
             abs_path = os.path.abspath(list_path)
             if not abs_path.startswith(os.path.dirname(os.path.abspath(cfg_path))):
                 return [] # Block arbitrary local file reads
+            mtime = os.path.getmtime(list_path) if os.path.exists(list_path) else 0
+        else:
+            mtime = 0
         
-        mtime = os.path.getmtime(list_path) if os.path.exists(list_path) and "://" not in list_path else 0
         cache_file = os.path.join(self.base_data, "list_cache", hashlib.md5(list_path.encode()).hexdigest() + ".txt")
         
         if os.path.exists(cache_file):
             if os.path.islink(cache_file): # Security: Block cache symlink traps
                 try: os.remove(cache_file)
                 except: return []
-            
-            if now - os.path.getmtime(cache_file) < 3600: # 1h cache
-                if list_path in self._domain_cache:
-                    cached_mtime, cached_domains, last_check = self._domain_cache[list_path]
-                    if (mtime == cached_mtime or "://" in list_path) and (now - last_check) < 300:
-                        return cached_domains
 
         try:
             self._last_fetch_times[list_path] = now
@@ -153,7 +198,18 @@ class CustomListManager:
                     if fetch_host:
                         req.add_header("Host", fetch_host)
                     
-                    with urllib.request.urlopen(req, timeout=10) as r:
+                    if fetch_host and target_ip:
+                        import ssl
+                        ctx = ssl.create_default_context()
+                        opener = urllib.request.build_opener(
+                            BoundHTTPHandler(target_ip),
+                            BoundHTTPSHandler(target_ip, context=ctx)
+                        )
+                        r = opener.open(req, timeout=10)
+                    else:
+                        r = urllib.request.urlopen(req, timeout=10)
+                    
+                    with r:
                         content = r.read(10 * 1024 * 1024).decode('utf-8', errors='ignore')
                     with open(cache, "w", encoding="utf-8") as f:
                         f.write(content)
