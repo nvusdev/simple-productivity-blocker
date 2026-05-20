@@ -1,6 +1,6 @@
 # Simple Productivity Blocker (SPB)
 
-![Version](https://img.shields.io/badge/version-1.4.6-blue.svg)
+![Version](https://img.shields.io/badge/version-1.4.8-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-windows-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Status](https://img.shields.io/badge/status-stable-success.svg)
@@ -19,6 +19,18 @@ It combines advanced website filtering, application termination, strict file and
 * **Crash-Proof Recovery:** SPB logs permission-sensitive changes to recovery history. If your computer loses power, crashes, or a block becomes orphaned, the daemon and recovery tools can reconcile and restore normal access.
 * **Network Fail-Safes:** SPB audits adapters before changing DNS, skips risky VPN or security-managed adapters, preserves original DNS state, and falls back to hosts-file blocking when local DNS proxying is unsafe.
 * **Battery-Aware Performance:** The background service uses caching and performance profiles (Passive, Balanced, Strict) to control how aggressively it scans for running programs.
+
+## Compatibility with Security Appliances
+
+SPB is designed to coexist with Portmaster, VPNs, corporate DNS clients, and other DNS/security tools. When a service that owns port 53 is detected, SPB automatically yields: the DNS proxy does not start, and all active blocks are applied directly to the Windows hosts file instead. Internet connectivity is preserved. The About tab in the application displays a notice when compatibility mode is active.
+
+The detection is layered:
+
+1. Check for port-53 listeners via psutil (authoritative)
+2. Scan running process names for known keywords (Portmaster, Mullvad, VPN, etc.)
+3. Query the Windows service registry as a last resort
+
+Advanced users who need to force DNS proxy mode regardless can set `force_dns_proxy: true` in `config.json` under `settings`. This is not recommended unless you understand the risk of two services competing for port 53.
 
 ## The Enforcement Engine (Under the Hood)
 
