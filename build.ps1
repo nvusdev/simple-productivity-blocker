@@ -285,7 +285,7 @@ Section "Install"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "UninstallString" '"$INSTDIR\uninstall.exe"'
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "QuietUninstallString" '"$INSTDIR\uninstall.exe" /S'
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "Publisher" "nvusdev"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayVersion" "1.4.7"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayVersion" "1.4.8"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "DisplayIcon" '"$INSTDIR\SimpleProductivityBlocker.exe",0'
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "NoModify" 1
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "NoRepair" 1

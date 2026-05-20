@@ -14,7 +14,7 @@ from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, 
 from core.platform_handler import get_platform_handler
 handler = get_platform_handler()
 
-VERSION = "1.4.7"
+VERSION = "1.4.8"
 
 def resource_path(relative_path):
     try:

@@ -78,7 +78,7 @@ def test_settings_per_group():
     assert ent_active == False
 
     # Compile targets for "Work Profile" (simulate active window)
-    ctx = _compute_targets(normalized, clm, "config.json")
+    ctx = _compute_targets(normalized, work_noon, "config.json")
     print(f"[PASS] Target isolated compilation complete:")
     print(f"       Manual Domains: {ctx.manual_domains}")
     print(f"       Apps: {ctx.processes}")

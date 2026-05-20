@@ -1,5 +1,10 @@
 # Simple Productivity Blocker - Version History
 
+## [1.4.8] - 2026-05-19
+### Added
+- **Pre-Snapshot DNS Health Validation & Public IP Trust**: Implemented rapid UDP DNS queries against adapter IPs before capturing them in `dns_state.json`. Any manually configured Public IPs (e.g. `8.8.8.8`) are unconditionally trusted. Private IPs are health-tested to ensure SPB never captures and restores "dirty" or dead local proxy IPs left behind by conflicting services (e.g. Portmaster).
+- **Aggressive DNS Recovery Uplift**: Enhanced the emergency recovery tool to run a connectivity test. If it detects a broken DNS state preventing resolution of standard domains, it now aggressively forces all network adapters back to DHCP automatic resolution, even if the IPs are not standard loopbacks.
+
 ## [1.4.7] - 2026-05-18
 ### Added
 - **High-Integrity SYSTEM Daemon**: Transitioned the scheduled task execution from the interactive user context to the `NT AUTHORITY\SYSTEM` account, guaranteeing absolute privileges for writing to the hosts file and hardened config/log directories.
