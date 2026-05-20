@@ -173,7 +173,7 @@ def execute_test(log_path, sentinel_path):
             try:
                 publisher, _ = winreg.QueryValueEx(key, "Publisher")
                 version, _ = winreg.QueryValueEx(key, "DisplayVersion")
-                if publisher == "nvusdev" and version == "1.4.8":
+                if publisher == "nvusdev" and version == "1.4.9":
                     print("[PASS] Add/Remove Programs registry key correctly registered.")
                 else:
                     raise RuntimeError(f"Registry values mismatched: Publisher={publisher}, Version={version}")
