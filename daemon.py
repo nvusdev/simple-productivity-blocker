@@ -586,6 +586,9 @@ class SubsystemOrchestrator:
         self.pm_lock = threading.RLock()
         self.dns_server = None
         self.using_dns_proxy = False
+        self._dns_healthy_flag = True
+        self._dns_check_lock = threading.Lock()
+        self._dns_check_in_progress = False
     
     def _dns_redirect_healthy(self) -> bool:
         """Return True when adapter DNS is still bound to localhost for proxy mode."""
@@ -616,6 +619,7 @@ class SubsystemOrchestrator:
             self.sync_dns(manual_domains, filter_keywords, cloud_allowlist, filter_exceptions, False, normalized_filter_domains=normalized_filter_domains)
             if self.using_dns_proxy:
                 logger.info("DNS Proxy Recovery SUCCESS: Subsystem active and hosts bloat cleared.")
+                self._dns_healthy_flag = True
                 self._update_health_signal("Active")
         except socket.error:
             # Port still occupied
@@ -667,6 +671,9 @@ class SubsystemOrchestrator:
             self.dns_server.stop()
             self.dns_server = None
             self.using_dns_proxy = False
+        else:
+            if self.using_dns_proxy:
+                self._dns_healthy_flag = True
         
         # Determine Redundancy Set (Critical domains kept in hosts even with proxy active)
         # We only keep the global manual blocks as redundancy in the hosts file during proxy mode.
@@ -724,19 +731,62 @@ class SubsystemOrchestrator:
                 f.write(status)
         except: pass
 
+    def _run_dns_health_check_async(self):
+        with self._dns_check_lock:
+            if self._dns_check_in_progress:
+                return
+            self._dns_check_in_progress = True
+
+        def worker():
+            try:
+                server = self.dns_server
+                if not server:
+                    self._dns_healthy_flag = False
+                    return
+
+                conflict = detect_conflicting_services()
+                if conflict:
+                    self._dns_healthy_flag = False
+                    return
+
+                if not server.is_healthy():
+                    self._dns_healthy_flag = False
+                    return
+
+                if not self._dns_redirect_healthy():
+                    self._dns_healthy_flag = False
+                    return
+
+                self._dns_healthy_flag = True
+            except Exception as e:
+                logger.debug(f"Async DNS health check error: {e}")
+                self._dns_healthy_flag = False
+            finally:
+                with self._dns_check_lock:
+                    self._dns_check_in_progress = False
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def watchdog_dns(self, manual_domains, filter_keywords, normalized_filter_domains, cloud_allowlist, filter_exceptions):
         if not self.using_dns_proxy or not self.dns_server:
             # Task 4: Attempt recovery if in fallback mode
             self._check_dns_recovery(manual_domains, filter_keywords, normalized_filter_domains, cloud_allowlist, filter_exceptions)
             return
 
-        # Preemptive conflict check in watchdog
-        conflict = detect_conflicting_services()
-        if conflict or not self.dns_server.is_healthy() or not self._dns_redirect_healthy():
+        # Trigger the next async check cycle
+        self._run_dns_health_check_async()
+
+        # Evaluate the result from the last cycle
+        if not self._dns_healthy_flag:
+            conflict = detect_conflicting_services()
             if conflict:
                 logger.warning(f"DNS watchdog detected conflict with '{conflict}'. Switch to hosts fallback.")
             else:
                 logger.error("DNS watchdog detected an unhealthy proxy or adapter DNS drift. Restoring DNS and switching to hosts fallback.")
+            
+            # Reset flag immediately to avoid multiple triggering
+            self._dns_healthy_flag = True
+            
             self.dns_server.stop()
             self.dns_server = None
             self.using_dns_proxy = False
@@ -857,7 +907,7 @@ class DaemonOrchestrator:
                 logger.error(f"Orchestrator error: {e}", exc_info=True)
                 time.sleep(5)
 
-VERSION = "1.4.7"
+VERSION = "1.4.8"
 
 def main():
     from core.win32_utils import is_safe_mode
