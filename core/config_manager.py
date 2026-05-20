@@ -61,6 +61,7 @@ DEFAULT_GROUP_CONFIG = {
 DEFAULT_SETTINGS = {
     "performance_mode": "Balanced",
     "startup_enabled": False,
+    "force_dns_proxy": False,
     "max_domains_cap": 1000,
     "cloud_allowlist_enabled": True,
     "cloud_allowlist": [

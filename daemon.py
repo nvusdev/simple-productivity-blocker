@@ -48,10 +48,22 @@ def _harden_runtime_paths():
 _harden_runtime_paths()
 
 # Define internal fallbacks with explicit defaults to prevent startup NameErrors
-from core.platform_handler import get_platform_handler
+from core.platform_handler import get_platform_handler, detect_security_appliances as platform_detect_security_appliances
 handler = get_platform_handler()
 
 _INTERNAL_HOSTS_FILE = handler.get_hosts_path()
+
+# Helper: convert platform detection to legacy conflict name
+def _conflict_name_from_platform_detection():
+    try:
+        res = platform_detect_security_appliances()
+        if res and isinstance(res, dict):
+            items = res.get("items") or []
+            if items:
+                return items[0].get("name")
+    except Exception:
+        pass
+    return None
 
 # Global references for subsystems
 ProcessMonitor = None
@@ -604,7 +616,7 @@ class SubsystemOrchestrator:
             return
 
         # Preemptive check: do not recover DNS Proxy if there is a running conflicting service
-        conflict = detect_conflicting_services()
+        conflict = _conflict_name_from_platform_detection()
         if conflict:
             logger.debug(f"DNS Proxy Recovery bypassed: Conflicting service '{conflict}' is running.")
             return
@@ -638,7 +650,7 @@ class SubsystemOrchestrator:
             return False
 
         # Preemptive check: check for conflicting services
-        conflict = detect_conflicting_services()
+        conflict = _conflict_name_from_platform_detection()
         if conflict:
             logger.info(f"Conflict detected with superior network/DNS service '{conflict}'. Falling back to hosts-file blocking.")
             if self.dns_server:
@@ -744,7 +756,7 @@ class SubsystemOrchestrator:
                     self._dns_healthy_flag = False
                     return
 
-                conflict = detect_conflicting_services()
+                conflict = _conflict_name_from_platform_detection()
                 if conflict:
                     self._dns_healthy_flag = False
                     return
@@ -778,7 +790,7 @@ class SubsystemOrchestrator:
 
         # Evaluate the result from the last cycle
         if not self._dns_healthy_flag:
-            conflict = detect_conflicting_services()
+            conflict = _conflict_name_from_platform_detection()
             if conflict:
                 logger.warning(f"DNS watchdog detected conflict with '{conflict}'. Switch to hosts fallback.")
             else:

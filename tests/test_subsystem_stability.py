@@ -55,9 +55,11 @@ class TestSubsystemStability(unittest.TestCase):
         # C:\test_path_1.txt (which became the oldest because 0 was moved to end) should be evicted
         self.assertNotIn("C:\\test_path_1.txt", pm._path_cache)
 
+    @patch('psutil.net_connections')
     @patch('psutil.process_iter')
-    def test_detect_conflicting_services_found(self, mock_process_iter):
+    def test_detect_conflicting_services_found(self, mock_process_iter, mock_net_conns):
         """Verify that detect_conflicting_services identifies a running conflicting process."""
+        mock_net_conns.return_value = []
         mock_proc = MagicMock()
         mock_proc.info = {'pid': 1234, 'name': 'Portmaster.exe'}
         mock_process_iter.return_value = [mock_proc]
@@ -66,12 +68,16 @@ class TestSubsystemStability(unittest.TestCase):
         res = detect_conflicting_services()
         self.assertEqual(res, "Portmaster.exe (PID: 1234)")
 
+    @patch('psutil.net_connections')
     @patch('psutil.process_iter')
-    def test_detect_conflicting_services_not_found(self, mock_process_iter):
+    @patch('core.platform_handler.detect_security_appliances')
+    def test_detect_conflicting_services_not_found(self, mock_platform_detect, mock_process_iter, mock_net_conns):
         """Verify that detect_conflicting_services returns None if no conflicting processes are running."""
+        mock_net_conns.return_value = []
         mock_proc = MagicMock()
         mock_proc.info = {'pid': 5678, 'name': 'notepad.exe'}
         mock_process_iter.return_value = [mock_proc]
+        mock_platform_detect.return_value = None
 
         from blockers.dns_server import detect_conflicting_services
         res = detect_conflicting_services()

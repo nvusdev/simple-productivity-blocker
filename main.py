@@ -11,8 +11,21 @@ import ctypes
 import sys
 import copy
 from core.config_manager import load_config, save_config, DEFAULT_GROUP_CONFIG, get_config_dir, export_config, import_config
-from core.platform_handler import get_platform_handler
+from core.platform_handler import get_platform_handler, detect_security_appliances
 handler = get_platform_handler()
+
+# Provide legacy helper that returns a simple conflict name for UI compatibility
+try:
+    def detect_conflicting_services():
+        res = detect_security_appliances()
+        if res and isinstance(res, dict):
+            items = res.get("items") or []
+            if items:
+                return items[0].get("name")
+        return None
+except Exception:
+    def detect_conflicting_services():
+        return None
 
 VERSION = "1.4.8"
 
@@ -583,6 +596,32 @@ class ProductivityApp(ctk.CTk):
             font=ctk.CTkFont(weight="bold"),
             command=self._run_emergency_recovery
         ).pack(padx=10)
+
+        # Compatibility warning: if a security appliance (e.g., Portmaster) is detected, show a prominent notice
+        try:
+            conflict_name = detect_conflicting_services()
+        except Exception:
+            conflict_name = None
+        if conflict_name:
+            ctk.CTkLabel(
+                c,
+                text=f"Compatibility mode active: yielding DNS to {conflict_name}. SPB is using hosts-file fallback to avoid breaking network access.",
+                text_color="#FF9800",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                wraplength=700,
+                justify="left"
+            ).pack(pady=(12, 10))
+
+            ctk.CTkLabel(
+                c,
+                text="If you are an advanced user and understand the risks, you can enable 'Force DNS Proxy' in the configuration file (not recommended).",
+                text_color="gray",
+                font=ctk.CTkFont(size=11)
+            ).pack(pady=(0, 8))
+
+            def _open_conflict_help():
+                webbrowser.open("https://github.com/nvusdev/simple-productivity-blocker#compatibility-with-security-appliances")
+            ctk.CTkButton(c, text="Learn More", width=140, height=34, command=_open_conflict_help).pack(pady=(0, 12))
 
     def _run_emergency_recovery(self):
         # Find recovery_uplift.exe in production or fallback to recovery_uplift.py in development

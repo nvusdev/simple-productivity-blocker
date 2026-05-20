@@ -354,6 +354,74 @@ class LinuxHandler(PlatformHandler):
         """Linux does not redirect adapter DNS in this project, so drift check is not applicable."""
         return True
 
+def detect_security_appliances():
+    """
+    High-level detection API returning a structured result:
+    {
+      "status": "none" | "present" | "unknown",
+      "recommended_action": "none" | "yield" | "chain" | "force",
+      "items": [ {"name": str, "detection": str, "pid": int?, "evidence": object?}, ... ],
+      "warnings": [...],
+      "eligible": [...]
+    }
+    """
+    result = {"status": "unknown", "recommended_action": "unknown", "items": []}
+    try:
+        handler = get_platform_handler()
+        audit = {}
+        try:
+            audit = handler.audit_dns_safety()
+        except Exception:
+            audit = {}
+        if audit:
+            conflicts = audit.get("conflicting_services") or []
+            warnings = audit.get("warnings") or []
+            eligible = audit.get("eligible") or []
+            result["warnings"] = warnings
+            result["eligible"] = eligible
+            for c in conflicts:
+                name = c.get("Name") or c.get("DisplayName") or str(c)
+                result["items"].append({"name": name, "detection": "service_registry", "evidence": c})
+
+        # Add network listener check via psutil (authoritative when available)
+        try:
+            import psutil as _ps
+            for conn in _ps.net_connections(kind='inet'):
+                if not getattr(conn, 'laddr', None):
+                    continue
+                port = None
+                try:
+                    port = getattr(conn.laddr, 'port')
+                except Exception:
+                    try:
+                        port = conn.laddr[1]
+                    except Exception:
+                        port = None
+                if port == 53:
+                    pid = getattr(conn, 'pid', None)
+                    if pid:
+                        try:
+                            p = _ps.Process(pid)
+                            pname = f"{p.name()} (PID: {pid})"
+                        except Exception:
+                            pname = f"PID:{pid}"
+                        result["items"].append({"name": pname, "detection": "port_listener", "pid": pid})
+                        break
+        except Exception:
+            pass
+
+        if result.get("items"):
+            result["status"] = "present"
+            result["recommended_action"] = "yield"
+        else:
+            result["status"] = "none"
+            result["recommended_action"] = "none"
+    except Exception as e:
+        result["status"] = "unknown"
+        result["error"] = str(e)
+    return result
+
+
 def get_platform_handler():
     if os.name == 'nt':
         return WindowsHandler()
