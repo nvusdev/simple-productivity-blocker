@@ -22,7 +22,8 @@ if os.name == 'nt':
 # Modifying this set can cause system instability or loss of administrative recovery paths.
 SYSTEM_SAFETY_EXCLUSIONS = {
     "explorer.exe", "taskmgr.exe", "services.exe", "lsass.exe", "csrss.exe",
-    "wininit.exe", "winlogon.exe", "spoolsv.exe", "svchost.exe",
+    "wininit.exe", "winlogon.exe", "spoolsv.exe", "svchost.exe", "notepad.exe",
+    "python.exe", "SimpleProductivityBlocker.exe", "SPB_Daemon.exe", "spb_installer.exe"
 }
 
 class ProcessMonitor:
