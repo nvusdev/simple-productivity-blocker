@@ -44,7 +44,7 @@ dns_state.json
 # Scratch and Diagnostics
 scratch/
 test_*.py
-!tests/test_*.py
+!tests/**/test_*.py
 !tests/*.py
 scratch_*.py
 Stress_Test_*/
@@ -62,7 +62,6 @@ tasks/
 temp_*/
 test_venv/
 PERFORMANCE_LOGS.md
-newlogo.png
 
 # Persistence & State
 dns_cache.json
