@@ -13,6 +13,11 @@ from core import config_manager as cm
 
 
 class TestConfigNormalization(unittest.TestCase):
+    def test_default_settings_enable_startup(self):
+        normalized = cm.normalize_config({})
+        self.assertTrue(normalized["settings"]["startup_enabled"])
+        self.assertEqual(normalized["schema_version"], 3)
+
     def test_legacy_flat_config_migrates_and_preserves_schedule_aliases(self):
         normalized = cm.normalize_config({
             "websites": ["example.com"],
