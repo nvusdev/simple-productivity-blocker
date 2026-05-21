@@ -20,7 +20,7 @@ def get_config_dir():
         return os.path.join(config_home, 'SimpleProductivityBlocker')
 
 CONFIG_FILE = os.path.join(get_config_dir(), 'config.json')
-CONFIG_SCHEMA_VERSION = 2
+CONFIG_SCHEMA_VERSION = 3
 
 _lock = threading.Lock()
 
@@ -60,7 +60,7 @@ DEFAULT_GROUP_CONFIG = {
 
 DEFAULT_SETTINGS = {
     "performance_mode": "Balanced",
-    "startup_enabled": False,
+    "startup_enabled": True,
     "force_dns_proxy": False,
     "max_domains_cap": 1000,
     "cloud_allowlist_enabled": True,
@@ -135,12 +135,15 @@ def _normalize_group(group_data):
             adblocker["exceptions"] = merged
         del group_data["exceptions"]
 
-def _normalize_settings(config_data):
+def _normalize_settings(config_data, warnings):
     settings = config_data.get("settings")
     if not isinstance(settings, dict):
         config_data["settings"] = copy.deepcopy(DEFAULT_SETTINGS)
         return
     _deep_merge_defaults(settings, DEFAULT_SETTINGS)
+    if config_data.get("schema_version", 0) < 3 and settings.get("startup_enabled") is False:
+        settings["startup_enabled"] = True
+        warnings.append("Startup persistence defaulted on during v1.4.9 migration.")
 
 def normalize_config(data):
     warnings = []
@@ -189,7 +192,7 @@ def normalize_config(data):
         else:
             _normalize_group(group_data)
 
-    _normalize_settings(data)
+    _normalize_settings(data, warnings)
     data["schema_version"] = CONFIG_SCHEMA_VERSION
     data["normalized_at"] = datetime.now().isoformat(timespec="seconds")
     existing = data.get("migration_warnings", [])
