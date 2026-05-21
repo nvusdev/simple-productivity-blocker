@@ -5,6 +5,8 @@ import datetime
 import re
 import os
 import subprocess
+import threading
+import time
 import psutil
 import webbrowser
 import ctypes
@@ -219,6 +221,10 @@ class ProductivityApp(ctk.CTk):
         self._debounce_timer = None # 3s Batching timer
         self._countdown_timer = None # UI update timer
         self._countdown_val = 0
+        self._screen_generation = 0
+        self._startup_status_cache = {"value": None, "checked_at": 0.0}
+        self._conflict_status_cache = {"value": None, "checked_at": 0.0}
+        self._settings_cache_ttl = 30.0
         
         self.show_dashboard()
         
@@ -253,7 +259,11 @@ class ProductivityApp(ctk.CTk):
                 self.dns_health_lbl.configure(text=f"DNS ENGINE: {status.upper()}", text_color=color)
             except: pass
             
-        self.after(5000, self._update_dns_health_ui)
+        try:
+            if self.winfo_exists():
+                self.after(5000, self._update_dns_health_ui)
+        except Exception:
+            pass
 
     def _apply_app_icon(self):
         try:
@@ -284,17 +294,27 @@ class ProductivityApp(ctk.CTk):
         self._debounce_timer = self.after(3000, self._finalize_save)
 
     def _update_cooldown_ui(self):
+        if not self._widget_is_alive(getattr(self, "cooldown_label", None)):
+            self._countdown_timer = None
+            return
         if self._countdown_val > 0:
             self.cooldown_label.configure(text=f"SYNCING IN {self._countdown_val:.1f}s...", text_color="#888888")
             self._countdown_val -= 0.1
-            self._countdown_timer = self.after(100, self._update_cooldown_ui)
+            try:
+                self._countdown_timer = self.after(100, self._update_cooldown_ui)
+            except Exception:
+                self._countdown_timer = None
         else:
             self.cooldown_label.configure(text="SHIELD SYNCHRONIZED", text_color="#4CAF50")
-            self._countdown_timer = self.after(2000, lambda: self.cooldown_label.configure(text=""))
+            try:
+                self._countdown_timer = self.after(2000, lambda: self._clear_widget_text(self.cooldown_label))
+            except Exception:
+                self._countdown_timer = None
 
     def _finalize_save(self):
         save_config(self.config_data)
-        self.status_lbl.configure(text="Changes Saved & Applied", text_color="green")
+        if self._widget_is_alive(getattr(self, "status_lbl", None)):
+            self.status_lbl.configure(text="Changes Saved & Applied", text_color="green")
         self._debounce_timer = None
 
     def on_exit(self):
@@ -305,8 +325,154 @@ class ProductivityApp(ctk.CTk):
         self.destroy()
 
     def clear_screen(self):
+        self._screen_generation += 1
+        self._cancel_pending_timers()
         for widget in self.winfo_children():
             widget.destroy()
+
+    def _cancel_pending_timers(self):
+        for attr in ("_debounce_timer", "_countdown_timer"):
+            timer = getattr(self, attr, None)
+            if timer:
+                try:
+                    self.after_cancel(timer)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+
+    def _widget_is_alive(self, widget):
+        try:
+            return widget is not None and widget.winfo_exists()
+        except Exception:
+            return False
+
+    def _clear_widget_text(self, widget):
+        if self._widget_is_alive(widget):
+            try:
+                widget.configure(text="")
+            except Exception:
+                pass
+
+    def _screen_token(self):
+        return self._screen_generation
+
+    def _screen_token_matches(self, token):
+        try:
+            return self.winfo_exists() and token == self._screen_generation
+        except Exception:
+            return False
+
+    def _cache_is_fresh(self, cache):
+        checked_at = cache.get("checked_at", 0.0)
+        return bool(checked_at) and (time.monotonic() - checked_at) < self._settings_cache_ttl
+
+    def _refresh_startup_status_async(self, token):
+        if not self._screen_token_matches(token):
+            return
+
+        cached = self._startup_status_cache
+        if self._cache_is_fresh(cached):
+            self._apply_startup_status(cached.get("value"), token)
+            return
+
+        if self._widget_is_alive(getattr(self, "_startup_status_lbl", None)):
+            self._startup_status_lbl.configure(text="Checking startup persistence...", text_color="gray")
+        if self._widget_is_alive(getattr(self, "_startup_switch", None)):
+            self._startup_switch.configure(state="disabled")
+
+        def worker():
+            try:
+                enabled = handler.is_startup_enabled()
+                error = None
+            except Exception as exc:
+                enabled = None
+                error = str(exc)
+
+            def apply():
+                if not self._screen_token_matches(token):
+                    return
+                self._startup_status_cache = {"value": enabled, "checked_at": time.monotonic()}
+                self._apply_startup_status(enabled, token, error)
+
+            try:
+                self.after(0, apply)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_startup_status(self, enabled, token, error=None):
+        if not self._screen_token_matches(token):
+            return
+        if getattr(self, "startup_var", None) is not None and enabled is not None:
+            self.startup_var.set(bool(enabled))
+        if self._widget_is_alive(getattr(self, "_startup_switch", None)):
+            self._startup_switch.configure(state="normal")
+        if self._widget_is_alive(getattr(self, "_startup_status_lbl", None)):
+            if error:
+                self._startup_status_lbl.configure(text="Startup status unavailable", text_color="#FF9800")
+            else:
+                self._startup_status_lbl.configure(text="Startup persistence ready", text_color="#4CAF50")
+
+    def _refresh_compatibility_status_async(self, token):
+        if not self._screen_token_matches(token):
+            return
+
+        cached = self._conflict_status_cache
+        if self._cache_is_fresh(cached):
+            self._apply_compatibility_status(cached.get("value"), token)
+            return
+
+        if self._widget_is_alive(getattr(self, "_compatibility_status_lbl", None)):
+            self._compatibility_status_lbl.configure(text="Checking compatibility with security appliances...", text_color="gray")
+        if self._widget_is_alive(getattr(self, "_compatibility_help_btn", None)):
+            self._compatibility_help_btn.pack_forget()
+
+        def worker():
+            try:
+                conflict_name = detect_conflicting_services()
+                error = None
+            except Exception as exc:
+                conflict_name = None
+                error = str(exc)
+
+            def apply():
+                if not self._screen_token_matches(token):
+                    return
+                self._conflict_status_cache = {"value": conflict_name, "checked_at": time.monotonic()}
+                self._apply_compatibility_status(conflict_name, token, error)
+
+            try:
+                self.after(0, apply)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_compatibility_status(self, conflict_name, token, error=None):
+        if not self._screen_token_matches(token):
+            return
+        if self._widget_is_alive(getattr(self, "_compatibility_status_lbl", None)):
+            if error:
+                self._compatibility_status_lbl.configure(
+                    text="Compatibility check unavailable right now.",
+                    text_color="#FF9800"
+                )
+            elif conflict_name:
+                self._compatibility_status_lbl.configure(
+                    text=f"Compatibility mode active: yielding DNS to {conflict_name}. SPB is using hosts-file fallback to avoid breaking network access.",
+                    text_color="#FF9800"
+                )
+            else:
+                self._compatibility_status_lbl.configure(
+                    text="No conflicting DNS/security appliance detected.",
+                    text_color="#4CAF50"
+                )
+        if self._widget_is_alive(getattr(self, "_compatibility_help_btn", None)):
+            if conflict_name and not error:
+                self._compatibility_help_btn.pack(pady=(0, 12))
+            else:
+                self._compatibility_help_btn.pack_forget()
 
     def show_dashboard(self):
         self.clear_screen()
@@ -495,6 +661,7 @@ class ProductivityApp(ctk.CTk):
 
     def show_settings(self):
         self.clear_screen()
+        token = self._screen_token()
         self.current_screen = ctk.CTkFrame(self)
         self.current_screen.pack(fill="both", expand=True)
         top = ctk.CTkFrame(self.current_screen, fg_color="transparent", height=60)
@@ -508,12 +675,12 @@ class ProductivityApp(ctk.CTk):
         t_cloud = tabs.add("Cloud Allowlist")
         t_notif = tabs.add("Notifications")
         t_about = tabs.add("About")
-        self._build_performance_tab(t_perf)
+        self._build_performance_tab(t_perf, token)
         self._build_cloud_tab(t_cloud)
         self._build_notifications_tab(t_notif)
-        self._build_about_tab(t_about)
+        self._build_about_tab(t_about, token)
 
-    def _build_performance_tab(self, parent):
+    def _build_performance_tab(self, parent, token):
         c = self._settings_container(parent)
         s = self.config_data.get("settings", {})
         
@@ -560,8 +727,18 @@ class ProductivityApp(ctk.CTk):
 
         # Persistence
         ctk.CTkLabel(c, text="Persistence", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
-        self.startup_var = ctk.BooleanVar(value=handler.is_startup_enabled())
-        ctk.CTkSwitch(c, text="Run Protection Engine on System Startup", variable=self.startup_var, command=self._on_startup_toggle).pack(anchor="w", padx=30, pady=10)
+        self._startup_status_lbl = ctk.CTkLabel(c, text="Checking startup persistence...", text_color="gray")
+        self._startup_status_lbl.pack(anchor="w", padx=25, pady=(0, 10))
+        self.startup_var = ctk.BooleanVar(value=False)
+        self._startup_switch = ctk.CTkSwitch(
+            c,
+            text="Run Protection Engine on System Startup",
+            variable=self.startup_var,
+            command=self._on_startup_toggle,
+            state="disabled"
+        )
+        self._startup_switch.pack(anchor="w", padx=30, pady=10)
+        self._refresh_startup_status_async(token)
 
     def _on_startup_toggle(self):
         e = self.startup_var.get()
@@ -569,7 +746,7 @@ class ProductivityApp(ctk.CTk):
             self.config_data["settings"]["startup_enabled"] = e
             self.trigger_save()
 
-    def _build_about_tab(self, parent):
+    def _build_about_tab(self, parent, token):
         c = self._settings_container(parent)
         ctk.CTkLabel(c, text="Simple Productivity Blocker", font=ctk.CTkFont(size=22, weight="bold")).pack(pady=(30, 8))
         ctk.CTkLabel(c, text=f"Release Version {VERSION}", text_color="gray", font=ctk.CTkFont(size=14)).pack(pady=(0, 30))
@@ -597,31 +774,29 @@ class ProductivityApp(ctk.CTk):
             command=self._run_emergency_recovery
         ).pack(padx=10)
 
-        # Compatibility warning: if a security appliance (e.g., Portmaster) is detected, show a prominent notice
-        try:
-            conflict_name = detect_conflicting_services()
-        except Exception:
-            conflict_name = None
-        if conflict_name:
-            ctk.CTkLabel(
-                c,
-                text=f"Compatibility mode active: yielding DNS to {conflict_name}. SPB is using hosts-file fallback to avoid breaking network access.",
-                text_color="#FF9800",
-                font=ctk.CTkFont(size=12, weight="bold"),
-                wraplength=700,
-                justify="left"
-            ).pack(pady=(12, 10))
+        self._compatibility_status_lbl = ctk.CTkLabel(
+            c,
+            text="Checking compatibility with security appliances...",
+            text_color="gray",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            wraplength=700,
+            justify="left"
+        )
+        self._compatibility_status_lbl.pack(pady=(12, 10))
 
-            ctk.CTkLabel(
-                c,
-                text="If you are an advanced user and understand the risks, you can enable 'Force DNS Proxy' in the configuration file (not recommended).",
-                text_color="gray",
-                font=ctk.CTkFont(size=11)
-            ).pack(pady=(0, 8))
+        ctk.CTkLabel(
+            c,
+            text="If you are an advanced user and understand the risks, you can enable 'Force DNS Proxy' in the configuration file (not recommended).",
+            text_color="gray",
+            font=ctk.CTkFont(size=11)
+        ).pack(pady=(0, 8))
 
-            def _open_conflict_help():
-                webbrowser.open("https://github.com/nvusdev/simple-productivity-blocker#compatibility-with-security-appliances")
-            ctk.CTkButton(c, text="Learn More", width=140, height=34, command=_open_conflict_help).pack(pady=(0, 12))
+        def _open_conflict_help():
+            webbrowser.open("https://github.com/nvusdev/simple-productivity-blocker#compatibility-with-security-appliances")
+
+        self._compatibility_help_btn = ctk.CTkButton(c, text="Learn More", width=140, height=34, command=_open_conflict_help)
+        self._compatibility_help_btn.pack_forget()
+        self._refresh_compatibility_status_async(token)
 
     def _run_emergency_recovery(self):
         # Find recovery_uplift.exe in production or fallback to recovery_uplift.py in development
