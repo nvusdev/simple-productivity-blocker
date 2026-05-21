@@ -237,6 +237,8 @@ class DNSProxyServer:
                 conflict = detect_conflicting_services()
                 if conflict:
                     logger.info(f"Conflict detected with superior network/DNS service '{conflict}'. Aborting DNS proxy startup and falling back to hosts-file.")
+                    if os.name == 'nt' and self.port == 53:
+                        self._redirect_system_dns(False)
                     return False
 
             # Create IPv4 socket
@@ -303,9 +305,13 @@ class DNSProxyServer:
                 logger.debug(f"Diagnostic error: {ex}")
             
             logger.error(f"DNS Proxy failed to bind to port {self.port}: {se}. (Potential Culprit: {conflicting_proc})")
+            if os.name == 'nt' and self.port == 53:
+                self._redirect_system_dns(False)
             return False
         except Exception as e:
             logger.exception(f"Unexpected error during DNS Proxy startup: {e}")
+            if os.name == 'nt' and self.port == 53:
+                self._redirect_system_dns(False)
             return False
 
     def stop(self):

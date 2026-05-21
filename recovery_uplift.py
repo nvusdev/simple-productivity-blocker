@@ -107,7 +107,7 @@ def fallback_dns_reset():
             "Where-Object { $_.ServerAddresses -contains '127.0.0.1' -or $_.ServerAddresses -contains '::1' } | "
             "ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.InterfaceIndex -ResetServerAddresses }"
         )
-        run_system_command(["powershell", "-NoProfile", "-Command", ps_loopback], check=False)
+        run_system_command(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps_loopback], check=False, timeout=60)
     except Exception as e:
         print(f"[!] Error resetting loopback DNS: {e}")
         
@@ -120,7 +120,7 @@ def fallback_dns_reset():
                 "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | "
                 "ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ResetServerAddresses }"
             )
-            run_system_command(["powershell", "-NoProfile", "-Command", ps_all], check=False)
+            run_system_command(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps_all], check=False, timeout=60)
             
             if check_dns_connectivity():
                 print("[+] DNS connectivity successfully restored via DHCP fallback.")
@@ -154,7 +154,7 @@ def restore_dns_state(config_dir):
                     ps = f"Set-DnsClientServerAddress -InterfaceIndex {int(idx)} -ServerAddresses @({quoted})"
                 else:
                     ps = f"Set-DnsClientServerAddress -InterfaceIndex {int(idx)} -ResetServerAddresses"
-                run_system_command(["powershell", "-NoProfile", "-Command", ps], check=False)
+                run_system_command(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps], check=False, timeout=60)
                 restored += 1
             try:
                 os.remove(state_path)

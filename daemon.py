@@ -56,6 +56,8 @@ _INTERNAL_HOSTS_FILE = handler.get_hosts_path()
 # Helper: convert platform detection to legacy conflict name
 def _conflict_name_from_platform_detection():
     try:
+        if 'detect_conflicting_services' in globals() and detect_conflicting_services is not None:
+            return detect_conflicting_services()
         res = platform_detect_security_appliances()
         if res and isinstance(res, dict):
             items = res.get("items") or []
@@ -645,6 +647,9 @@ class SubsystemOrchestrator:
             if self.dns_server:
                 self.dns_server.stop()
                 self.dns_server = None
+            else:
+                if os.name == 'nt':
+                    handler.redirect_dns(False)
             sync_website_protection([], active=False)
             self._update_health_signal("None")
             return False
@@ -656,6 +661,9 @@ class SubsystemOrchestrator:
             if self.dns_server:
                 self.dns_server.stop()
                 self.dns_server = None
+            else:
+                if os.name == 'nt':
+                    handler.redirect_dns(False)
             self.using_dns_proxy = False
         
         elif not self.dns_server:

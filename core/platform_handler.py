@@ -106,10 +106,30 @@ class WindowsHandler(PlatformHandler):
         if not state_path: state_path = self.get_dns_state_file()
         try:
             if activate:
-                state = self._snapshot_dns_state()
-                if state.get("warnings"):
-                    for warning in state["warnings"]:
-                        logger.warning(f"DNS safety: {warning}")
+                state = None
+                if os.path.exists(state_path):
+                    try:
+                        with open(state_path, "r", encoding="utf-8") as f:
+                            state = json.load(f)
+                        if not isinstance(state, dict) or "adapters" not in state or "eligible" not in state:
+                            logger.warning("Existing dns_state.json was malformed. Discarding and taking new snapshot.")
+                            state = None
+                        else:
+                            # Sanitize loaded state to remove any loopback IPs (127.0.0.1, ::1)
+                            loopbacks = {"127.0.0.1", "::1", "localhost"}
+                            for adapter in state.get("adapters", []):
+                                adapter["ipv4"] = [ip for ip in adapter.get("ipv4", []) if ip not in loopbacks]
+                                adapter["ipv6"] = [ip for ip in adapter.get("ipv6", []) if ip not in loopbacks]
+                            logger.info("Found valid existing dns_state.json. Reusing the existing DNS snapshot.")
+                    except Exception as e:
+                        logger.warning(f"Failed to read existing dns_state.json: {e}. Discarding and taking new snapshot.")
+                        state = None
+
+                if not state:
+                    state = self._snapshot_dns_state()
+                    if state.get("warnings"):
+                        for warning in state["warnings"]:
+                            logger.warning(f"DNS safety: {warning}")
                 return self._apply_local_dns(state, ipv4=local_ip, state_path=state_path)
             else:
                 return self._restore_dns_state(state_path=state_path)
@@ -165,6 +185,8 @@ $items | ConvertTo-Json -Depth 4
                 # Health validate IPs to prevent dirty Portmaster/VPN snapshots
                 import ipaddress
                 for ip in item.get("ipv4", []):
+                    if ip in ("127.0.0.1", "::1", "localhost"):
+                        continue
                     try:
                         if not ipaddress.ip_address(ip).is_private:
                             adapter["ipv4"].append(ip)
@@ -178,6 +200,8 @@ $items | ConvertTo-Json -Depth 4
                         warnings.append(f"Discarded dead private IPv4 DNS on {adapter['alias']}: {ip}")
                         
                 for ip in item.get("ipv6", []):
+                    if ip in ("127.0.0.1", "::1", "localhost"):
+                        continue
                     try:
                         if not ipaddress.ip_address(ip).is_private:
                             adapter["ipv6"].append(ip)
@@ -202,33 +226,94 @@ $items | ConvertTo-Json -Depth 4
 
     def _apply_local_dns(self, state, ipv4, state_path):
         os.makedirs(os.path.dirname(state_path), exist_ok=True)
-        with open(state_path, "w") as f: json.dump(state, f, indent=2)
-        
+        import tempfile
+        dir_name = os.path.dirname(state_path)
+        fd, temp_path = tempfile.mkstemp(dir=dir_name, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2)
+            os.replace(temp_path, state_path)
+        except Exception as e:
+            if os.path.exists(temp_path):
+                try: os.remove(temp_path)
+                except: pass
+            logger.error(f"Failed to write DNS state file atomically: {e}")
+            raise
+
         ok = True
         for idx in state["eligible"]:
             script = f"Set-DnsClientServerAddress -InterfaceIndex {idx} -ServerAddresses @('{ipv4}', '::1')"
-            res = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            if res.returncode != 0: ok = False
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+                capture_output=True,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            if res.returncode != 0:
+                logger.error(f"Failed to set local DNS on adapter index {idx}: {res.stderr.decode(errors='replace').strip()}")
+                ok = False
         return ok
 
     def _restore_dns_state(self, state_path):
-        if not os.path.exists(state_path): return False
+        if not os.path.exists(state_path):
+            logger.info("DNS restoration: No state file found, nothing to restore.")
+            return False
         try:
-            with open(state_path, "r") as f: state = json.load(f)
+            with open(state_path, "r", encoding="utf-8") as f:
+                state = json.load(f)
+            
+            # Get current active DNS configuration to see if we should back off
+            current_state = self._snapshot_dns_state()
+            current_dns_by_index = {a["index"]: (a["ipv4"] + a["ipv6"]) for a in current_state.get("adapters", [])}
+            
             ok = True
-            for adapter in state["adapters"]:
-                if adapter["index"] in state["eligible"]:
-                    orig = adapter["ipv4"] + adapter["ipv6"]
+            loopbacks = {"127.0.0.1", "::1", "localhost"}
+            
+            for adapter in state.get("adapters", []):
+                idx = adapter.get("index")
+                if idx in state.get("eligible", []):
+                    # Check if this adapter is currently pointing to local loopback.
+                    # If it is NOT pointing to loopback, that means either DHCP or another service
+                    # has already taken over DNS, so we avoid touching this adapter.
+                    curr_dns = current_dns_by_index.get(idx, [])
+                    points_to_local = any(ip in loopbacks for ip in curr_dns)
+                    
+                    if not points_to_local:
+                        logger.info(f"Adapter index {idx} does not point to loopback (Current DNS: {curr_dns}). Skipping restoration to avoid collateral disruption.")
+                        continue
+                    
+                    orig = [ip for ip in (adapter.get("ipv4", []) + adapter.get("ipv6", [])) if ip not in loopbacks]
                     if orig:
                         quoted = ", ".join(f"'{s}'" for s in orig)
-                        script = f"Set-DnsClientServerAddress -InterfaceIndex {adapter['index']} -ServerAddresses @({quoted})"
+                        script = f"Set-DnsClientServerAddress -InterfaceIndex {idx} -ServerAddresses @({quoted})"
                     else:
-                        script = f"Set-DnsClientServerAddress -InterfaceIndex {adapter['index']} -ResetServerAddresses"
-                    res = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
-                    if res.returncode != 0: ok = False
-            if ok: os.remove(state_path)
+                        script = f"Set-DnsClientServerAddress -InterfaceIndex {idx} -ResetServerAddresses"
+                    
+                    logger.info(f"Restoring adapter index {idx} DNS to original: {orig if orig else 'DHCP'}")
+                    res = subprocess.run(
+                        ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+                        capture_output=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                    if res.returncode != 0:
+                        logger.error(f"Failed to restore DNS for adapter index {idx}: {res.stderr.decode(errors='replace').strip()}")
+                        ok = False
+            
+            # Delete state file in either case to avoid stales
+            try:
+                os.remove(state_path)
+                logger.info("Deleted DNS state file after restoration attempt.")
+            except Exception as e:
+                logger.warning(f"Failed to delete state file {state_path}: {e}")
+                
             return ok
-        except: return False
+        except Exception as e:
+            logger.error(f"Error during DNS restoration process: {e}")
+            if os.path.exists(state_path):
+                try:
+                    os.remove(state_path)
+                except:
+                    pass
+            return False
 
     def audit_dns_safety(self, state_path=None):
         if not state_path: state_path = self.get_dns_state_file()
