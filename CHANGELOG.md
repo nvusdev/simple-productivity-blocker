@@ -8,7 +8,7 @@
 - **Daemon Process Watchdog**: Implemented a secondary scheduled task (`SPB_Watchdog`) running on a 60-second repetition interval to monitor and auto-restart `SPB_Daemon.exe` if it is killed. Includes integration with the installer, uninstaller, and emergency recovery utility.
 - **Watchdog & Services Toggle Switches**: Added switches to the Settings dashboard under the Performance tab allowing admin users to turn on/off the process watchdog, the DNS watchdog, and the core blocking services on demand, with changes propagated immediately.
 - **Virtual Drive File Scan Cap**: Exposed a configurable limit on virtual drive folder walks in the Settings Performance tab (options: 500, 1000, 2500, 5000, and Unlimited).
-- **UI Automation Fallback for Virtual Drives**: Implemented optional UIA integration (pywinauto) to detect file paths in custom/internal dialogs (e.g., MSPaint, 7-Zip) on virtual drives. When enabled via `ui_automation_enabled` setting, reads dialog address bars and breadcrumbs to close dialogs pointing to blocked folders more reliably.
+- **UI Automation Fallback for Virtual Drives**: Implemented optional UIA integration (pywinauto) to detect file paths in custom/internal dialogs (e.g., MSPaint, 7-Zip) on virtual drives. Settings dashboard toggles this via "Enable UI Automation Fallback" in Performance tab, allowing users to read dialog address bars and breadcrumbs reliably when heuristics fail.
 - **Website SEO**: Fixed robots.txt to explicitly allow `/spb/` and `/*.xml` paths, resolving Bing Webmaster crawl issues while maintaining security.
 - **Version Upgrades**: Bumped version to `1.4.10` across the dashboard GUI, daemon, installers, uninstallers, build scripts, tests, website components, and documentation.
 

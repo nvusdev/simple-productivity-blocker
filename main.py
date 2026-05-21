@@ -810,6 +810,22 @@ class ProductivityApp(ctk.CTk):
         )
         self._process_watchdog_switch.pack(anchor="w", padx=30, pady=10)
 
+        # Virtual Drive Dialog Detection
+        ctk.CTkLabel(c, text="Virtual Drive Dialog Detection", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
+        ctk.CTkLabel(c, text="Enable UI Automation to detect file paths in custom dialogs (e.g., MSPaint) on virtual drives.", text_color="gray").pack(anchor="w", padx=25, pady=(0, 10))
+        
+        self.ui_automation_var = ctk.BooleanVar(value=s.get("ui_automation_enabled", False))
+        def on_ui_automation_toggle():
+            self.config_data["settings"]["ui_automation_enabled"] = self.ui_automation_var.get()
+            self.trigger_save()
+        self._ui_automation_switch = ctk.CTkSwitch(
+            c,
+            text="Enable UI Automation Fallback",
+            variable=self.ui_automation_var,
+            command=on_ui_automation_toggle
+        )
+        self._ui_automation_switch.pack(anchor="w", padx=30, pady=10)
+
         # Persistence
         ctk.CTkLabel(c, text="Persistence", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
         self._startup_status_lbl = ctk.CTkLabel(c, text="Checking startup persistence...", text_color="gray")
