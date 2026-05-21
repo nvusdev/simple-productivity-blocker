@@ -51,6 +51,7 @@ class ProcessMonitor:
         self._locked_files_map = {}
         self._file_lock = threading.Lock()
         self._non_acl_sync_interval = 10
+        self._non_acl_max_files = 1000
         self._last_sync_time = 0.0
         self._current_acl_paths = set()
         self._acl_sync_lock = threading.RLock()
@@ -82,6 +83,13 @@ class ProcessMonitor:
         except Exception:
             self._non_acl_sync_interval = 10
         self.logger.info(f"Non-ACL Sync Interval set to: {self._non_acl_sync_interval}s")
+
+    def set_non_acl_max_files(self, val):
+        try:
+            self._non_acl_max_files = int(val)
+        except Exception:
+            self._non_acl_max_files = 1000
+        self.logger.info(f"Non-ACL Max Files set to: {self._non_acl_max_files}")
 
     def _get_volume_root(self, path):
         path = os.path.normpath(os.path.abspath(path))
@@ -115,7 +123,7 @@ class ProcessMonitor:
             for root_dir, _, filenames in os.walk(folder_path):
                 for filename in filenames:
                     files.append(os.path.join(root_dir, filename))
-                    if len(files) >= max_files:
+                    if max_files > 0 and len(files) >= max_files:
                         return files
         except Exception as e:
             self.logger.debug(f"Error walking directory {folder_path}: {e}")
@@ -493,7 +501,7 @@ class ProcessMonitor:
                 root_norm = self._normalize_path(root)
                 if not self._supports_acls(root_norm):
                     # Recursively discover files inside root
-                    files = self._get_all_files_in_folder(root_norm)
+                    files = self._get_all_files_in_folder(root_norm, max_files=self._non_acl_max_files)
                     for f in files:
                         f_norm = self._normalize_path(f)
                         if os.path.basename(f_norm).lower() in SYSTEM_SAFETY_EXCLUSIONS:
