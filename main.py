@@ -227,6 +227,7 @@ class ProductivityApp(ctk.CTk):
         self._settings_cache_ttl = 30.0
         
         self.show_dashboard()
+        self._ensure_startup_persistence_async()
         
         # Phase 2: DNS Health Indicator Polling
         self.dns_health_lbl = None
@@ -264,6 +265,23 @@ class ProductivityApp(ctk.CTk):
                 self.after(5000, self._update_dns_health_ui)
         except Exception:
             pass
+
+    def _ensure_startup_persistence_async(self):
+        settings = self.config_data.get("settings", {})
+        if not settings.get("startup_enabled", False):
+            return
+
+        def worker():
+            try:
+                if handler.is_startup_enabled():
+                    return
+                if handler.set_startup(True):
+                    self.config_data.setdefault("settings", {})["startup_enabled"] = True
+                    save_config(self.config_data)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _apply_app_icon(self):
         try:
