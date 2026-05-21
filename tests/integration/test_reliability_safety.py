@@ -75,7 +75,7 @@ class TestConfigReliability(unittest.TestCase):
         self.assertEqual(group["websites"], ["example.com"])
         self.assertEqual(group["schedule"]["start_time"], "08:00")
         self.assertIn("allowed.com", group["adblocker"]["exceptions"])
-        self.assertEqual(cfg["schema_version"], 2)
+        self.assertEqual(cfg["schema_version"], 3)
 
     def test_invalid_config_is_quarantined(self):
         tmp = tempfile.mkdtemp()
