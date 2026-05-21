@@ -101,8 +101,8 @@ class ProcessMonitor:
         try:
             root = self._get_volume_root(path)
             _, _, _, flags, _ = win32api.GetVolumeInformation(root)
-            # FILE_PERSISTENT_ACLS flag is 0x00080000
-            return bool(flags & 0x00080000)
+            # FILE_PERSISTENT_ACLS flag is 0x00000008 (verified: win32con.FILE_PERSISTENT_ACLS == 0x8)
+            return bool(flags & 0x00000008)
         except Exception as e:
             self.logger.debug(f"Failed to check ACL support for {path}: {e}")
             return False
