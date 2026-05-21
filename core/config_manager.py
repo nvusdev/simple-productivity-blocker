@@ -61,6 +61,7 @@ DEFAULT_GROUP_CONFIG = {
 DEFAULT_SETTINGS = {
     "performance_mode": "Balanced",
     "startup_enabled": True,
+    "startup_trigger_type": "Both",
     "force_dns_proxy": False,
     "max_domains_cap": 1000,
     "non_acl_sync_interval": 10,

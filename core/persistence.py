@@ -24,12 +24,34 @@ def register_task(task_name, exe_path, args="", working_dir=None):
     w_esc = working_dir.replace("'", "''")
     
     arg_part = "-Argument $a" if args else ""
+    
+    try:
+        from core.config_manager import load_config
+        cfg = load_config()
+        trigger_type = cfg.get("settings", {}).get("startup_trigger_type", "Both")
+    except Exception:
+        trigger_type = "Both"
+
+    if trigger_type == "At Startup":
+        trigger_ps = "$trigger = New-ScheduledTaskTrigger -AtStartup; "
+        fallback_trigger = "onstart"
+    elif trigger_type == "At Logon":
+        trigger_ps = "$trigger = New-ScheduledTaskTrigger -AtLogOn; "
+        fallback_trigger = "onlogon"
+    else:
+        trigger_ps = (
+            "$trig1 = New-ScheduledTaskTrigger -AtStartup; "
+            "$trig2 = New-ScheduledTaskTrigger -AtLogOn; "
+            "$trigger = @($trig1, $trig2); "
+        )
+        fallback_trigger = "onlogon"
+        
     ps_cmd = (
         f"$e = '{e_esc}'; "
         f"$a = '{a_esc}'; "
         f"$w = '{w_esc}'; "
         f"$action = New-ScheduledTaskAction -Execute $e {arg_part} -WorkingDirectory $w; "
-        f"$trigger = New-ScheduledTaskTrigger -AtLogOn; "
+        f"{trigger_ps}"
         f"$principal = New-ScheduledTaskPrincipal -GroupId 'BUILTIN\\Administrators' -RunLevel Highest; "
         f"$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit 0; "
         f"Register-ScheduledTask -TaskName '{task_name}' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force"
@@ -45,7 +67,7 @@ def register_task(task_name, exe_path, args="", working_dir=None):
         
         # Fallback to legacy schtasks.exe (bypasses CIM repository)
         # Note: schtasks has fewer granular settings than PS, but it's more robust on broken systems.
-        fallback_args = ["schtasks", "/create", "/tn", task_name, "/tr", f'"{exe_path}" {args}'.strip(), "/sc", "onlogon", "/ru", "BUILTIN\\Administrators", "/rl", "highest", "/f"]
+        fallback_args = ["schtasks", "/create", "/tn", task_name, "/tr", f'"{exe_path}" {args}'.strip(), "/sc", fallback_trigger, "/ru", "BUILTIN\\Administrators", "/rl", "highest", "/f"]
         try:
             subprocess.run(fallback_args, check=True, capture_output=True, text=True)
             # Robust XML modification fallback for battery settings
@@ -210,11 +232,38 @@ def register_watchdog_task(daemon_task_name="SPB_Daemon", watchdog_task_name="SP
         
     cmd_args = f"-NoProfile -WindowStyle Hidden -Command \"`$running = Get-Process -Name 'SPB_Daemon' -ErrorAction SilentlyContinue; if (-not `$running) {{ Start-ScheduledTask -TaskName '{daemon_task_name}' }}\""
     
+    try:
+        from core.config_manager import load_config
+        cfg = load_config()
+        trigger_type = cfg.get("settings", {}).get("startup_trigger_type", "Both")
+    except Exception:
+        trigger_type = "Both"
+
+    if trigger_type == "At Startup":
+        trigger_ps = (
+            "$trigger = New-ScheduledTaskTrigger -AtStartup; "
+            "$rep = (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1)).Repetition; "
+            "$trigger.Repetition = $rep; "
+        )
+    elif trigger_type == "At Logon":
+        trigger_ps = (
+            "$trigger = New-ScheduledTaskTrigger -AtLogOn; "
+            "$rep = (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1)).Repetition; "
+            "$trigger.Repetition = $rep; "
+        )
+    else:
+        trigger_ps = (
+            "$trig1 = New-ScheduledTaskTrigger -AtStartup; "
+            "$trig2 = New-ScheduledTaskTrigger -AtLogOn; "
+            "$rep = (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1)).Repetition; "
+            "$trig1.Repetition = $rep; "
+            "$trig2.Repetition = $rep; "
+            "$trigger = @($trig1, $trig2); "
+        )
+        
     ps_cmd = (
         f"$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '{cmd_args}'; "
-        f"$trigger = New-ScheduledTaskTrigger -AtLogOn; "
-        f"$rep = (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1)).Repetition; "
-        f"$trigger.Repetition = $rep; "
+        f"{trigger_ps}"
         f"$principal = New-ScheduledTaskPrincipal -GroupId 'BUILTIN\\Administrators' -RunLevel Highest; "
         f"$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit 0; "
         f"Register-ScheduledTask -TaskName '{watchdog_task_name}' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force"

@@ -810,6 +810,21 @@ class ProductivityApp(ctk.CTk):
         )
         self._process_watchdog_switch.pack(anchor="w", padx=30, pady=10)
 
+        # Task Trigger Option (Startup/Logon/Both)
+        ctk.CTkLabel(c, text="Scheduled Task Trigger Type", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=30, pady=(15, 2))
+        ctk.CTkLabel(c, text="Determines when the daemon and watchdog scheduled tasks are triggered to run.", text_color="gray").pack(anchor="w", padx=30, pady=(0, 6))
+        
+        def on_trigger_type(val):
+            self.config_data["settings"]["startup_trigger_type"] = val
+            self.trigger_save()
+            # If startup is enabled, re-register task to apply new trigger configuration
+            if self.startup_var.get():
+                handler.set_startup(True)
+                
+        trigger_seg = ctk.CTkSegmentedButton(c, values=["At Startup", "At Logon", "Both"], command=on_trigger_type, height=34)
+        trigger_seg.set(s.get("startup_trigger_type", "Both"))
+        trigger_seg.pack(anchor="w", padx=30, pady=(0, 15))
+
         # Virtual Drive Dialog Detection
         ctk.CTkLabel(c, text="Virtual Drive Dialog Detection", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
         ctk.CTkLabel(c, text="Enable UI Automation to detect file paths in custom dialogs (e.g., MSPaint) on virtual drives.", text_color="gray").pack(anchor="w", padx=25, pady=(0, 10))
