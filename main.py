@@ -754,6 +754,62 @@ class ProductivityApp(ctk.CTk):
         sync_seg.set(f"{s.get('non_acl_sync_interval', 10)}s")
         sync_seg.pack(fill="x", padx=25, pady=10)
 
+        # Virtual Drive File Scan Cap
+        ctk.CTkLabel(c, text="Virtual Drive File Scan Cap", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
+        ctk.CTkLabel(c, text="Limits the total files scanned per folder on virtual drives.", text_color="gray").pack(anchor="w", padx=25, pady=(0, 10))
+        def on_scan_cap(val):
+            if val == "Unlimited":
+                self.config_data["settings"]["non_acl_max_files"] = 0
+            else:
+                self.config_data["settings"]["non_acl_max_files"] = int(val)
+            self.trigger_save()
+        scan_cap_seg = ctk.CTkSegmentedButton(c, values=["500", "1000", "2500", "5000", "Unlimited"], command=on_scan_cap, height=38)
+        current_max = s.get("non_acl_max_files", 1000)
+        scan_cap_seg.set("Unlimited" if current_max == 0 else str(current_max))
+        scan_cap_seg.pack(fill="x", padx=25, pady=10)
+
+        # Watchdogs & Services
+        ctk.CTkLabel(c, text="Watchdogs & Services", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
+        ctk.CTkLabel(c, text="Manage protection enforcement services and background health monitors.", text_color="gray").pack(anchor="w", padx=25, pady=(0, 10))
+
+        self.blocking_services_var = ctk.BooleanVar(value=s.get("blocking_services_enabled", True))
+        def on_blocking_services_toggle():
+            self.config_data["settings"]["blocking_services_enabled"] = self.blocking_services_var.get()
+            self.trigger_save()
+        self._blocking_services_switch = ctk.CTkSwitch(
+            c,
+            text="Enable Core Blocking Services",
+            variable=self.blocking_services_var,
+            command=on_blocking_services_toggle
+        )
+        self._blocking_services_switch.pack(anchor="w", padx=30, pady=10)
+
+        self.dns_watchdog_var = ctk.BooleanVar(value=s.get("dns_watchdog_enabled", True))
+        def on_dns_watchdog_toggle():
+            self.config_data["settings"]["dns_watchdog_enabled"] = self.dns_watchdog_var.get()
+            self.trigger_save()
+        self._dns_watchdog_switch = ctk.CTkSwitch(
+            c,
+            text="Enable DNS Watchdog (Resolves loopbacks and drifts)",
+            variable=self.dns_watchdog_var,
+            command=on_dns_watchdog_toggle
+        )
+        self._dns_watchdog_switch.pack(anchor="w", padx=30, pady=10)
+
+        self.process_watchdog_var = ctk.BooleanVar(value=s.get("process_watchdog_enabled", True))
+        def on_process_watchdog_toggle():
+            val = self.process_watchdog_var.get()
+            if handler.set_process_watchdog(val):
+                self.config_data["settings"]["process_watchdog_enabled"] = val
+                self.trigger_save()
+        self._process_watchdog_switch = ctk.CTkSwitch(
+            c,
+            text="Enable Process Watchdog (Auto-restarts daemon if killed)",
+            variable=self.process_watchdog_var,
+            command=on_process_watchdog_toggle
+        )
+        self._process_watchdog_switch.pack(anchor="w", padx=30, pady=10)
+
         # Persistence
         ctk.CTkLabel(c, text="Persistence", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
         self._startup_status_lbl = ctk.CTkLabel(c, text="Checking startup persistence...", text_color="gray")
