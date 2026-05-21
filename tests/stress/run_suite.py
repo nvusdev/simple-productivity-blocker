@@ -13,7 +13,7 @@ def run_test(script_path, extra_args=None):
 
 def main():
     print("==========================================")
-    print("   SPB v1.4.9 GOLD MASTER STRESS SUITE   ")
+    print("   SPB v1.4.10 GOLD MASTER STRESS SUITE   ")
     print("==========================================")
     
     import tempfile
