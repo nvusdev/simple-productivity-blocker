@@ -275,8 +275,9 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
 
         return False
 
+    blocking_services_enabled = settings.get("blocking_services_enabled", True)
     for _, gdata in config.get("groups", {}).items():
-        if not gdata.get("enabled", True): continue
+        if not gdata.get("enabled", True) or not blocking_services_enabled: continue
         active = is_active(gdata, date_context=date_context)
         ad = gdata.get("adblocker", {})
         ad_on = ad.get("enabled", False)
@@ -332,7 +333,7 @@ def _compute_targets(config: Dict[str, Any], clm: Any, cfg_path: str) -> Blockin
     # Compute normalized domains for fallback redundancy
     norm_domains = set()
     for _, gdata in config.get("groups", {}).items():
-        if not gdata.get("enabled", True): continue
+        if not gdata.get("enabled", True) or not blocking_services_enabled: continue
         ad = gdata.get("adblocker", {})
         ad_on = ad.get("enabled", False)
         if not ad_on: continue
@@ -788,6 +789,13 @@ class SubsystemOrchestrator:
         threading.Thread(target=worker, daemon=True).start()
 
     def watchdog_dns(self, manual_domains, filter_keywords, normalized_filter_domains, cloud_allowlist, filter_exceptions):
+        try:
+            cfg = load_config()
+            if not cfg.get("settings", {}).get("dns_watchdog_enabled", True):
+                return
+        except Exception:
+            pass
+
         if not self.using_dns_proxy or not self.dns_server:
             # Task 4: Attempt recovery if in fallback mode
             self._check_dns_recovery(manual_domains, filter_keywords, normalized_filter_domains, cloud_allowlist, filter_exceptions)
@@ -884,6 +892,7 @@ class DaemonOrchestrator:
             self.subsystems.pm.set_allowlisted_keywords(list(ctx.path_exceptions))
             self.subsystems.pm.configure_performance(settings.get("performance_mode", "Balanced"))
             self.subsystems.pm.set_non_acl_sync_interval(settings.get("non_acl_sync_interval", 10))
+            self.subsystems.pm.set_non_acl_max_files(settings.get("non_acl_max_files", 1000))
             # Register the history callback
             self.subsystems.pm._acl_callback = _on_acl_operation_complete
 
