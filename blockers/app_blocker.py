@@ -16,6 +16,7 @@ if os.name == 'nt':
     import getpass
     import win32file
     import win32con
+    import win32api
 
 # Absolute safety guardrails for essential Windows processes.
 # These names must never be blocked, terminated, or locked by SPB enforcement code.
@@ -47,7 +48,10 @@ class ProcessMonitor:
         self._global_allowlisted_processes = set()
         self._global_allowlisted_keywords = set()
         self._allowlist_enabled = True
-        self._locked_files = []
+        self._locked_files_map = {}
+        self._file_lock = threading.Lock()
+        self._non_acl_sync_interval = 10
+        self._last_sync_time = 0.0
         self._current_acl_paths = set()
         self._acl_sync_lock = threading.RLock()
         self._acl_queue = queue.Queue()
@@ -71,6 +75,58 @@ class ProcessMonitor:
         elif mode == "strict":   self._base_interval = 0.5
         else:                   self._base_interval = 2.0
         self.logger.info(f"Performance profile set to: {mode.capitalize()} ({self._base_interval}s)")
+
+    def set_non_acl_sync_interval(self, val):
+        try:
+            self._non_acl_sync_interval = int(val)
+        except Exception:
+            self._non_acl_sync_interval = 10
+        self.logger.info(f"Non-ACL Sync Interval set to: {self._non_acl_sync_interval}s")
+
+    def _get_volume_root(self, path):
+        path = os.path.normpath(os.path.abspath(path))
+        if path.startswith("\\\\"):
+            parts = [p for p in path.split("\\") if p]
+            if len(parts) >= 2:
+                return f"\\\\{parts[0]}\\{parts[1]}\\"
+            return "\\\\"
+        drive = os.path.splitdrive(path)[0]
+        if drive:
+            return drive + "\\"
+        return "C:\\"
+
+    def _supports_acls(self, path):
+        if os.name != 'nt':
+            return False
+        try:
+            root = self._get_volume_root(path)
+            _, _, _, flags, _ = win32api.GetVolumeInformation(root)
+            # FILE_PERSISTENT_ACLS flag is 0x00080000
+            return bool(flags & 0x00080000)
+        except Exception as e:
+            self.logger.debug(f"Failed to check ACL support for {path}: {e}")
+            return False
+
+    def _get_all_files_in_folder(self, folder_path, max_files=1000):
+        files = []
+        if not os.path.exists(folder_path):
+            return files
+        try:
+            for root_dir, _, filenames in os.walk(folder_path):
+                for filename in filenames:
+                    files.append(os.path.join(root_dir, filename))
+                    if len(files) >= max_files:
+                        return files
+        except Exception as e:
+            self.logger.debug(f"Error walking directory {folder_path}: {e}")
+        return files
+
+    def _sync_locks_if_needed(self, now):
+        if not self.is_active:
+            return
+        if now - self._last_sync_time >= self._non_acl_sync_interval:
+            self._last_sync_time = now
+            self._lock_files()
 
     def set_allowlisted_processes(self, processes, enabled=True):
         self._allowlist_enabled = bool(enabled)
@@ -318,6 +374,11 @@ class ProcessMonitor:
         path = os.path.normpath(os.path.abspath(path))
         path_lower = path.lower()
 
+        # Skip if filesystem does not support persistent ACLs
+        if not self._supports_acls(path):
+            self.logger.debug(f"Skipping ACL apply for {path} (volume does not support persistent ACLs)")
+            return True
+
         # 1. Global Allowlist Check - strictly as literal substrings
         is_global_exempt = False
         if os.path.basename(path_lower) in self._global_allowlisted_processes:
@@ -407,50 +468,83 @@ class ProcessMonitor:
     def _lock_files(self):
         """Standardized Windows exclusive handle locking."""
         if os.name != 'nt': return
-        self._unlock_files()
-        
-        targets = set()
-        # Decouple exclusive file handle locking: skip blocked_file_paths (so they rely purely on NTFS ACL Access Denied dialog)
-        # Only exclusively lock binaries/executables in blocked_app_paths
-        targets.update(self.blocked_app_paths)
-        
-        for path in targets:
-            if not self._path_exists_safe(path) or self._path_isdir_safe(path): continue
-            if os.path.basename(path).lower() in SYSTEM_SAFETY_EXCLUSIONS:
-                self.logger.warning(f"Safety exclusion: refusing to lock protected executable: {path}")
-                continue
+        with self._file_lock:
+            targets = set()
             
-            # SPB Self-Protection: prevent locking its own binaries
-            if "simpleproductivityblocker" in path.lower() or "spb_" in path.lower():
-                continue
+            # Decouple: blocked_app_paths are locked via handles regardless of filesystem type
+            for path in self.blocked_app_paths:
+                path_norm = self._normalize_path(path)
+                if not self._path_exists_safe(path_norm) or self._path_isdir_safe(path_norm):
+                    continue
+                if os.path.basename(path_norm).lower() in SYSTEM_SAFETY_EXCLUSIONS:
+                    continue
+                if "simpleproductivityblocker" in path_norm.lower() or "spb_" in path_norm.lower():
+                    continue
+                targets.add(path_norm)
                 
-            try:
-                # Open with no share mode (0) - this is an exclusive lock
-                handle = win32file.CreateFile(
-                    path,
-                    win32con.GENERIC_READ | win32con.GENERIC_WRITE,
-                    0, # 0 means exclusive lock, no sharing
-                    None,
-                    win32con.OPEN_EXISTING,
-                    win32con.FILE_ATTRIBUTE_NORMAL,
-                    None
-                )
-                self._locked_files.append(handle)
-                self.logger.info(f"EXCLUSIVE LOCK: {path}")
-            except Exception as e:
-                self.logger.debug(f"Handle Lock Failed for {path}: {e}")
+            # Non-ACL file paths/folders fallback
+            for path in self.blocked_file_paths:
+                path_norm = self._normalize_path(path)
+                if not self._supports_acls(path_norm):
+                    if self._path_exists_safe(path_norm) and not self._path_isdir_safe(path_norm):
+                        targets.add(path_norm)
+                        
+            for root in self.blocked_folder_roots:
+                root_norm = self._normalize_path(root)
+                if not self._supports_acls(root_norm):
+                    # Recursively discover files inside root
+                    files = self._get_all_files_in_folder(root_norm)
+                    for f in files:
+                        f_norm = self._normalize_path(f)
+                        if os.path.basename(f_norm).lower() in SYSTEM_SAFETY_EXCLUSIONS:
+                            continue
+                        if "simpleproductivityblocker" in f_norm.lower() or "spb_" in f_norm.lower():
+                            continue
+                        targets.add(f_norm)
+                        
+            # Close handles for files that are no longer targets
+            for path in list(self._locked_files_map.keys()):
+                if path not in targets:
+                    h = self._locked_files_map.pop(path)
+                    try:
+                        win32file.CloseHandle(h)
+                        self.logger.info(f"RELEASED LOCK: {path}")
+                    except Exception as e:
+                        self.logger.debug(f"Failed to release handle for {path}: {e}")
+                        
+            # Open handles for new target files
+            for path in targets:
+                if path in self._locked_files_map:
+                    continue
+                try:
+                    # Open with no share mode (0) - this is an exclusive lock
+                    handle = win32file.CreateFile(
+                        path,
+                        win32con.GENERIC_READ | win32con.GENERIC_WRITE,
+                        0, # 0 means exclusive lock, no sharing
+                        None,
+                        win32con.OPEN_EXISTING,
+                        win32con.FILE_ATTRIBUTE_NORMAL,
+                        None
+                    )
+                    self._locked_files_map[path] = handle
+                    self.logger.info(f"EXCLUSIVE LOCK: {path}")
+                except Exception as e:
+                    self.logger.debug(f"Handle Lock Failed for {path}: {e}")
 
     def _unlock_files(self):
         """Release all exclusive handles."""
         if os.name != 'nt': return
-        for h in self._locked_files:
-            try:
-                win32file.CloseHandle(h)
-            except OSError as e:
-                self.logger.debug(f"CloseHandle failed: {e}")
-            except Exception as e:
-                self.logger.debug(f"Unexpected CloseHandle exception: {e}")
-        self._locked_files.clear()
+        with self._file_lock:
+            for path, h in list(self._locked_files_map.items()):
+                try:
+                    win32file.CloseHandle(h)
+                    self.logger.info(f"RELEASED LOCK: {path}")
+                except OSError as e:
+                    self.logger.debug(f"CloseHandle failed for {path}: {e}")
+                except Exception as e:
+                    self.logger.debug(f"Unexpected CloseHandle exception: {e}")
+            self._locked_files_map.clear()
 
     def _check_shell_windows(self, shell):
         try:
@@ -512,13 +606,17 @@ class ProcessMonitor:
                     return True
 
             if cmdline:
-                cmdline_str = " ".join(str(a).lower() for a in cmdline)
-                for bp in self.blocked_file_paths:
-                    if bp.lower() in cmdline_str:
-                        for arg in cmdline:
-                            if bp.lower() in str(arg).lower():
-                                self.logger.info(f"TERMINATING: {name_lower} (Blocked File in Cmdline: {bp})")
-                                return True
+                for arg in cmdline:
+                    arg_str = str(arg)
+                    candidates = self._extract_path_candidates(arg_str)
+                    for candidate in candidates:
+                        candidate_norm = self._normalize_path(candidate)
+                        if candidate_norm in self.blocked_file_paths:
+                            self.logger.info(f"TERMINATING: {name_lower} (Blocked File in Cmdline: {candidate_norm})")
+                            return True
+                        if self._is_in_blocked_folder(candidate_norm):
+                            self.logger.info(f"TERMINATING: {name_lower} (Path inside Blocked Folder in Cmdline: {candidate_norm})")
+                            return True
 
             # 2. Allowlist Exceptions (Group Level)
             if self._allowlist_enabled:
@@ -568,6 +666,7 @@ class ProcessMonitor:
         last_handle_check = 0.0
         while not self._stop_event.is_set():
             now = time.time()
+            self._sync_locks_if_needed(now)
             if self.blocked_folder_roots and shell and (now - self._last_shell_check) >= self._shell_interval:
                 self._last_shell_check = now
                 self._check_shell_windows(shell)
