@@ -291,7 +291,7 @@ Section "Install"
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simple Productivity Blocker" "NoRepair" 1
 
   # Register/start daemon task natively to avoid subprocess-wrapper lock issues.
-  nsExec::ExecToStack 'schtasks /create /tn "SPB_Daemon" /tr "\"$INSTDIR\SPB_Daemon.exe\"" /sc onstart /ru "SYSTEM" /rl highest /f'
+  nsExec::ExecToStack 'schtasks /create /tn "SPB_Daemon" /tr "\"$INSTDIR\SPB_Daemon.exe\"" /sc onstart /ru "BUILTIN\Administrators" /rl highest /f'
   Pop $0
   Pop $1
   IntCmp $0 0 +3 0 0
