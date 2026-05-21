@@ -13,8 +13,8 @@ class TestVirtualDriveBlocking(unittest.TestCase):
         self.pm = ProcessMonitor()
         
     def test_supports_acls_detects_ntfs(self):
-        # Test that _supports_acls returns True if FILE_PERSISTENT_ACLS (0x00080000) is present in volume flags
-        with patch('win32api.GetVolumeInformation', return_value=('C:\\', 'NTFS', 255, 0x00080000 | 0x1, [])):
+        # Test that _supports_acls returns True if FILE_PERSISTENT_ACLS (0x00000008) is present in volume flags
+        with patch('win32api.GetVolumeInformation', return_value=('C:\\', 'NTFS', 255, 0x00000008 | 0x1, [])):
             self.assertTrue(self.pm._supports_acls('C:\\some\\file.txt'))
 
     def test_supports_acls_detects_non_ntfs(self):
