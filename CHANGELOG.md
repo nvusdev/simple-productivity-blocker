@@ -5,6 +5,9 @@
 - **Virtual and Online Drive Blocking**: Implemented exclusive file-locking fallback (via Windows read/write-deny handles) and process command-line auditing to support blocking folders and files on virtual/online drives (e.g. Google Drive, MEGA, FAT32/exFAT) that lack NTFS persistent ACL support.
 - **Dynamic Drive Synchronization**: Added a background daemon task that periodically audits virtual drives to handle connection/disconnection state transitions and file additions/removals dynamically.
 - **Customizable Synchronization Interval**: Added a new config setting `non_acl_sync_interval` exposed in the settings dashboard's Performance tab as "Virtual Drive Sync Interval" (options: 5s, 10s, 30s, 60s) to customize the synchronization frequency.
+- **Daemon Process Watchdog**: Implemented a secondary scheduled task (`SPB_Watchdog`) running on a 60-second repetition interval to monitor and auto-restart `SPB_Daemon.exe` if it is killed. Includes integration with the installer, uninstaller, and emergency recovery utility.
+- **Watchdog & Services Toggle Switches**: Added switches to the Settings dashboard under the Performance tab allowing admin users to turn on/off the process watchdog, the DNS watchdog, and the core blocking services on demand, with changes propagated immediately.
+- **Virtual Drive File Scan Cap**: Exposed a configurable limit on virtual drive folder walks in the Settings Performance tab (options: 500, 1000, 2500, 5000, and Unlimited).
 - **Version Upgrades**: Bumped version to `1.4.10` across the dashboard GUI, daemon, installers, uninstallers, build scripts, tests, website components, and documentation.
 
 ## [1.4.9] - 2026-05-20
