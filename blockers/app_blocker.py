@@ -115,8 +115,18 @@ class ProcessMonitor:
             return False
         try:
             root = self._get_volume_root(path)
-            _, _, _, flags, _ = win32api.GetVolumeInformation(root)
-            self.logger.debug(f"Volume flags for {root}: {flags}")
+            _, filesystem_name, _, flags, _ = win32api.GetVolumeInformation(root)
+            filesystem_name = str(filesystem_name or "").strip().lower()
+            self.logger.debug(f"Volume flags for {root}: {flags}; filesystem={filesystem_name or 'unknown'}")
+
+            # Virtual/cloud mounts can advertise ACL support inconsistently. Only treat a volume as
+            # ACL-capable when it is a known persistent-ACL filesystem and the persistent ACL flag is set.
+            if filesystem_name in {"fat32", "exfat", "cdfs", "udf", "webdav", "remote storage"}:
+                return False
+
+            if filesystem_name and filesystem_name not in {"ntfs", "refs", "csvfs"}:
+                return False
+
             # FILE_PERSISTENT_ACLS flag is 0x00000008 (verified: win32con.FILE_PERSISTENT_ACLS == 0x8)
             return bool(flags & 0x00000008)
         except Exception as e:
@@ -586,8 +596,8 @@ class ProcessMonitor:
                     except Exception as ex:
                         self.logger.debug(f"Failed to Navigate window: {ex}")
         except Exception as e:
-            self.logger.debug(f"Shell windows check failed: {e}")
-
+                self.logger.debug(f"Shell windows check failed: {e}")
+
     def _extract_path_via_uia(self, hwnd):
         """Attempt to extract file path via UI Automation (fallback for custom dialogs).
         Returns path string if found, None otherwise.
