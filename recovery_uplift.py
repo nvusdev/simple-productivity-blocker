@@ -201,6 +201,7 @@ def cleanup_scheduled_task():
     print("[*] Removing SPB scheduled task if present...")
     try:
         run_system_command(['schtasks', '/delete', '/tn', 'SPB_Daemon', '/f'], check=False)
+        run_system_command(['schtasks', '/delete', '/tn', 'SPB_Watchdog', '/f'], check=False)
     except Exception as e:
         print(f"[!] Failed to remove scheduled task: {e}")
 
