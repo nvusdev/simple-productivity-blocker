@@ -1,0 +1,16 @@
+defaultService: https://www.googleapis.com/compute/v1/projects/weighty-works-495107-r2/global/backendServices/spb-backend
+hostRules:
+- hosts:
+  - nvus.dev
+  pathMatcher: spb-matcher
+pathMatchers:
+- name: spb-matcher
+  defaultService: https://www.googleapis.com/compute/v1/projects/weighty-works-495107-r2/global/backendServices/spb-backend
+  pathRules:
+  - paths:
+    - /spb
+    - /spb/*
+    service: https://www.googleapis.com/compute/v1/projects/weighty-works-495107-r2/global/backendServices/spb-backend
+    routeAction:
+      urlRewrite:
+        pathPrefixRewrite: /

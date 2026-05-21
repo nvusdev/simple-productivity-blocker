@@ -7,6 +7,6 @@ export default function robots(): MetadataRoute.Robots {
       allow: '/',
       disallow: '/private/',
     },
-    sitemap: 'https://nvusdev.github.io/simple-productivity-blocker/sitemap.xml',
+    sitemap: 'https://nvus.dev/spb/sitemap.xml',
   }
 }

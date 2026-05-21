@@ -9,7 +9,7 @@ const outfit = Outfit({
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://nvusdev.github.io/simple-productivity-blocker/'),
+  metadataBase: new URL('https://nvus.dev/spb/'),
   title: {
     default: "Simple Productivity Blocker | Absolute Focus for Windows",
     template: "%s | Simple Productivity Blocker"
