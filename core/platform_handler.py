@@ -32,6 +32,9 @@ class PlatformHandler:
     def is_startup_enabled(self):
         raise NotImplementedError
 
+    def set_process_watchdog(self, enabled):
+        raise NotImplementedError
+
     def redirect_dns(self, activate, local_ip="127.0.0.1", state_path=None):
         raise NotImplementedError
 
@@ -87,6 +90,10 @@ class WindowsHandler(PlatformHandler):
     def is_startup_enabled(self):
         from core.persistence import is_startup_enabled as win_is_startup
         return win_is_startup()
+
+    def set_process_watchdog(self, enabled):
+        from core.persistence import set_process_watchdog as win_set_process_watchdog
+        return win_set_process_watchdog(enabled)
 
     def _run_powershell_json(self, script: str):
         res = subprocess.run(
@@ -417,6 +424,9 @@ class LinuxHandler(PlatformHandler):
         return False
 
     def is_startup_enabled(self):
+        return False
+
+    def set_process_watchdog(self, enabled):
         return False
 
     def redirect_dns(self, activate, local_ip="127.0.0.1", state_path=None):
