@@ -29,10 +29,10 @@ def register_task(task_name, exe_path, args="", working_dir=None):
         f"$a = '{a_esc}'; "
         f"$w = '{w_esc}'; "
         f"$action = New-ScheduledTaskAction -Execute $e {arg_part} -WorkingDirectory $w; "
-        f"$trigger1 = New-ScheduledTaskTrigger -AtStartup; "
-        f"$trigger2 = New-ScheduledTaskTrigger -AtLogOn; "
+        f"$trigger = New-ScheduledTaskTrigger -AtLogOn; "
+        f"$principal = New-ScheduledTaskPrincipal -GroupId 'BUILTIN\\Administrators' -RunLevel Highest; "
         f"$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit 0; "
-        f"Register-ScheduledTask -TaskName '{task_name}' -Action $action -Trigger $trigger1,$trigger2 -Settings $settings -User 'SYSTEM' -RunLevel Highest -Force"
+        f"Register-ScheduledTask -TaskName '{task_name}' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force"
     )
 
     try:
@@ -45,7 +45,7 @@ def register_task(task_name, exe_path, args="", working_dir=None):
         
         # Fallback to legacy schtasks.exe (bypasses CIM repository)
         # Note: schtasks has fewer granular settings than PS, but it's more robust on broken systems.
-        fallback_args = ["schtasks", "/create", "/tn", task_name, "/tr", f'"{exe_path}" {args}'.strip(), "/sc", "onstart", "/ru", "SYSTEM", "/rl", "highest", "/f"]
+        fallback_args = ["schtasks", "/create", "/tn", task_name, "/tr", f'"{exe_path}" {args}'.strip(), "/sc", "onlogon", "/ru", "BUILTIN\\Administrators", "/rl", "highest", "/f"]
         try:
             subprocess.run(fallback_args, check=True, capture_output=True, text=True)
             # Robust XML modification fallback for battery settings
