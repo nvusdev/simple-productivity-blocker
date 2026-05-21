@@ -26,7 +26,7 @@ def test_settings_per_group():
     print("\n--- PHASE 2: GROUP SETTINGS & ISOLATION VALIDATION ---")
     # Simulate multi-group configurations
     multi_group_config = {
-        "schema_version": 2,
+        "schema_version": 3,
         "settings": {
             "cloud_allowlist_enabled": True,
             "cloud_allowlist": ["safe.com"],
@@ -297,7 +297,7 @@ def test_content_filter_logic():
     print("\n--- PHASE 2C: CONTENT FILTER / ADBLOCKER LOGIC VALIDATION ---")
     
     base_config = {
-        "schema_version": 2,
+        "schema_version": 3,
         "settings": {
             "cloud_allowlist_enabled": False,
             "cloud_allowlist": [],
