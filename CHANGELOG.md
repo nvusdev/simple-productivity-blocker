@@ -5,9 +5,12 @@
 - **Wildcard DNS Coverage**: `DomainMatcher` now treats `*.domain.com` as matching both the base domain and all subdomains, which restores the intended blocking behavior for common wildcard rules.
 - **System Safety Exclusions Consistency**: Synchronized `SYSTEM_SAFETY_EXCLUSIONS` across the daemon and app blocker so SPB will not terminate its own executables or core recovery tools.
 - **Test Consolidation**: Removed weak placeholder hierarchy tests and relied on the comprehensive DNS hierarchy suite to avoid redundant coverage.
+- **Settings Dashboard Responsiveness**: Moved startup persistence checks and security-appliance compatibility checks off the UI thread, with stale-screen guards to keep navigation from touching destroyed widgets.
+- **Startup Persistence Repair**: Defaulted `startup_enabled` on and added config migration coverage so installs repair stale pre-fix settings and bring the daemon up reliably.
 
 ### Verified
 - Full test suite passes after the version update and logic fixes.
+- Build and installer output remain aligned with the current v1.4.9 release state.
 
 ## [1.4.8] - 2026-05-20
 ### Added
