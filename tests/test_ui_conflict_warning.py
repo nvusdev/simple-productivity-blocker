@@ -5,14 +5,21 @@ import main as app_main
 
 
 class ImmediateThread:
-    def __init__(self, target, *args, daemon=False, **kwargs):
+    def __init__(self, group=None, target=None, name=None, args=(), kwargs=None, *, daemon=None):
         self.target = target
-        self.args = args
-        self.kwargs = kwargs
+        self.args = args if args is not None else ()
+        self.kwargs = kwargs if kwargs is not None else {}
         self.daemon = daemon
 
     def start(self):
-        self.target(*self.args, **self.kwargs)
+        if self.target:
+            self.target(*self.args, **self.kwargs)
+
+    def join(self, timeout=None):
+        pass
+
+    def is_alive(self):
+        return False
 
 class UIConflictWarningTests(unittest.TestCase):
     @mock.patch('main.detect_conflicting_services', return_value='Portmaster (PID: 9999)')

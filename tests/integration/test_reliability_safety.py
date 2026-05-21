@@ -293,8 +293,8 @@ class TestDnsStateSafety(unittest.TestCase):
             
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
-        self.assertIn("-InterfaceIndex 4", args[0][3])
-        self.assertIn("@('127.0.0.1', '::1')", args[0][3])
+        self.assertIn("-InterfaceIndex 4", args[0][-1])
+        self.assertIn("@('127.0.0.1', '::1')", args[0][-1])
 
         mock_run.reset_mock()
         
@@ -308,8 +308,8 @@ class TestDnsStateSafety(unittest.TestCase):
             
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
-        self.assertIn("-InterfaceIndex 4", args[0][3])
-        self.assertIn("@('10.0.0.1', '2001:db8::1')", args[0][3])
+        self.assertIn("-InterfaceIndex 4", args[0][-1])
+        self.assertIn("@('10.0.0.1', '2001:db8::1')", args[0][-1])
 
 
 if __name__ == "__main__":
