@@ -100,6 +100,9 @@ DEFAULT_SETTINGS = {
         "on_daemon_start": True, "on_config_reload": False, "on_hosts_write": False,
         "on_challenge_fail": True, "on_challenge_pass": False
     },
+    "dialog_enforcement_enabled": True,
+    "aggressive_process_enforcement": True,
+    "aggressive_scan_interval": 10,
 }
 
 DEFAULT_CONFIG = {

@@ -893,6 +893,10 @@ class DaemonOrchestrator:
             self.subsystems.pm.configure_performance(settings.get("performance_mode", "Balanced"))
             self.subsystems.pm.set_non_acl_sync_interval(settings.get("non_acl_sync_interval", 10))
             self.subsystems.pm.set_non_acl_max_files(settings.get("non_acl_max_files", 1000))
+            # Dialog/process enforcement settings
+            self.subsystems.pm.dialog_enforcement_enabled = settings.get("dialog_enforcement_enabled", True)
+            self.subsystems.pm.aggressive_process_enforcement = settings.get("aggressive_process_enforcement", True)
+            self.subsystems.pm.aggressive_scan_interval = settings.get("aggressive_scan_interval", 10)
             # Register the history callback
             self.subsystems.pm._acl_callback = _on_acl_operation_complete
 

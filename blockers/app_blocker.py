@@ -61,6 +61,11 @@ class ProcessMonitor:
         self._path_cache = OrderedDict()
         self.logger = logging.getLogger("SPB_AppBlocker")
         
+        # Enforcement settings (configurable by daemon)
+        self.dialog_enforcement_enabled = True
+        self.aggressive_process_enforcement = True
+        self.aggressive_scan_interval = 10
+
         self._acl_worker = None
         self._acl_callback = None
 
@@ -109,6 +114,7 @@ class ProcessMonitor:
         try:
             root = self._get_volume_root(path)
             _, _, _, flags, _ = win32api.GetVolumeInformation(root)
+            self.logger.debug(f"Volume flags for {root}: {flags}")
             # FILE_PERSISTENT_ACLS flag is 0x00000008 (verified: win32con.FILE_PERSISTENT_ACLS == 0x8)
             return bool(flags & 0x00000008)
         except Exception as e:
@@ -580,6 +586,128 @@ class ProcessMonitor:
         except Exception as e:
             self.logger.debug(f"Shell windows check failed: {e}")
 
+    def _check_file_dialog_windows(self):
+        """Enumerate top-level dialogs and close file-open dialogs showing blocked folders."""
+        if os.name != 'nt':
+            return
+        try:
+            import win32gui, win32process, win32con
+        except Exception as e:
+            self.logger.debug(f"File dialog check dependencies missing: {e}")
+            return
+
+        def enum_handler(hwnd, lParam):
+            try:
+                if not win32gui.IsWindowVisible(hwnd):
+                    return True
+                cls = win32gui.GetClassName(hwnd)
+                # Common file dialog class is '#32770'
+                if cls != '#32770':
+                    return True
+                try:
+                    _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                except Exception:
+                    return True
+                try:
+                    proc = psutil.Process(pid)
+                except Exception:
+                    return True
+                name_lower = (proc.name() or "").lower()
+                # Respect global allowlist and local allowlist
+                if name_lower in self._global_allowlisted_processes or name_lower in self._allowlisted_processes:
+                    return True
+
+                # Try to extract text from title and child controls as path candidates
+                path_candidates = []
+                try:
+                    title = win32gui.GetWindowText(hwnd) or ""
+                    if title:
+                        path_candidates.extend(self._extract_path_candidates(title))
+                except Exception:
+                    pass
+
+                try:
+                    # collect some child texts (shallow scan)
+                    child = win32gui.FindWindowEx(hwnd, 0, None, None)
+                    stack = [child] if child else []
+                    while stack:
+                        ch = stack.pop()
+                        try:
+                            txt = win32gui.GetWindowText(ch)
+                            if txt:
+                                path_candidates.extend(self._extract_path_candidates(txt))
+                        except Exception:
+                            pass
+                        # push next sibling and first child
+                        try:
+                            sib = win32gui.FindWindowEx(hwnd, ch, None, None)
+                            if sib:
+                                stack.append(sib)
+                        except Exception:
+                            pass
+                        try:
+                            first_child = win32gui.FindWindowEx(ch, 0, None, None)
+                            if first_child:
+                                stack.append(first_child)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+                for p in path_candidates:
+                    p_norm = self._normalize_path(p)
+                    if self._is_in_blocked_folder(p_norm):
+                        try:
+                            win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+                            self.logger.info(f"Dialog closed (blocked folder) for PID {pid}: {p_norm}")
+                        except Exception as e:
+                            self.logger.debug(f"Failed to close dialog hwnd {hwnd}: {e}")
+                        return True
+                return True
+            except Exception as e:
+                self.logger.debug(f"Dialog enum handler error: {e}")
+                return True
+
+        try:
+            win32gui.EnumWindows(enum_handler, None)
+        except Exception as e:
+            self.logger.debug(f"EnumWindows failed: {e}")
+
+    def _scan_process_open_files_and_enforce(self):
+        """Scan process open files and terminate processes with handles inside blocked folders."""
+        if not self.aggressive_process_enforcement:
+            return
+        try:
+            for proc in psutil.process_iter(['pid', 'name']):
+                try:
+                    name_lower = (proc.info.get('name') or "").lower()
+                    if name_lower in SYSTEM_SAFETY_EXCLUSIONS: 
+                        continue
+                    if name_lower in self._global_allowlisted_processes:
+                        continue
+                    try:
+                        files = proc.open_files()
+                    except Exception:
+                        continue
+                    for f in files:
+                        try:
+                            f_norm = self._normalize_path(f.path)
+                        except Exception:
+                            continue
+                        if self._is_in_blocked_folder(f_norm):
+                            self.logger.info(f"TERMINATING: {name_lower} (Open file in blocked folder: {f_norm})")
+                            try:
+                                proc.kill()
+                            except Exception as e:
+                                self.logger.debug(f"Failed to kill process {proc.pid}: {e}")
+                            break
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+                except Exception as e:
+                    self.logger.debug(f"Process scan error for PID {proc.pid if proc else 'unknown'}: {e}")
+        except Exception as e:
+            self.logger.debug(f"Process open-files scan failed: {e}")
+
     def _should_terminate_proc(self, proc, now, last_handle_check):
         try:
             info = proc.info
@@ -672,12 +800,26 @@ class ProcessMonitor:
                 self.logger.debug(f"CoInitialize/Dispatch failed: {e}")
             
         last_handle_check = 0.0
+        last_scan_check = 0.0
         while not self._stop_event.is_set():
             now = time.time()
             self._sync_locks_if_needed(now)
             if self.blocked_folder_roots and shell and (now - self._last_shell_check) >= self._shell_interval:
                 self._last_shell_check = now
                 self._check_shell_windows(shell)
+                # Also attempt to close file dialogs owned by apps (MS common dialogs)
+                if getattr(self, 'dialog_enforcement_enabled', True):
+                    try:
+                        self._check_file_dialog_windows()
+                    except Exception as e:
+                        self.logger.debug(f"File dialog check failed: {e}")
+                # Aggressive scan for open files in blocked folders (throttled)
+                if getattr(self, 'aggressive_process_enforcement', False) and (now - last_scan_check) >= getattr(self, 'aggressive_scan_interval', 10):
+                    last_scan_check = now
+                    try:
+                        self._scan_process_open_files_and_enforce()
+                    except Exception as e:
+                        self.logger.debug(f"Process scan enforcement failed: {e}")
 
             if self.blocked_app_names or self.blocked_app_paths or self.blocked_file_paths or self.blocked_folder_roots:
                 try:
