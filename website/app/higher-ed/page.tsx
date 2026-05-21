@@ -9,6 +9,8 @@ import { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Higher Education | Deep Focus for Researchers & Ph.D.s",
   description: "Secure your research sessions with kernel-level focus. Perfect for Ph.D. students, professors, and academic writing. Block research rabbit holes at the source.",
+  alternates: { canonical: 'https://nvus.dev/spb/higher-ed/' },
+  openGraph: { url: 'https://nvus.dev/spb/higher-ed/' },
 };
 
 export default function HigherEdPage() {

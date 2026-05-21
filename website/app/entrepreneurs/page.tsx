@@ -9,6 +9,8 @@ import { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Entrepreneurs | Absolute Focus for Solo-Founders",
   description: "Protect your most valuable asset: your time. SPB provides kernel-level Windows focus for entrepreneurs and solo-founders who need to ship.",
+  alternates: { canonical: 'https://nvus.dev/spb/entrepreneurs/' },
+  openGraph: { url: 'https://nvus.dev/spb/entrepreneurs/' },
 };
 
 export default function EntrepreneursPage() {

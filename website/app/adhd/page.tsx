@@ -9,6 +9,8 @@ import { Metadata } from "next";
 export const metadata: Metadata = {
   title: "ADHD Support | Hardened Neurodivergent Focus",
   description: "The digital partner that holds the line when willpower fades. Hardened Windows support for ADHD minds. Secure your focus with the Triple-Lock suite.",
+  alternates: { canonical: 'https://nvus.dev/spb/adhd/' },
+  openGraph: { url: 'https://nvus.dev/spb/adhd/' },
 };
 
 export default function ADHDPage() {

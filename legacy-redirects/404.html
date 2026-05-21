@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Redirecting to nvus.dev/spb</title>
+    <script>
+      var path = window.location.pathname;
+      if (path.startsWith('/simple-productivity-blocker')) {
+        path = path.substring('/simple-productivity-blocker'.length);
+      }
+      // Redirect to new domain with pathname, query, and hash
+      window.location.replace('https://nvus.dev/spb' + path + window.location.search + window.location.hash);
+    </script>
+  </head>
+  <body>
+    <p>Please follow <a href="https://nvus.dev/spb/">this link</a>.</p>
+  </body>
+</html>

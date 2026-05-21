@@ -14,3 +14,73 @@ pathMatchers:
     routeAction:
       urlRewrite:
         pathPrefixRewrite: /
+  - paths:
+    - /students
+    - /students/*
+    urlRedirect:
+      prefixRedirect: /spb/students/
+      redirectResponseCode: MOVED_PERMANENTLY_DEFAULT
+      stripQuery: false
+  - paths:
+    - /developers
+    - /developers/*
+    urlRedirect:
+      prefixRedirect: /spb/developers/
+      redirectResponseCode: MOVED_PERMANENTLY_DEFAULT
+      stripQuery: false
+  - paths:
+    - /adhd
+    - /adhd/*
+    urlRedirect:
+      prefixRedirect: /spb/adhd/
+      redirectResponseCode: MOVED_PERMANENTLY_DEFAULT
+      stripQuery: false
+  - paths:
+    - /professionals
+    - /professionals/*
+    urlRedirect:
+      prefixRedirect: /spb/professionals/
+      redirectResponseCode: MOVED_PERMANENTLY_DEFAULT
+      stripQuery: false
+  - paths:
+    - /parents
+    - /parents/*
+    urlRedirect:
+      prefixRedirect: /spb/parents/
+      redirectResponseCode: MOVED_PERMANENTLY_DEFAULT
+      stripQuery: false
+  - paths:
+    - /writers
+    - /writers/*
+    urlRedirect:
+      prefixRedirect: /spb/writers/
+      redirectResponseCode: MOVED_PERMANENTLY_DEFAULT
+      stripQuery: false
+  - paths:
+    - /entrepreneurs
+    - /entrepreneurs/*
+    urlRedirect:
+      prefixRedirect: /spb/entrepreneurs/
+      redirectResponseCode: MOVED_PERMANENTLY_DEFAULT
+      stripQuery: false
+  - paths:
+    - /higher-ed
+    - /higher-ed/*
+    urlRedirect:
+      prefixRedirect: /spb/higher-ed/
+      redirectResponseCode: MOVED_PERMANENTLY_DEFAULT
+      stripQuery: false
+  - paths:
+    - /eula
+    - /eula/*
+    urlRedirect:
+      prefixRedirect: /spb/eula/
+      redirectResponseCode: MOVED_PERMANENTLY_DEFAULT
+      stripQuery: false
+  - paths:
+    - /privacy
+    - /privacy/*
+    urlRedirect:
+      prefixRedirect: /spb/privacy/
+      redirectResponseCode: MOVED_PERMANENTLY_DEFAULT
+      stripQuery: false

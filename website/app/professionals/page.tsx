@@ -9,6 +9,8 @@ import { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Professionals | Unbreakable Corporate Focus",
   description: "Eliminate doomscrolling in the office. Secure your work blocks with hardened Windows enforcement. Perfect for project managers, analysts, and corporate leaders.",
+  alternates: { canonical: 'https://nvus.dev/spb/professionals/' },
+  openGraph: { url: 'https://nvus.dev/spb/professionals/' },
 };
 
 export default function ProfessionalsPage() {

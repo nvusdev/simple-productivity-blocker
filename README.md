@@ -7,6 +7,8 @@
 
 A system-level focus and time management suite for Windows.
 
+Official website: [nvus.dev/spb](https://nvus.dev/spb/)
+
 Simple Productivity Blocker is designed for people who need absolute focus. Browser extensions are too easy to turn off. Basic app blockers can be bypassed or closed. SPB operates directly at the Windows operating system level to ensure that when you decide to lock in and work, your computer enforces that decision.
 
 It combines advanced website filtering, application termination, strict file and folder access controls, profile schedules, network safety checks, and transactional recovery tooling into one clean interface.

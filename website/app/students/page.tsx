@@ -9,6 +9,8 @@ import { Metadata } from "next";
 export const metadata: Metadata = {
   title: "For Students | Focus on Finals, Not Your Feed",
   description: "The hardened Windows blocker for student success. Lock down distractions during exam prep and essay writing. Absolute concentration for K-12 and university students.",
+  alternates: { canonical: 'https://nvus.dev/spb/students/' },
+  openGraph: { url: 'https://nvus.dev/spb/students/' },
 };
 
 export default function StudentsPage() {

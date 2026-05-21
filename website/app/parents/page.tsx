@@ -9,6 +9,8 @@ import { Metadata } from "next";
 export const metadata: Metadata = {
   title: "For Parents | Secure Family Focus & Boundaries",
   description: "Set healthy digital boundaries without surveillance. Create focus-only profiles for homework hours with kernel-level Windows enforcement.",
+  alternates: { canonical: 'https://nvus.dev/spb/parents/' },
+  openGraph: { url: 'https://nvus.dev/spb/parents/' },
 };
 
 export default function ParentsPage() {

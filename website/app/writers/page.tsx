@@ -9,6 +9,8 @@ import { Metadata } from "next";
 export const metadata: Metadata = {
   title: "For Writers | Draft More, Scroll Less",
   description: "The writing partner that holds the line. Block research rabbit holes and social media during your drafting sessions with absolute concentration.",
+  alternates: { canonical: 'https://nvus.dev/spb/writers/' },
+  openGraph: { url: 'https://nvus.dev/spb/writers/' },
 };
 
 export default function WritersPage() {

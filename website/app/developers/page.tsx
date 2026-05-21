@@ -9,6 +9,8 @@ import { Metadata } from "next";
 export const metadata: Metadata = {
   title: "For Developers | Code Deep, Ship Fast",
   description: "The focus suite for high-performance engineering. Block social media during sprints and keep your flow state unbroken with kernel-level enforcement.",
+  alternates: { canonical: 'https://nvus.dev/spb/developers/' },
+  openGraph: { url: 'https://nvus.dev/spb/developers/' },
 };
 
 export default function DevelopersPage() {
