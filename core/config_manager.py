@@ -63,6 +63,7 @@ DEFAULT_SETTINGS = {
     "startup_enabled": True,
     "force_dns_proxy": False,
     "max_domains_cap": 1000,
+    "non_acl_sync_interval": 10,
     "cloud_allowlist_enabled": True,
     "cloud_allowlist": [
         "OneDrive.exe", "OneDriveStandaloneUpdater.exe", "GoogleDriveFS.exe",
