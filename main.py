@@ -29,7 +29,7 @@ except Exception:
     def detect_conflicting_services():
         return None
 
-VERSION = "1.4.9"
+VERSION = "1.4.10"
 
 def resource_path(relative_path):
     try:
@@ -742,6 +742,17 @@ class ProductivityApp(ctk.CTk):
         cap_seg = ctk.CTkSegmentedButton(c, values=["1000", "2000", "3000", "4000", "5000"], command=on_cap, height=38)
         cap_seg.set(str(s.get("max_domains_cap", 1000)))
         cap_seg.pack(fill="x", padx=25, pady=10)
+
+        # Virtual Drive Sync Interval
+        ctk.CTkLabel(c, text="Virtual Drive Sync Interval", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
+        ctk.CTkLabel(c, text="How frequently the background thread syncs locks on virtual/non-NTFS drives.", text_color="gray").pack(anchor="w", padx=25, pady=(0, 10))
+        def on_sync_interval(val):
+            sec = int(val.replace("s", ""))
+            self.config_data["settings"]["non_acl_sync_interval"] = sec
+            self.trigger_save()
+        sync_seg = ctk.CTkSegmentedButton(c, values=["5s", "10s", "30s", "60s"], command=on_sync_interval, height=38)
+        sync_seg.set(f"{s.get('non_acl_sync_interval', 10)}s")
+        sync_seg.pack(fill="x", padx=25, pady=10)
 
         # Persistence
         ctk.CTkLabel(c, text="Persistence", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=25, pady=(30, 4))
