@@ -1,5 +1,12 @@
 # Simple Productivity Blocker - Version History
 
+## [1.4.10] - 2026-05-21
+### Added
+- **Virtual and Online Drive Blocking**: Implemented exclusive file-locking fallback (via Windows read/write-deny handles) and process command-line auditing to support blocking folders and files on virtual/online drives (e.g. Google Drive, MEGA, FAT32/exFAT) that lack NTFS persistent ACL support.
+- **Dynamic Drive Synchronization**: Added a background daemon task that periodically audits virtual drives to handle connection/disconnection state transitions and file additions/removals dynamically.
+- **Customizable Synchronization Interval**: Added a new config setting `non_acl_sync_interval` exposed in the settings dashboard's Performance tab as "Virtual Drive Sync Interval" (options: 5s, 10s, 30s, 60s) to customize the synchronization frequency.
+- **Version Upgrades**: Bumped version to `1.4.10` across the dashboard GUI, daemon, installers, uninstallers, build scripts, tests, website components, and documentation.
+
 ## [1.4.9] - 2026-05-20
 ### Fixed
 - **Wildcard DNS Coverage**: `DomainMatcher` now treats `*.domain.com` as matching both the base domain and all subdomains, which restores the intended blocking behavior for common wildcard rules.
