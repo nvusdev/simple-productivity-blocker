@@ -1,6 +1,6 @@
 # Simple Productivity Blocker (SPB)
 
-![Version](https://img.shields.io/badge/version-1.4.9-blue.svg)
+![Version](https://img.shields.io/badge/version-1.4.10-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-windows-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Status](https://img.shields.io/badge/status-stable-success.svg)
