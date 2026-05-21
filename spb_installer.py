@@ -238,7 +238,7 @@ def create_shortcut(target, shortcut_path, icon=None):
             pass
 
 def main():
-    print("Simple Productivity Blocker v1.4.9 Installer")
+    print("Simple Productivity Blocker v1.4.10 Installer")
     print("---------------------------------------------")
     
     import pythoncom
