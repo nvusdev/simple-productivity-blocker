@@ -93,8 +93,9 @@ def fallback_dns_reset():
 def cleanup_persistence():
     print("Removing Scheduled Tasks and Registry entries...")
     try:
-        # 1. Remove Task
+        # 1. Remove Tasks
         run_system_command(['schtasks', '/delete', '/tn', 'SPB_Daemon', '/f'], check=False)
+        run_system_command(['schtasks', '/delete', '/tn', 'SPB_Watchdog', '/f'], check=False)
         
         # 2. Clear registry for ALL user profiles
         import winreg
@@ -349,12 +350,16 @@ def main():
         print("\n[*] Auditing system state...")
         errors = []
         
-        # 1. Verify Task is gone
+        # 1. Verify Tasks are gone
         task_check = run_system_command(['schtasks', '/query', '/tn', 'SPB_Daemon'], check=False)
         if task_check is not None and task_check.returncode == 0:
             errors.append("Scheduled Task 'SPB_Daemon' still exists.")
         elif task_check is None:
             errors.append("Failed to query scheduled task state (Command timed out or failed).")
+            
+        watchdog_check = run_system_command(['schtasks', '/query', '/tn', 'SPB_Watchdog'], check=False)
+        if watchdog_check is not None and watchdog_check.returncode == 0:
+            errors.append("Scheduled Task 'SPB_Watchdog' still exists.")
             
         # 2. Verify Hosts is clean
         hosts_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'drivers', 'etc', 'hosts')
