@@ -883,6 +883,7 @@ class DaemonOrchestrator:
             self.subsystems.pm.set_allowlisted_processes(list(ctx.app_exceptions), enabled=bool(ctx.app_exceptions))
             self.subsystems.pm.set_allowlisted_keywords(list(ctx.path_exceptions))
             self.subsystems.pm.configure_performance(settings.get("performance_mode", "Balanced"))
+            self.subsystems.pm.set_non_acl_sync_interval(settings.get("non_acl_sync_interval", 10))
             # Register the history callback
             self.subsystems.pm._acl_callback = _on_acl_operation_complete
 
@@ -927,7 +928,7 @@ class DaemonOrchestrator:
                 logger.error(f"Orchestrator error: {e}", exc_info=True)
                 time.sleep(5)
 
-VERSION = "1.4.9"
+VERSION = "1.4.10"
 
 def main():
     from core.win32_utils import is_safe_mode
