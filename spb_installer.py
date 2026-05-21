@@ -155,9 +155,18 @@ def harden_install_dir(dest_dir):
 
 def register_daemon_task(daemon_path, args=""):
     """Registers the background daemon as a high-integrity scheduled task."""
-    from core.persistence import register_task
+    from core.persistence import register_task, register_watchdog_task
     try:
         register_task("SPB_Daemon", daemon_path, args)
+        try:
+            from core.config_manager import load_config
+            cfg = load_config()
+            w_enabled = cfg.get("settings", {}).get("process_watchdog_enabled", True)
+        except Exception:
+            w_enabled = True
+        
+        if w_enabled:
+            register_watchdog_task("SPB_Daemon", "SPB_Watchdog")
     except Exception as e:
         print(f"  [ERROR] Task registration failed: {e}")
         raise
@@ -293,6 +302,7 @@ def main():
         daemon_exe = os.path.normpath(os.path.join(dest_dir, "SPB_Daemon.exe"))
         register_daemon_task(daemon_exe)
         rollback_stack.append(lambda: run_system_command(['schtasks', '/delete', '/tn', 'SPB_Daemon', '/f'], check=False))
+        rollback_stack.append(lambda: run_system_command(['schtasks', '/delete', '/tn', 'SPB_Watchdog', '/f'], check=False))
         if not verify_daemon_running():
             raise RuntimeError("Daemon registration succeeded but SPB_Daemon.exe is not running.")
         
