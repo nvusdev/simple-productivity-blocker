@@ -22,6 +22,11 @@ class TestVirtualDriveBlocking(unittest.TestCase):
         with patch('win32api.GetVolumeInformation', return_value=('G:\\', 'FAT32', 255, 0x1, [])):
             self.assertFalse(self.pm._supports_acls('G:\\some\\file.txt'))
 
+    def test_supports_acls_rejects_fat32_even_with_acl_flag(self):
+        # Google Drive and similar virtual mounts can present FAT32-style volumes; treat them as non-ACL
+        with patch('win32api.GetVolumeInformation', return_value=('G:\\', 'FAT32', 255, 0x00000008 | 0x1, [])):
+            self.assertFalse(self.pm._supports_acls('G:\\some\\file.txt'))
+
     def test_apply_acl_skips_when_no_acl_support(self):
         # When _supports_acls is False, it should skip calling icacls and return True
         with patch.object(self.pm, '_supports_acls', return_value=False), \
