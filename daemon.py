@@ -897,6 +897,8 @@ class DaemonOrchestrator:
             self.subsystems.pm.dialog_enforcement_enabled = settings.get("dialog_enforcement_enabled", True)
             self.subsystems.pm.aggressive_process_enforcement = settings.get("aggressive_process_enforcement", True)
             self.subsystems.pm.aggressive_scan_interval = settings.get("aggressive_scan_interval", 10)
+            self.subsystems.pm.ui_automation_enabled = settings.get("ui_automation_enabled", False)
+            self.subsystems.pm.shell_check_interval = settings.get("shell_check_interval", 2.0)
             # Register the history callback
             self.subsystems.pm._acl_callback = _on_acl_operation_complete
 

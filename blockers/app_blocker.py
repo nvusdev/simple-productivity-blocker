@@ -65,6 +65,8 @@ class ProcessMonitor:
         self.dialog_enforcement_enabled = True
         self.aggressive_process_enforcement = True
         self.aggressive_scan_interval = 10
+        self.ui_automation_enabled = False
+        self.shell_check_interval = 2.0
 
         self._acl_worker = None
         self._acl_callback = None
@@ -585,6 +587,43 @@ class ProcessMonitor:
                         self.logger.debug(f"Failed to Navigate window: {ex}")
         except Exception as e:
             self.logger.debug(f"Shell windows check failed: {e}")
+
+    def _extract_path_via_uia(self, hwnd):
+        """Attempt to extract file path via UI Automation (fallback for custom dialogs).
+        Returns path string if found, None otherwise.
+        """
+        if not self.ui_automation_enabled:
+            return None
+        try:
+            import ctypes
+            from ctypes import wintypes
+            
+            # Lazy import pywinauto with UIA backend
+            try:
+                from pywinauto import Desktop
+                from pywinauto.uia_defines import ELEMENT_INFO_MAPPING
+            except ImportError:
+                self.logger.debug("pywinauto not installed, skipping UIA fallback")
+                return None
+            
+            try:
+                app_window = Desktop(backend='uia').from_handle(hwnd)
+                # Search for common path controls: Edit boxes, ComboBox, breadcrumb
+                for control in app_window.descendants():
+                    try:
+                        if control.class_name() in ['Edit', 'ComboBox']:
+                            text = control.get_value() or control.window_text()
+                            if text and (':\\' in text or '\\\\' in text):
+                                return text
+                    except Exception:
+                        pass
+                return None
+            except Exception as e:
+                self.logger.debug(f"UIA dialog path extraction failed: {e}")
+                return None
+        except Exception as e:
+            self.logger.debug(f"UIA fallback error: {e}")
+            return None
 
     def _check_file_dialog_windows(self):
         """Enumerate top-level dialogs and close file-open dialogs showing blocked folders."""
@@ -663,6 +702,18 @@ class ProcessMonitor:
                         except Exception as e:
                             self.logger.debug(f"Failed to close dialog hwnd {hwnd}: {e}")
                         return True
+                
+                if not path_candidates and self.ui_automation_enabled:
+                    uia_path = self._extract_path_via_uia(hwnd)
+                    if uia_path:
+                        p_norm = self._normalize_path(uia_path)
+                        if self._is_in_blocked_folder(p_norm):
+                            try:
+                                win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+                                self.logger.info(f"Dialog closed via UIA (blocked folder) for PID {pid}: {p_norm}")
+                            except Exception as e:
+                                self.logger.debug(f"Failed to close dialog hwnd {hwnd}: {e}")
+                            return True
                 return True
             except Exception as e:
                 self.logger.debug(f"Dialog enum handler error: {e}")

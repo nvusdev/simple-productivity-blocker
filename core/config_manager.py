@@ -103,6 +103,8 @@ DEFAULT_SETTINGS = {
     "dialog_enforcement_enabled": True,
     "aggressive_process_enforcement": True,
     "aggressive_scan_interval": 10,
+    "ui_automation_enabled": False,
+    "shell_check_interval": 2.0,
 }
 
 DEFAULT_CONFIG = {

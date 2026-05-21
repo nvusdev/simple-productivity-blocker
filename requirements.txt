@@ -4,4 +4,5 @@ Pillow>=10.0.0
 pywin32>=306 ; sys_platform == 'win32'
 dnslib>=0.9.23
 watchdog>=3.0.0
-# portalocker removed for stability (using native msvcrt)
+# Optional: pywinauto for UI Automation (UIA) fallback on virtual drives
+# pywinauto>=2.0.0 ; sys_platform == 'win32'
