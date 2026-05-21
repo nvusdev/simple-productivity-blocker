@@ -54,7 +54,7 @@ def stop_binder():
 
 def make_temp_config(tmpdir):
     cfg = {
-        "schema_version": 2,
+        "schema_version": 3,
         "groups": {
             "Default Profile": {
                 "websites": ["example.com"],
