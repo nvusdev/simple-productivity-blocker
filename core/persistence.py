@@ -111,9 +111,18 @@ def _set_startup_windows(enabled: bool, name: str):
     try:
         if enabled:
             register_task(task_name, daemon_exe, args, working_dir)
+            # Register watchdog task if enabled in config settings
+            try:
+                from core.config_manager import load_config
+                cfg = load_config()
+                if cfg.get("settings", {}).get("process_watchdog_enabled", True):
+                    register_watchdog_task(task_name, "SPB_Watchdog")
+            except Exception as w_err:
+                print(f"Failed to auto-register watchdog task: {w_err}")
         else:
-            # Remove task
+            # Remove both tasks
             subprocess.run(['schtasks', '/delete', '/tn', task_name, '/f'], capture_output=True, creationflags=0x08000000)
+            subprocess.run(['schtasks', '/delete', '/tn', 'SPB_Watchdog', '/f'], capture_output=True, creationflags=0x08000000)
         return True
     except Exception as e:
         print(f"Failed to set Windows persistence: {e}")
@@ -193,3 +202,54 @@ Comment=Start {name} at login
             except Exception:
                 return False
         return True
+
+def register_watchdog_task(daemon_task_name="SPB_Daemon", watchdog_task_name="SPB_Watchdog"):
+    """Registers the watchdog process task to monitor and restart SPB_Daemon if killed."""
+    if os.name != 'nt':
+        return False
+        
+    cmd_args = f"-NoProfile -WindowStyle Hidden -Command \"`$running = Get-Process -Name 'SPB_Daemon' -ErrorAction SilentlyContinue; if (-not `$running) {{ Start-ScheduledTask -TaskName '{daemon_task_name}' }}\""
+    
+    ps_cmd = (
+        f"$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '{cmd_args}'; "
+        f"$trigger = New-ScheduledTaskTrigger -AtLogOn; "
+        f"$rep = (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1)).Repetition; "
+        f"$trigger.Repetition = $rep; "
+        f"$principal = New-ScheduledTaskPrincipal -GroupId 'BUILTIN\\Administrators' -RunLevel Highest; "
+        f"$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit 0; "
+        f"Register-ScheduledTask -TaskName '{watchdog_task_name}' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force"
+    )
+    try:
+        subprocess.run(['powershell', '-Command', ps_cmd], check=True, capture_output=True, text=True)
+        return True
+    except Exception as e:
+        print(f"Failed to register watchdog task via PowerShell: {e}")
+        # Fallback to schtasks
+        fallback_cmd = [
+            "schtasks", "/create", "/tn", watchdog_task_name,
+            "/tr", f"powershell.exe -NoProfile -WindowStyle Hidden -Command \"\\$running = Get-Process -Name 'SPB_Daemon' -ErrorAction SilentlyContinue; if (-not \\$running) {{ Start-ScheduledTask -TaskName '{daemon_task_name}' }}\"",
+            "/sc", "minute", "/mo", "1", "/ru", "BUILTIN\\Administrators", "/rl", "highest", "/f"
+        ]
+        try:
+            subprocess.run(fallback_cmd, check=True, capture_output=True, text=True)
+            return True
+        except Exception as f_err:
+            print(f"Fallback watchdog registration failed: {f_err}")
+            return False
+
+def set_process_watchdog(enabled: bool, daemon_task_name="SPB_Daemon", watchdog_task_name="SPB_Watchdog") -> bool:
+    """Enables or disables/deletes the process watchdog task based on user setting."""
+    if os.name != 'nt':
+        return False
+    try:
+        if enabled:
+            # Only register if startup is enabled (daemon task exists)
+            if is_startup_enabled():
+                register_watchdog_task(daemon_task_name, watchdog_task_name)
+        else:
+            # Delete watchdog task to ensure it doesn't run at all
+            subprocess.run(['schtasks', '/delete', '/tn', watchdog_task_name, '/f'], capture_output=True, creationflags=0x08000000)
+        return True
+    except Exception as e:
+        print(f"Failed to set process watchdog: {e}")
+        return False
