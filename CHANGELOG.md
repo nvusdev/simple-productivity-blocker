@@ -12,6 +12,11 @@
 - **Website SEO**: Fixed robots.txt to explicitly allow `/spb/` and `/*.xml` paths, resolving Bing Webmaster crawl issues while maintaining security.
 - **Version Upgrades**: Bumped version to `1.4.10` across the dashboard GUI, daemon, installers, uninstallers, build scripts, tests, website components, and documentation.
 
+### Fixed
+- **Locale-Agnostic ACL Grants**: `icacls` enforcement now uses well-known SIDs for `SYSTEM` and `Administrators`, preventing account-name translation failures on non-English Windows builds.
+- **Daemon Single-Instance Guard**: Startup now calls duplicate-instance cleanup before orchestration to prevent concurrent `SPB_Daemon` races.
+- **Installer Watchdog Config Resolution**: Watchdog enablement now reads `config.json` from the resolved platform data directory so `SPB_Watchdog` registration follows actual install context.
+
 ## [1.4.9] - 2026-05-20
 ### Fixed
 - **Wildcard DNS Coverage**: `DomainMatcher` now treats `*.domain.com` as matching both the base domain and all subdomains, which restores the intended blocking behavior for common wildcard rules.
