@@ -14,17 +14,17 @@ class TestVirtualDriveBlocking(unittest.TestCase):
         
     def test_supports_acls_detects_ntfs(self):
         # Test that _supports_acls returns True if FILE_PERSISTENT_ACLS (0x00000008) is present in volume flags
-        with patch('win32api.GetVolumeInformation', return_value=('C:\\', 'NTFS', 255, 0x00000008 | 0x1, [])):
+        with patch('win32api.GetVolumeInformation', return_value=('C:\\', 12345, 255, 0x00000008 | 0x1, 'NTFS')):
             self.assertTrue(self.pm._supports_acls('C:\\some\\file.txt'))
 
     def test_supports_acls_detects_non_ntfs(self):
         # Test that _supports_acls returns False if FILE_PERSISTENT_ACLS is missing in flags
-        with patch('win32api.GetVolumeInformation', return_value=('G:\\', 'FAT32', 255, 0x1, [])):
+        with patch('win32api.GetVolumeInformation', return_value=('G:\\', 12345, 255, 0x1, 'FAT32')):
             self.assertFalse(self.pm._supports_acls('G:\\some\\file.txt'))
 
     def test_supports_acls_rejects_fat32_even_with_acl_flag(self):
         # Google Drive and similar virtual mounts can present FAT32-style volumes; treat them as non-ACL
-        with patch('win32api.GetVolumeInformation', return_value=('G:\\', 'FAT32', 255, 0x00000008 | 0x1, [])):
+        with patch('win32api.GetVolumeInformation', return_value=('G:\\', 12345, 255, 0x00000008 | 0x1, 'FAT32')):
             self.assertFalse(self.pm._supports_acls('G:\\some\\file.txt'))
 
     def test_apply_acl_skips_when_no_acl_support(self):
