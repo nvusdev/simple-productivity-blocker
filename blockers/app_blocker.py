@@ -457,8 +457,8 @@ class ProcessMonitor:
                 perm_flags = "(OI)(CI)(F)" if is_dir else "(F)"
                 args = [
                     "icacls", path, "/inheritance:r", 
-                    "/grant:r", f"System:{perm_flags}", 
-                    "/grant:r", f"Administrators:{perm_flags}",
+                    "/grant:r", f"*S-1-5-18:{perm_flags}",
+                    "/grant:r", f"*S-1-5-32-544:{perm_flags}",
                     "/deny", f"{target}:{perm_flags}", "/c", "/q"
                 ]
             else:
