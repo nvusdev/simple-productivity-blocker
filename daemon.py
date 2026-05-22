@@ -946,6 +946,7 @@ class DaemonOrchestrator:
 VERSION = "1.4.10"
 
 def main():
+    kill_other_instances()
     from core.win32_utils import is_safe_mode
     if is_safe_mode():
         logger.warning("Windows Safe Mode detected! Automatically lifting all SPB blocks.")
