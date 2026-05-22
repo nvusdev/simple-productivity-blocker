@@ -22,9 +22,11 @@ if os.name == 'nt':
 # These names must never be blocked, terminated, or locked by SPB enforcement code.
 # Modifying this set can cause system instability or loss of administrative recovery paths.
 SYSTEM_SAFETY_EXCLUSIONS = {
-    "explorer.exe", "taskmgr.exe", "services.exe", "lsass.exe", "csrss.exe",
-    "wininit.exe", "winlogon.exe", "spoolsv.exe", "svchost.exe", "notepad.exe",
-    "python.exe", "SimpleProductivityBlocker.exe", "SPB_Daemon.exe", "spb_installer.exe"
+    "system", "registry", "smss.exe", "csrss.exe", "wininit.exe", "winlogon.exe", 
+    "services.exe", "lsass.exe", "svchost.exe", "dwm.exe", "fontdrvhost.exe",
+    "sihost.exe", "runtimebroker.exe", "conhost.exe", "smartscreen.exe",
+    "explorer.exe", "taskmgr.exe", "spoolsv.exe", "notepad.exe", "python.exe", 
+    "SimpleProductivityBlocker.exe", "SPB_Daemon.exe", "spb_installer.exe"
 }
 
 class ProcessMonitor:
@@ -780,16 +782,22 @@ class ProcessMonitor:
             # Absolute bypass for core system safety targets
             if name_lower in SYSTEM_SAFETY_EXCLUSIONS or exe_base in SYSTEM_SAFETY_EXCLUSIONS:
                 return False
-            
-            if "target_app" in name_lower or "target_app" in exe:
-                pass
+
+            # Strict structural Windows directory protection
+            if os.name == 'nt' and exe:
+                system_root = os.environ.get("SystemRoot", "C:\\Windows").lower()
+                if exe.startswith(system_root + os.sep) or exe == system_root:
+                    return False
 
             # 0. Global Allowlist (Cloud Allowlist) - OVERRIDES ALL
-            if name_lower in self._global_allowlisted_processes: return False
-            if self._global_allowlisted_keywords:
-                search = exe + " " + " ".join(str(a).lower() for a in cmdline)
+            if name_lower in self._global_allowlisted_processes: 
+                return False
+                
+            if exe and self._global_allowlisted_keywords:
+                exe_norm = self._normalize_path(exe)
                 for kw in self._global_allowlisted_keywords:
-                    if kw in search: return False
+                    if kw in exe_norm: 
+                        return False
 
             # 1. Explicit App/File Blocks (Override Allowlist)
             if name_lower in self.blocked_app_names:
@@ -817,11 +825,13 @@ class ProcessMonitor:
 
             # 2. Allowlist Exceptions (Group Level)
             if self._allowlist_enabled:
-                if name_lower in self._allowlisted_processes: return False
-                if self._allowlisted_keywords:
-                    search = exe + " " + " ".join(str(a).lower() for a in cmdline)
+                if name_lower in self._allowlisted_processes: 
+                    return False
+                if exe and self._allowlisted_keywords:
+                    exe_norm = self._normalize_path(exe)
                     for kw in self._allowlisted_keywords:
-                        if kw in search: return False
+                        if kw in exe_norm: 
+                            return False
 
             # 3. Folder Blocks (Can be bypassed by Allowlist)
             if exe:
@@ -841,8 +851,6 @@ class ProcessMonitor:
             except Exception as e:
                 self.logger.debug(f"Unexpected exception reading CWD for process {proc.pid}: {e}")
 
-            # Note: Vector 4 (aggressive termination on handle access) is disabled on Windows 
-            # to prevent kernel deadlocks caused by psutil.open_files().
             return False
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as e:
             self.logger.debug(f"Process query error for {proc.pid}: {e}")

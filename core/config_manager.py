@@ -91,9 +91,7 @@ DEFAULT_SETTINGS = {
     "cloud_path_keywords": [
         "onedrive", "google drive", "googledrive", "dropbox", "icloud", "mega",
         "synology drive", "pcloud", "nextcloud", "backup and sync",
-        "appdata\\roaming", "appdata\\local", "programdata", "windows\\system32",
-        "program files", "program files (x86)", "steamapps", "site-packages",
-        "node_modules", "package.json", ".git", ".vscode", ".config"
+        "appdata\\roaming", "appdata\\local", "programdata", ".git", ".vscode", ".config"
     ],
     "notifications": {
         "on_block": True, "on_block_attempt": True, "on_exception_bypass": False,
