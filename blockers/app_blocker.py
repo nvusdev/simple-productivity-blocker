@@ -115,7 +115,7 @@ class ProcessMonitor:
             return False
         try:
             root = self._get_volume_root(path)
-            _, filesystem_name, _, flags, _ = win32api.GetVolumeInformation(root)
+            _, _, _, flags, filesystem_name = win32api.GetVolumeInformation(root)
             filesystem_name = str(filesystem_name or "").strip().lower()
             self.logger.debug(f"Volume flags for {root}: {flags}; filesystem={filesystem_name or 'unknown'}")
 
