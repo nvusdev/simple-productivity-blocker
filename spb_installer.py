@@ -156,12 +156,17 @@ def harden_install_dir(dest_dir):
 def register_daemon_task(daemon_path, args=""):
     """Registers the background daemon as a high-integrity scheduled task."""
     from core.persistence import register_task, register_watchdog_task
+    from core.platform_handler import get_platform_handler
     try:
         register_task("SPB_Daemon", daemon_path, args)
+        w_enabled = True
         try:
             from core.config_manager import load_config
-            cfg = load_config()
-            w_enabled = cfg.get("settings", {}).get("process_watchdog_enabled", True)
+            handler = get_platform_handler()
+            cfg_path = os.path.join(handler.get_data_dir(), "config.json")
+            if os.path.exists(cfg_path):
+                cfg = load_config(cfg_path)
+                w_enabled = cfg.get("settings", {}).get("process_watchdog_enabled", True)
         except Exception:
             w_enabled = True
         
