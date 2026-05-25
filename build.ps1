@@ -181,7 +181,7 @@ Write-Host "Static typing checks passed." -ForegroundColor Green
 
 # 4. Run Formatter/Linter (Ruff)
 Write-Host "Running formatter/linter (ruff)..."
-python -m ruff check --ignore=E701, E722, F401, F841, E741, E402, F811, E702 core/ main.py daemon.py recovery_uplift.py spb_installer.py spb_uninstaller.py
+python -m ruff check --ignore=E701,E722,F401,F841,E741,E402,F811,E702 core/ main.py daemon.py recovery_uplift.py spb_installer.py spb_uninstaller.py
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Error: Code style/linter checks (ruff) failed. Aborting build." -ForegroundColor Red
     exit 1
