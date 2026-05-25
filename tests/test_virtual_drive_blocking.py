@@ -85,7 +85,7 @@ class TestVirtualDriveBlocking(unittest.TestCase):
         proc = MagicMock()
         proc.info = {
             'name': 'someapp.exe',
-            'exe': 'C:\\Windows\\System32\\cmd.exe',
+            'exe': 'C:\\Program Files\\someapp\\someapp.exe',
             'cmdline': ['someapp.exe', 'G:\\blocked_folder\\art.png']
         }
         res = self.pm._should_terminate_proc(proc, 0.0, 0.0)
