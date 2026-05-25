@@ -1,5 +1,20 @@
 # Simple Productivity Blocker - Version History
 
+## [1.5.0] - 2026-05-25
+### Added
+- **Quality Gate Integration**: Pre-build validation checks executing unit tests, Bandit security checks, Mypy static typing, and Ruff formatting/styling checks before compilation in `build.ps1`.
+- **Reproducible Dependency Tracking**: Two-tier dependency manifest strategy using a development `requirements.txt` and a locked `requirements-lock.txt` with cryptographic hashes generated via `pip-compile`.
+- **Windows Matrix Runner CI/CD**: Workflow automation via GitHub Actions (`deploy.yml`) running a Windows container to build, validate, and package production setup releases.
+- **Dynamic Versioning Infrastructure**: Single source of truth versioning defined in `core/__init__.py` and imported dynamically by the dashboard UI, background daemon, installer, uninstaller, and stress tests.
+- **Dynamic Windows PE Metadata**: Dynamic generation of file version resources (`version_info.txt`) injected into compiled executables.
+- **Dynamic NSIS Compiler Resolution**: Native makensis tool lookup via registry and environment search instead of hardcoded paths.
+- **Dynamic Code Signing (Signtool)**: Post-build signing integration in `build.ps1` using `signtool.exe` with a self-signed PFX developer certificate fallback for testing.
+
+### Fixed
+- **Process Watchdog Connection**: Connected the settings toggle to scheduled tasks, dynamically disabling (`schtasks /change /disable`) or enabling watchdog monitoring upon configuration shifts.
+- **Virtual Drive Synchronization Loop**: Hardened background non-ACL auditing to periodically lock and sync files/folders inside `run()` ignoring change-detection guards.
+- **Browser Socket-Pooling Bypass**: Implemented dynamic connection drops for Chrome, Edge, Firefox, and Brave via Windows API `SetTcpEntry` to force instant policy compliance without system restarts.
+
 ## [1.4.10] - 2026-05-21
 ### Added
 - **Virtual and Online Drive Blocking**: Implemented exclusive file-locking fallback (via Windows read/write-deny handles) and process command-line auditing to support blocking folders and files on virtual/online drives (e.g. Google Drive, MEGA, FAT32/exFAT) that lack NTFS persistent ACL support.
