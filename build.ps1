@@ -3,6 +3,60 @@
 
 Write-Host "Building Simple Productivity Blocker for Windows..."
 
+# Read version from core/__init__.py
+$initFile = Join-Path $PSScriptRoot "core\__init__.py"
+$version = "1.5.0"
+if (Test-Path $initFile) {
+    $versionContent = Get-Content -Path $initFile -Raw
+    if ($versionContent -match '__version__\s*=\s*"([^"]+)"') {
+        $version = $Matches[1]
+    }
+}
+Write-Host "Authoritative Version resolved: $version"
+
+# Parse version string into 4 integers (e.g. 1.5.0 -> 1, 5, 0, 0)
+$vParts = $version.Split('.')
+$v1 = if ($vParts.Length -gt 0) { [int]$vParts[0] } else { 1 }
+$v2 = if ($vParts.Length -gt 1) { [int]$vParts[1] } else { 5 }
+$v3 = if ($vParts.Length -gt 2) { [int]$vParts[2] } else { 0 }
+$v4 = if ($vParts.Length -gt 3) { [int]$vParts[3] } else { 0 }
+
+$versionInfoContent = @"
+# UTF-8
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=($v1, $v2, $v3, $v4),
+    prodvers=($v1, $v2, $v3, $v4),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+      StringTable(
+        '040904B0',
+        [StringStruct('CompanyName', 'nvusdev'),
+        StringStruct('FileDescription', 'Simple Productivity Blocker'),
+        StringStruct('FileVersion', '$version'),
+        StringStruct('InternalName', 'SimpleProductivityBlocker'),
+        StringStruct('LegalCopyright', 'Copyright (c) 2026 nvusdev'),
+        StringStruct('OriginalFilename', 'SimpleProductivityBlocker.exe'),
+        StringStruct('ProductName', 'Simple Productivity Blocker'),
+        StringStruct('ProductVersion', '$version')])
+      ]
+    ), 
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
+"@
+
+$versionInfoFile = Join-Path $PSScriptRoot "version_info.txt"
+Set-Content -Path $versionInfoFile -Value $versionInfoContent -Encoding UTF8
+
 # Check if running as Admin (for cleanup/kill, though build itself doesn't need it)
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if ($isAdmin) {
@@ -35,7 +89,8 @@ while (-not $cleaned -and $retryCount -lt $maxRetries) {
             if (Test-Path "build") { Remove-Item -Recurse -Force "build" -ErrorAction Stop }
         }
         $cleaned = $true
-    } catch {
+    }
+    catch {
         $retryCount++
         if ($retryCount -eq $maxRetries) {
             # Shadow Rename Fallback
@@ -50,7 +105,8 @@ while (-not $cleaned -and $retryCount -lt $maxRetries) {
                 Write-Host "Renamed 'build' to 'build_old_$timestamp'" -ForegroundColor Gray
             }
             $cleaned = $true 
-        } else {
+        }
+        else {
             Write-Host "Wait... Files are still locked (Attempt $retryCount/$maxRetries). Retrying in 2 seconds..." -ForegroundColor Cyan
             Start-Sleep -Seconds 2
         }
@@ -93,11 +149,52 @@ if ($LASTEXITCODE -ne 0) {
 }
 Remove-Item $scriptPath -Force
 
+# Mandatory Automated Validation Checks
+Write-Host "Running pre-build validation checks..."
+
+# 1. Run Unit Tests
+Write-Host "Running unit tests (python -m unittest discover tests)..."
+python -m unittest discover tests
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Error: Unit tests failed. Aborting build." -ForegroundColor Red
+    exit 1
+}
+Write-Host "Unit tests passed." -ForegroundColor Green
+
+# 2. Run Security Linter (Bandit)
+Write-Host "Running security linter (bandit)..."
+python -m bandit -r core/ main.py daemon.py recovery_uplift.py spb_installer.py spb_uninstaller.py -x tests/ -ll
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Error: Security checks (bandit) failed. Aborting build." -ForegroundColor Red
+    exit 1
+}
+Write-Host "Security checks passed." -ForegroundColor Green
+
+# 3. Run Static Type Checker (Mypy)
+Write-Host "Running static type checker (mypy)..."
+python -m mypy --ignore-missing-imports --disable-error-code=var-annotated --disable-error-code=attr-defined --disable-error-code=union-attr --disable-error-code=assignment --disable-error-code=no-redef core/ main.py daemon.py recovery_uplift.py spb_installer.py spb_uninstaller.py
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Error: Static typing checks (mypy) failed. Aborting build." -ForegroundColor Red
+    exit 1
+}
+Write-Host "Static typing checks passed." -ForegroundColor Green
+
+# 4. Run Formatter/Linter (Ruff)
+Write-Host "Running formatter/linter (ruff)..."
+python -m ruff check --ignore=E701, E722, F401, F841, E741, E402, F811, E702 core/ main.py daemon.py recovery_uplift.py spb_installer.py spb_uninstaller.py
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Error: Code style/linter checks (ruff) failed. Aborting build." -ForegroundColor Red
+    exit 1
+}
+Write-Host "Code style/linter checks passed." -ForegroundColor Green
+
+
 # Build the main app (Isolated to build\out_app to avoid dist locks)
 Write-Host "Building SimpleProductivityBlocker.exe..."
 python -m PyInstaller --clean --noconfirm --onedir --windowed --uac-admin `
     --distpath "build\out_app" `
     --icon="$tempIco" `
+    --version-file="$versionInfoFile" `
     --add-data "newlogo.png;." `
     --add-data "icon.ico;." `
     --hidden-import=pywintypes `
@@ -121,6 +218,7 @@ Write-Host "Building SPB_Daemon.exe..."
 python -m PyInstaller --clean --noconfirm --onefile --windowed `
     --distpath "build\out_daemon" `
     --icon="$tempIco" `
+    --version-file="$versionInfoFile" `
     --collect-all dnslib `
     --hidden-import=pywintypes `
     --hidden-import=pythoncom `
@@ -149,6 +247,7 @@ Copy-Item "build\out_daemon\SPB_Daemon.exe" -Destination "$pkgDir\" -Force
 Write-Host "Building spb_uninstaller.exe..."
 python -m PyInstaller --clean --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
     --distpath "build\out_uninstaller" `
+    --version-file="$versionInfoFile" `
     --hidden-import=pywintypes `
     --hidden-import=pythoncom `
     --hidden-import=win32com `
@@ -162,6 +261,7 @@ python -m PyInstaller --clean --noconfirm --onefile --console --uac-admin --icon
 Write-Host "Building recovery_uplift.exe..."
 python -m PyInstaller --clean --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
     --distpath "build\out_recovery" `
+    --version-file="$versionInfoFile" `
     --hidden-import=pywintypes `
     --hidden-import=pythoncom `
     --hidden-import=win32com `
@@ -184,6 +284,7 @@ Copy-Item "build\out_recovery\recovery_uplift.exe" -Destination "$pkgDir\" -Forc
 Write-Host "Building lightweight spb_installer.exe..."
 python -m PyInstaller --clean --noconfirm --onefile --console --uac-admin --icon="$tempIco" `
     --distpath "build\out_installer" `
+    --version-file="$versionInfoFile" `
     --hidden-import=pywintypes `
     --hidden-import=pythoncom `
     --hidden-import=win32com `
@@ -199,6 +300,94 @@ python -m PyInstaller --clean --noconfirm --onefile --console --uac-admin --icon
 Write-Host "Finalizing staging components..."
 Copy-Item "build\out_installer\spb_installer.exe" -Destination "$pkgDir\" -Force
 
+# Locate signtool.exe dynamically
+Write-Host "Locating signtool.exe..."
+$signtool = "signtool.exe"
+$sdkPaths = @(
+    "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe",
+    "C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe",
+    "C:\Program Files\Windows Kits\10\App Certification Kit\signtool.exe"
+)
+foreach ($p in $sdkPaths) {
+    $resolved = Resolve-Path $p -ErrorAction SilentlyContinue
+    if ($resolved) {
+        $signtool = ($resolved | Select-Object -Last 1).Path
+        break
+    }
+}
+if (-not (Test-Path $signtool)) {
+    $inPath = Get-Command signtool -ErrorAction SilentlyContinue
+    if ($inPath) {
+        $signtool = $inPath.Source
+    }
+}
+Write-Host "Using signtool: $signtool"
+
+$pfxPath = $env:SPB_PFX_PATH
+$pfxPassword = $env:SPB_PFX_PASSWORD
+$tempCertUsed = $false
+
+if ([string]::IsNullOrEmpty($pfxPath) -or -not (Test-Path $pfxPath)) {
+    Write-Host "No valid certificate path provided in environment (SPB_PFX_PATH). Generating self-signed test certificate..."
+    $certSubject = "CN=Simple Productivity Blocker Test Sign"
+    $certFriendlyName = "SPB Code Signing Test"
+    try {
+        $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject $certSubject -FriendlyName $certFriendlyName -CertStoreLocation "Cert:\CurrentUser\My" -ErrorAction Stop
+        $pfxPath = Join-Path $PSScriptRoot "spb_test_cert.pfx"
+        $pfxPassword = "SPBPassword123"
+        $secPassword = ConvertTo-SecureString $pfxPassword -AsPlainText -Force
+        Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $secPassword -ErrorAction Stop
+        Remove-Item $cert.PSPath -Force -ErrorAction SilentlyContinue
+        $tempCertUsed = $true
+        Write-Host "Temporary test certificate generated at $pfxPath" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "Error: Failed to generate self-signed certificate: $_" -ForegroundColor Red
+        $pfxPath = $null
+    }
+}
+else {
+    Write-Host "Using provided certificate for signing: $pfxPath" -ForegroundColor Green
+}
+
+function SignBinary {
+    param (
+        [string]$filePath
+    )
+    if (-not (Test-Path $filePath)) {
+        Write-Host "File to sign not found: $filePath" -ForegroundColor Yellow
+        return
+    }
+    if ([string]::IsNullOrEmpty($pfxPath) -or -not (Test-Path $pfxPath)) {
+        Write-Host "Skipping signing for $filePath (no certificate available)" -ForegroundColor Yellow
+        return
+    }
+    if (-not (Test-Path $signtool)) {
+        Write-Host "Skipping signing for $filePath (signtool.exe not available)" -ForegroundColor Yellow
+        return
+    }
+    Write-Host "Signing $filePath..."
+    $signArgs = @("sign", "/f", $pfxPath, "/p", $pfxPassword, "/fd", "SHA256")
+    $signArgs += @("/tr", "http://timestamp.digicert.com", "/td", "SHA256")
+    
+    & $signtool $signArgs $filePath 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Warning: Sign command with timestamp failed. Attempting to sign without timestamp..." -ForegroundColor Yellow
+        $signArgsNoTS = @("sign", "/f", $pfxPath, "/p", $pfxPassword, "/fd", "SHA256")
+        & $signtool $signArgsNoTS $filePath 2>&1 | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Error: Failed to sign $filePath" -ForegroundColor Red
+            exit 1
+        }
+    }
+    Write-Host "Signed $filePath successfully." -ForegroundColor Green
+}
+
+# Sign all executable binaries in the package directory
+Get-ChildItem -Path $pkgDir -Filter "*.exe" | ForEach-Object {
+    SignBinary $_.FullName
+}
+
 # Explicitly bundle pywin32 system DLLs
 Write-Host "Bundling pywin32 system components..."
 try {
@@ -211,7 +400,8 @@ try {
             Write-Host "COM Drivers (pywin32) bundled successfully."
         }
     }
-} catch {
+}
+catch {
     Write-Host "Warning: Optional pywin32 bundling skipped." -ForegroundColor Yellow
 }
 
@@ -345,15 +535,28 @@ Section "Uninstall"
 SectionEnd
 '@
 
+# Dynamic Version Injection into NSIS script
+$nsiScript = $nsiScript.Replace("1.4.10", $version)
+
 $nsiFile = Join-Path $PSScriptRoot "installer.nsi"
 Set-Content -Path $nsiFile -Value $nsiScript -Encoding UTF8
 
-Write-Host "Compiling native installer using NSIS..."
-$nsisCompiler = "C:\Program Files (x86)\NSIS\makensis.exe"
+# Dynamic NSIS Compiler Path Resolution
+Write-Host "Resolving NSIS compiler path dynamically..."
+$nsisRegPath = Get-ItemProperty -Path "HKLM:\SOFTWARE\WOW6432Node\NSIS" -Name "" -ErrorAction SilentlyContinue
+$nsisCompiler = if ($nsisRegPath) { Join-Path $nsisRegPath.'(default)' "makensis.exe" } else { "makensis.exe" }
+
 if (-not (Test-Path $nsisCompiler)) {
-    Write-Host "Error: makensis.exe not found at $nsisCompiler." -ForegroundColor Red
-    exit 1
+    $inPath = Get-Command makensis -ErrorAction SilentlyContinue
+    if ($inPath) {
+        $nsisCompiler = $inPath.Source
+    }
+    else {
+        Write-Host "Error: NSIS compiler (makensis.exe) not found dynamically." -ForegroundColor Red
+        exit 1
+    }
 }
+Write-Host "NSIS Compiler found at: $nsisCompiler"
 
 # Run NSIS Compiler
 & $nsisCompiler $nsiFile
@@ -362,6 +565,8 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
+# Sign the final setup installer
+SignBinary "dist\spb_setup.exe"
 Write-Host "Build complete! Your deployable setup installer is at dist\spb_setup.exe"
 
 # Post-build Cleanup
@@ -369,4 +574,9 @@ Write-Host "Cleaning up build artifacts..."
 Remove-Item -Recurse -Force "build" -ErrorAction SilentlyContinue
 Get-ChildItem -Path $PSScriptRoot -Filter "*.spec" | Remove-Item -Force
 if (Test-Path $nsiFile) { Remove-Item $nsiFile -Force }
+if (Test-Path $versionInfoFile) { Remove-Item $versionInfoFile -Force }
+if ($tempCertUsed -and (Test-Path $pfxPath)) {
+    Write-Host "Cleaning up temporary test certificate..."
+    Remove-Item $pfxPath -Force -ErrorAction SilentlyContinue
+}
 Write-Host "Cleanup complete."
