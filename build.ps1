@@ -571,10 +571,10 @@ Write-Host "Build complete! Your deployable setup installer is at dist\spb_setup
 
 # Post-build Cleanup
 Write-Host "Cleaning up build artifacts..."
-Remove-Item -Recurse -Force "build" -ErrorAction SilentlyContinue
-Get-ChildItem -Path $PSScriptRoot -Filter "*.spec" | Remove-Item -Force
-if (Test-Path $nsiFile) { Remove-Item $nsiFile -Force }
-if (Test-Path $versionInfoFile) { Remove-Item $versionInfoFile -Force }
+cmd /c "rmdir /s /q build" 2>$null
+Get-ChildItem -Path $PSScriptRoot -Filter "*.spec" | Remove-Item -Force -ErrorAction SilentlyContinue
+if (Test-Path $nsiFile) { Remove-Item $nsiFile -Force -ErrorAction SilentlyContinue }
+if (Test-Path $versionInfoFile) { Remove-Item $versionInfoFile -Force -ErrorAction SilentlyContinue }
 if ($tempCertUsed -and (Test-Path $pfxPath)) {
     Write-Host "Cleaning up temporary test certificate..."
     Remove-Item $pfxPath -Force -ErrorAction SilentlyContinue
