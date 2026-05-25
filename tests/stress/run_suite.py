@@ -12,8 +12,11 @@ def run_test(script_path, extra_args=None):
     return True
 
 def main():
+    import sys
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+    from core import __version__ as VERSION
     print("==========================================")
-    print("   SPB v1.4.10 GOLD MASTER STRESS SUITE   ")
+    print(f"   SPB v{VERSION} GOLD MASTER STRESS SUITE   ")
     print("==========================================")
     
     import tempfile

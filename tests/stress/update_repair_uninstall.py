@@ -53,6 +53,7 @@ def execute_test(log_path, sentinel_path):
 
     # We will locate setup
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    sys.path.append(repo_root)
     setup_exe = os.path.join(repo_root, "dist", "spb_setup.exe")
 
     if not os.path.exists(setup_exe):
@@ -173,7 +174,8 @@ def execute_test(log_path, sentinel_path):
             try:
                 publisher, _ = winreg.QueryValueEx(key, "Publisher")
                 version, _ = winreg.QueryValueEx(key, "DisplayVersion")
-                if publisher == "nvusdev" and version == "1.4.10":
+                from core import __version__ as expected_version
+                if publisher == "nvusdev" and version == expected_version:
                     print("[PASS] Add/Remove Programs registry key correctly registered.")
                 else:
                     raise RuntimeError(f"Registry values mismatched: Publisher={publisher}, Version={version}")

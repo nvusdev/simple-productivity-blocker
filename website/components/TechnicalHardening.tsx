@@ -193,7 +193,7 @@ export default function TechnicalHardening() {
                   <div className="w-2.5 h-2.5 rounded-full bg-green-500/60" />
                   <span className="text-xs font-mono font-semibold text-zinc-400 ml-3 tracking-wider flex items-center gap-1.5">
                     <TerminalIcon size={12} className="text-blue-500" />
-                    SPB_HARDENED_SHELL v1.4.10
+                    SPB_HARDENED_SHELL v1.5.0
                   </span>
                 </div>
                 <div className="flex items-center gap-3">

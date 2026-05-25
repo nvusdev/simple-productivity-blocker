@@ -2,6 +2,7 @@ import customtkinter as ctk
 import string
 import random
 import datetime
+import typing
 import re
 import os
 import subprocess
@@ -29,7 +30,7 @@ except Exception:
     def detect_conflicting_services():
         return None
 
-VERSION = "1.4.10"
+from core import __version__ as VERSION
 
 def resource_path(relative_path):
     try:
@@ -144,7 +145,7 @@ class InputListFrame(ctk.CTkFrame):
         self.app.trigger_save()
 
 class ContentFilterTab(ctk.CTkFrame):
-    def __init__(self, master: any, app: any, group_name: str):
+    def __init__(self, master: ctk.CTkFrame, app: "ProductivityApp", group_name: str):
         super().__init__(master, fg_color="transparent")
         self.app = app
         self.group_name = group_name
@@ -188,7 +189,7 @@ class ContentFilterTab(ctk.CTkFrame):
         ctk.CTkLabel(self.container, text="Custom Blocklists (URL or Local Path):", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=25, pady=(20, 0))
         self.custom_list = self.app._inline_list(self.container, self.ad.get("custom_lists", []), self.save, "e.g. https://example.com/blocklist.txt")
 
-    def save(self, *args: any) -> None:
+    def save(self, *args: "typing.Any") -> None:
         self.ad["enabled"] = self.enabled_var.get()
         self.ad["persist_all_day"] = self.persist_var.get()
         for key, var in self.cat_vars.items(): self.ad[key] = var.get()

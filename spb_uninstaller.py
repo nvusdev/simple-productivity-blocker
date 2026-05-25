@@ -218,7 +218,7 @@ def _remove_installation_directory(dest_dir):
             try:
                 run_system_command(['icacls', fpath, '/grant', 'Administrators:(F)', '/c', '/q'], check=False)
                 run_system_command(['attrib', '-R', '-H', '-S', fpath], check=False)
-                os.chmod(fpath, 0o777)
+                os.chmod(fpath, 0o777) # nosec B103
                 os.remove(fpath)
             except Exception as e:
                 print(f"  [!] Could not remove file '{fpath}': {e}")
@@ -313,7 +313,8 @@ def cleanup_acls():
     print("Physical blocks released successfully.")
 
 def main():
-    print("Simple Productivity Blocker v1.4.10 Uninstaller")
+    from core import __version__
+    print(f"Simple Productivity Blocker v{__version__} Uninstaller")
     print("-------------------------------------------------------")
     
     import pythoncom

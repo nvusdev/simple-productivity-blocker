@@ -192,8 +192,14 @@ $items | ConvertTo-Json -Depth 4
                 # Health validate IPs to prevent dirty Portmaster/VPN snapshots
                 import ipaddress
                 for ip in item.get("ipv4", []):
-                    if ip in ("127.0.0.1", "::1", "localhost"):
-                        continue
+                    try:
+                        ip_obj = ipaddress.ip_address(ip)
+                        if ip_obj.is_loopback or ip_obj.is_link_local:
+                            continue
+                    except ValueError:
+                        if ip.lower() in ("localhost",):
+                            continue
+
                     try:
                         if not ipaddress.ip_address(ip).is_private:
                             adapter["ipv4"].append(ip)
