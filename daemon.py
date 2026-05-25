@@ -627,7 +627,7 @@ class SubsystemOrchestrator:
         # Simple non-destructive bind check
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.bind(('0.0.0.0', 53))
+                s.bind(('0.0.0.0', 53))  # nosec B104
             
             logger.info("DNS Proxy Recovery: Port 53 is now available. Restarting DNS Subsystem...")
             # Re-initialize DNS Server
@@ -829,6 +829,68 @@ class SubsystemOrchestrator:
             with self.pm_lock:
                 self.pm.synchronize_all(list(processes), list(files), list(folders))
 
+def drop_browser_connections():
+    if os.name != 'nt':
+        return
+    
+    from ctypes import wintypes
+    import struct
+    
+    class MIB_TCPROW(ctypes.Structure):
+        _fields_ = [
+            ('dwState', wintypes.DWORD),
+            ('dwLocalAddr', wintypes.DWORD),
+            ('dwLocalPort', wintypes.DWORD),
+            ('dwRemoteAddr', wintypes.DWORD),
+            ('dwRemotePort', wintypes.DWORD),
+        ]
+        
+    try:
+        iphlpapi = ctypes.WinDLL('iphlpapi', use_last_error=True)
+        iphlpapi.SetTcpEntry.argtypes = [ctypes.POINTER(MIB_TCPROW)]
+        iphlpapi.SetTcpEntry.restype = wintypes.DWORD
+    except Exception as e:
+        logger.debug(f"Failed to load iphlpapi: {e}")
+        return
+
+    target_browsers = {'chrome.exe', 'msedge.exe', 'firefox.exe', 'brave.exe'}
+    browser_pids = set()
+    for proc in psutil.process_iter(['pid', 'name']):
+        try:
+            if proc.info['name'] and proc.info['name'].lower() in target_browsers:
+                browser_pids.add(proc.info['pid'])
+        except Exception:
+            pass
+
+    if not browser_pids:
+        return
+
+    logger.info(f"Dropping active TCP connections for browser PIDs: {browser_pids}")
+    try:
+        conns = psutil.net_connections(kind='tcp')
+        for conn in conns:
+            if conn.pid in browser_pids and conn.status == 'ESTABLISHED' and conn.raddr and conn.laddr:
+                try:
+                    local_ip, local_port = conn.laddr
+                    remote_ip, remote_port = conn.raddr
+                    
+                    row = MIB_TCPROW()
+                    row.dwState = 12  # MIB_TCP_STATE_DELETE_TCB
+                    row.dwLocalAddr = struct.unpack("I", socket.inet_aton(local_ip))[0]
+                    row.dwLocalPort = socket.htons(local_port)
+                    row.dwRemoteAddr = struct.unpack("I", socket.inet_aton(remote_ip))[0]
+                    row.dwRemotePort = socket.htons(remote_port)
+                    
+                    res = iphlpapi.SetTcpEntry(ctypes.byref(row))
+                    if res == 0:
+                        logger.debug(f"Successfully closed connection {local_ip}:{local_port} -> {remote_ip}:{remote_port}")
+                    else:
+                        logger.debug(f"SetTcpEntry returned {res} for connection {local_ip}:{local_port} -> {remote_ip}:{remote_port}")
+                except Exception as conn_err:
+                    logger.debug(f"Error closing specific connection: {conn_err}")
+    except Exception as e:
+        logger.error(f"Error dropping browser connections: {e}")
+
 class DaemonOrchestrator:
     def __init__(self, cfg_path: str):
         self.cfg = ConfigManager(cfg_path)
@@ -842,6 +904,8 @@ class DaemonOrchestrator:
         self.last_minute = -1
         self.first_run = True
         self.last_heartbeat = 0.0
+        self.cur_process_watchdog_enabled = None
+        self.last_non_acl_sync = 0.0
 
     def _handle_custom_lists(self):
         custom_lists = []
@@ -884,6 +948,25 @@ class DaemonOrchestrator:
 
         # Update PM Settings
         settings = self.cfg.cache.get("settings", {})
+        
+        # Watchdog Toggle
+        watchdog_enabled = settings.get("process_watchdog_enabled", True)
+        if self.cur_process_watchdog_enabled is None:
+            self.cur_process_watchdog_enabled = watchdog_enabled
+        elif self.cur_process_watchdog_enabled != watchdog_enabled:
+            self.cur_process_watchdog_enabled = watchdog_enabled
+            action = "/enable" if watchdog_enabled else "/disable"
+            logger.info(f"Process watchdog state shifted to {watchdog_enabled}. Running schtasks /change /tn SPB_Watchdog {action}")
+            try:
+                import subprocess
+                res = subprocess.run(["schtasks", "/change", "/tn", "SPB_Watchdog", action], capture_output=True, check=False)
+                if res.returncode != 0 and watchdog_enabled:
+                    logger.info("Watchdog task does not exist, registering it...")
+                    from core.persistence import register_watchdog_task
+                    register_watchdog_task()
+            except Exception as e:
+                logger.error(f"Failed to toggle watchdog task: {e}")
+
         if self.subsystems.pm:
             global_allow = set(settings.get("cloud_allowlist", [])) if settings.get("cloud_allowlist_enabled", True) else set()
             global_kws = settings.get("cloud_path_keywords", []) if settings.get("cloud_allowlist_enabled", True) else []
@@ -905,15 +988,21 @@ class DaemonOrchestrator:
         # Update Subsystems
         total_filter = ctx.filter_keywords.union(self.want_custom)
         
+        domains_changed = (total_filter.union(ctx.manual_domains) != self.cur_domains)
+        if domains_changed and not self.first_run:
+            logger.info("Blocked domains updated. Dropping browser TCP connections to flush socket pool...")
+            drop_browser_connections()
+
         if total_filter.union(ctx.manual_domains) != self.cur_domains or \
            ctx.filter_exceptions != self.cur_exceptions or \
            ctx.cloud_allowlist != self.cur_cloud or self.first_run:
             self.subsystems.sync_dns(ctx.manual_domains, total_filter, ctx.cloud_allowlist, ctx.filter_exceptions, self.first_run, normalized_filter_domains=ctx.normalized_filter_domains)
             logger.info(f"DNS Subsystem Sync: {len(ctx.manual_domains)} manual, {len(total_filter)} filter domains. (DNS Proxy={self.subsystems.using_dns_proxy})")
 
-        if ctx.processes != self.cur_apps or ctx.files != self.cur_files or ctx.folders != self.cur_folders or self.first_run:
+        # Removed non-ACL (files/folders) checks from the immediate change-detection guard
+        if ctx.processes != self.cur_apps or self.first_run:
             self.subsystems.sync_processes(ctx.processes, ctx.files, ctx.folders, self.first_run)
-            logger.info(f"PM Subsystem Sync: {len(ctx.processes)} apps, {len(ctx.files)} files, {len(ctx.folders)} folders.")
+            logger.info(f"PM Subsystem Sync (Immediate Apps): {len(ctx.processes)} apps.")
 
         # Log active groups for user transparency
         active_groups = [gname for gname, g in self.cfg.cache.get("groups", {}).items() if g.get("enabled", True) and is_active(g)]
@@ -931,6 +1020,15 @@ class DaemonOrchestrator:
             try:
                 self.sync()
                 now = time.time()
+                
+                non_acl_interval = self.cfg.cache.get("settings", {}).get("non_acl_sync_interval", 10)
+                if now - self.last_non_acl_sync >= non_acl_interval:
+                    self.last_non_acl_sync = now
+                    if self.subsystems.pm:
+                        logger.info("Periodic non-ACL sync (virtual drive check)...")
+                        with self.subsystems.pm_lock:
+                            self.subsystems.pm.synchronize_all(list(self.cur_apps), list(self.cur_files), list(self.cur_folders))
+
                 if now - self.last_heartbeat >= 60.0:
                     self.subsystems.watchdog_dns(self.cur_manual_domains, getattr(self, 'cur_filter_keywords', set()), getattr(self, 'cur_normalized_filter_domains', set()), self.cur_cloud, self.cur_exceptions)
                     dns_status = "Active" if self.subsystems.using_dns_proxy else ("Fallback" if self.cur_domains else "None")
@@ -943,7 +1041,7 @@ class DaemonOrchestrator:
                 logger.error(f"Orchestrator error: {e}", exc_info=True)
                 time.sleep(5)
 
-VERSION = "1.4.10"
+from core import __version__ as VERSION
 
 def main():
     kill_other_instances()
