@@ -5,7 +5,7 @@ Write-Host "Building Simple Productivity Blocker for Windows..."
 
 # Read version from core/__init__.py
 $initFile = Join-Path $PSScriptRoot "core\__init__.py"
-$version = "1.5.0"
+$version = "1.6.0"
 if (Test-Path $initFile) {
     $versionContent = Get-Content -Path $initFile -Raw
     if ($versionContent -match '__version__\s*=\s*"([^"]+)"') {
