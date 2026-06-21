@@ -330,6 +330,7 @@ def main():
             if is_silent:
                 print("[!] ERROR: Uninstallation is blocked in SPB Global Settings.")
                 sys.exit(1)
+                return
             else:
                 ctypes.windll.user32.MessageBoxW(
                     0,
@@ -338,6 +339,7 @@ def main():
                     0x10 # MB_ICONERROR
                 )
                 sys.exit(1)
+                return
     except Exception as e:
         print(f"Warning: Could not read configuration to check uninstall lock: {e}")
     
