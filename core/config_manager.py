@@ -104,6 +104,7 @@ DEFAULT_SETTINGS = {
     "aggressive_scan_interval": 10,
     "ui_automation_enabled": False,
     "shell_check_interval": 2.0,
+    "block_uninstall": False,
 }
 
 DEFAULT_CONFIG = {
