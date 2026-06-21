@@ -1,5 +1,14 @@
 # Simple Productivity Blocker - Version History
 
+## [1.6.0] - 2026-06-21
+### Added
+- **Uninstallation Blocking Option**: Implemented a new option in the Global Settings menu allowing administrative users to block uninstallation of Simple Productivity Blocker, preventing bypass of active profiles.
+- **Settings Page Challenge protection**: Global Settings navigation now requires solving the strongest/largest security challenge among the existing group profiles to prevent tampering.
+
+### Fixed
+- **DNS Exception Fallback Resolution**: Resolved a bug in hosts-file fallback mode where content filter exceptions (e.g. `youtube.com`) were not correctly removed from custom block lists and normalized category domains.
+- **GitHub Pages Next.js Site**: Configured `.github/workflows/deploy.yml` to compile and deploy the Next.js static site under the `/website` folder to GitHub Pages dynamically.
+
 ## [1.5.0] - 2026-05-25
 ### Added
 - **Quality Gate Integration**: Pre-build validation checks executing unit tests, Bandit security checks, Mypy static typing, and Ruff formatting/styling checks before compilation in `build.ps1`.
