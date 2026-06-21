@@ -110,17 +110,21 @@ class TestFallbackHardening(unittest.TestCase):
         # Thus, only 2 unique domains (each with base and www) can fit, generating 8 lines of host blocks + 2 marker lines = 10 lines total.
         self.assertEqual(block_lines_count, 10)
 
-    def test_resolve_hosts_fallback_domains_includes_want_custom(self):
-        manual = {"blocked.com"}
-        normalized = {"another.com"}
-        cloud = {"safe.com"}
-        custom = {"customblock.com", "another-custom.com"}
+    def test_resolve_hosts_fallback_domains_filters_exceptions(self):
+        manual = {"manual.com"}
+        normalized = {"blocked-cat.com", "allowed-cat.com"}
+        cloud = set()
+        custom = {"blocked-custom.com", "allowed-custom.com"}
+        exceptions = {"allowed-cat.com", "allowed-custom.com"}
         
-        resolved = _resolve_hosts_fallback_domains(manual, normalized, cloud, want_custom=custom)
-        self.assertIn("blocked.com", resolved)
-        self.assertIn("another.com", resolved)
-        self.assertIn("customblock.com", resolved)
-        self.assertIn("another-custom.com", resolved)
+        resolved = _resolve_hosts_fallback_domains(
+            manual, normalized, cloud, want_custom=custom, filter_exceptions=exceptions
+        )
+        self.assertIn("manual.com", resolved)
+        self.assertIn("blocked-cat.com", resolved)
+        self.assertNotIn("allowed-cat.com", resolved)
+        self.assertIn("blocked-custom.com", resolved)
+        self.assertNotIn("allowed-custom.com", resolved)
 
     def test_sync_dns_emits_degraded_when_truncated(self):
         from daemon import SubsystemOrchestrator
