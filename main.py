@@ -679,6 +679,24 @@ class ProductivityApp(ctk.CTk):
         self.trigger_save()
 
     def show_settings(self):
+        # Choose the security-enabled group with the largest challenge length
+        sec_group = None
+        max_len = -1
+        for gname, gdata in self.config_data.get("groups", {}).items():
+            sec = gdata.get("security", {})
+            if sec.get("enabled", False):
+                ch_len = sec.get("challenge_length", 32)
+                if ch_len > max_len:
+                    max_len = ch_len
+                    sec_group = gname
+        
+        if sec_group:
+            self.group_name = sec_group
+            self.show_challenge_screen(self._show_settings_actual)
+        else:
+            self._show_settings_actual()
+
+    def _show_settings_actual(self):
         self.clear_screen()
         token = self._screen_token()
         self.current_screen = ctk.CTkFrame(self)
@@ -810,6 +828,18 @@ class ProductivityApp(ctk.CTk):
             command=on_process_watchdog_toggle
         )
         self._process_watchdog_switch.pack(anchor="w", padx=30, pady=10)
+
+        self.block_uninstall_var = ctk.BooleanVar(value=s.get("block_uninstall", False))
+        def on_block_uninstall_toggle():
+            self.config_data["settings"]["block_uninstall"] = self.block_uninstall_var.get()
+            self.trigger_save()
+        self._block_uninstall_switch = ctk.CTkSwitch(
+            c,
+            text="Block App Uninstallation",
+            variable=self.block_uninstall_var,
+            command=on_block_uninstall_toggle
+        )
+        self._block_uninstall_switch.pack(anchor="w", padx=30, pady=10)
 
         # Task Trigger Option (Startup/Logon/Both)
         ctk.CTkLabel(c, text="Scheduled Task Trigger Type", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=30, pady=(15, 2))
