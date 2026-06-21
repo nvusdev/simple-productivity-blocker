@@ -321,6 +321,25 @@ def main():
     
     is_silent = "--silent" in sys.argv
     preserve_config = "--preserve-config" in sys.argv
+
+    # Check if uninstallation is blocked in global settings
+    try:
+        from core.config_manager import load_config
+        config = load_config()
+        if config.get("settings", {}).get("block_uninstall", False):
+            if is_silent:
+                print("[!] ERROR: Uninstallation is blocked in SPB Global Settings.")
+                sys.exit(1)
+            else:
+                ctypes.windll.user32.MessageBoxW(
+                    0,
+                    "Uninstallation is blocked in Simple Productivity Blocker's settings.\n\nPlease disable 'Block App Uninstallation' in the app settings before uninstalling.",
+                    "SPB Uninstaller - Operation Blocked",
+                    0x10 # MB_ICONERROR
+                )
+                sys.exit(1)
+    except Exception as e:
+        print(f"Warning: Could not read configuration to check uninstall lock: {e}")
     
     if not is_admin():
         if is_silent:
