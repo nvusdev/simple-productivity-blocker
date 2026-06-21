@@ -395,6 +395,7 @@ def _resolve_hosts_fallback_domains(
     normalized_filter_domains: Set[str],
     cloud_allowlist: Set[str],
     want_custom: Set[str] = None,
+    filter_exceptions: Set[str] = None,
 ) -> Set[str]:
     """ONLY returns manual_domains, critical normalized redundancy set, and custom domains."""
     resolved: Set[str] = set()
@@ -404,11 +405,15 @@ def _resolve_hosts_fallback_domains(
             resolved.add(domain)
 
     for domain in normalized_filter_domains:
+        if filter_exceptions and _is_excepted(domain, filter_exceptions):
+            continue
         if not _pattern_matches(cloud_allowlist, domain):
             resolved.add(domain)
 
     if want_custom:
         for domain in want_custom:
+            if filter_exceptions and _is_excepted(domain, filter_exceptions):
+                continue
             if not _pattern_matches(cloud_allowlist, domain):
                 resolved.add(domain)
 
@@ -709,7 +714,8 @@ class SubsystemOrchestrator:
             manual_domains,
             normalized_filter_domains if normalized_filter_domains is not None else set(),
             cloud_allowlist,
-            want_custom=filter_keywords
+            want_custom=filter_keywords,
+            filter_exceptions=filter_exceptions
         )
         
         # Consistently check and enforce max_domains_cap limit for health/logging
